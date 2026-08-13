@@ -97,11 +97,15 @@ class NativeExecutionManifest:
     checkpoint: dict[str, Any] | None
     session_state_kinds: tuple[str, ...]
     capabilities: dict[str, bool]
+    primary_checkpoint_variant: str | None = None
+    checkpoint_variants: dict[str, dict[str, Any]] = field(default_factory=dict)
+    companion_checkpoints: dict[str, dict[str, Any]] = field(default_factory=dict)
+    speculative_decoding: dict[str, Any] = field(default_factory=dict)
     schema: str = NATIVE_EXECUTION_MANIFEST_SCHEMA
     version: int = NATIVE_EXECUTION_MANIFEST_VERSION
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema": self.schema,
             "version": self.version,
             "source_graph": _json_safe(self.source_graph),
@@ -117,6 +121,15 @@ class NativeExecutionManifest:
             "session_state_kinds": list(self.session_state_kinds),
             "capabilities": dict(self.capabilities),
         }
+        if self.primary_checkpoint_variant is not None:
+            payload["primary_checkpoint_variant"] = self.primary_checkpoint_variant
+        if self.checkpoint_variants:
+            payload["checkpoint_variants"] = _json_safe(self.checkpoint_variants)
+        if self.companion_checkpoints:
+            payload["companion_checkpoints"] = _json_safe(self.companion_checkpoints)
+        if self.speculative_decoding:
+            payload["speculative_decoding"] = _json_safe(self.speculative_decoding)
+        return payload
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "NativeExecutionManifest":
@@ -142,6 +155,48 @@ class NativeExecutionManifest:
         missing = sorted(required - set(payload))
         if missing:
             raise ValueError(f"Native Execution manifest is missing: {', '.join(missing)}")
+        primary_variant = payload.get("primary_checkpoint_variant")
+        if primary_variant is not None and (
+            not isinstance(primary_variant, str) or not primary_variant.strip()
+        ):
+            raise ValueError("primary_checkpoint_variant must be a non-empty string or null")
+        raw_variants = payload.get("checkpoint_variants", {})
+        raw_companions = payload.get("companion_checkpoints", {})
+        raw_speculation = payload.get("speculative_decoding", {})
+        if not isinstance(raw_variants, Mapping):
+            raise ValueError("checkpoint_variants must be an object")
+        if not isinstance(raw_companions, Mapping):
+            raise ValueError("companion_checkpoints must be an object")
+        if not isinstance(raw_speculation, Mapping):
+            raise ValueError("speculative_decoding must be an object")
+        variants = {
+            str(name): dict(descriptor)
+            for name, descriptor in raw_variants.items()
+            if isinstance(name, str) and isinstance(descriptor, Mapping)
+        }
+        companions = {
+            str(name): dict(descriptor)
+            for name, descriptor in raw_companions.items()
+            if isinstance(name, str) and isinstance(descriptor, Mapping)
+        }
+        if len(variants) != len(raw_variants):
+            raise ValueError("checkpoint_variants entries must be named objects")
+        if len(companions) != len(raw_companions):
+            raise ValueError("companion_checkpoints entries must be named objects")
+        checkpoint = dict(payload["checkpoint"]) if payload.get("checkpoint") is not None else None
+        if primary_variant is None and variants:
+            raise ValueError("checkpoint_variants requires primary_checkpoint_variant")
+        if primary_variant is not None:
+            if primary_variant not in variants:
+                raise ValueError("primary_checkpoint_variant is absent from checkpoint_variants")
+            if checkpoint is None:
+                raise ValueError("checkpoint variants require the legacy-compatible checkpoint object")
+            executable_fields = ("format", "artifact_path", "target_nbytes", "target_sha256")
+            selected = variants[primary_variant]
+            if any(checkpoint.get(field) != selected.get(field) for field in executable_fields):
+                raise ValueError(
+                    "checkpoint must equal the primary checkpoint variant's executable fields"
+                )
         return cls(
             source_graph=dict(payload["source_graph"]),
             model=dict(payload["model"]),
@@ -152,9 +207,15 @@ class NativeExecutionManifest:
             context_limits=dict(payload["context_limits"]),
             stop_tokens=tuple(int(token) for token in payload["stop_tokens"]),
             kernel_abi=dict(payload["kernel_abi"]),
-            checkpoint=(dict(payload["checkpoint"]) if payload.get("checkpoint") is not None else None),
+            checkpoint=checkpoint,
             session_state_kinds=tuple(str(kind) for kind in payload["session_state_kinds"]),
             capabilities={str(key): bool(value) for key, value in dict(payload["capabilities"]).items()},
+            primary_checkpoint_variant=(
+                str(primary_variant) if primary_variant is not None else None
+            ),
+            checkpoint_variants=variants,
+            companion_checkpoints=companions,
+            speculative_decoding=dict(raw_speculation),
             schema=schema,
             version=version,
         )

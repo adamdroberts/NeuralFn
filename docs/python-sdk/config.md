@@ -13,7 +13,7 @@ ObjectiveType    = Literal[
     "semantic_moe_jepa_evo",
     "seq2seq", "sft", "dpo", "ppo", "reward_model",
 ]
-BackboneType     = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
+BackboneType     = Literal["gpt2", "nanogpt", "llama", "muse_glimmer", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType     = Literal["dense", "moe"]
 CompressionType  = Literal[
@@ -180,6 +180,11 @@ native trainable class.
 
 ## BlockSpec
 
+`LayerAttentionSpec(kind, window_size, pos_encoding, rope_theta)` describes
+one entry in a repeating heterogeneous attention schedule. Presets that leave
+`BlockSpec.layer_attention_pattern` empty retain the historical homogeneous
+block behavior.
+
 ```python
 @dataclass
 class BlockSpec:
@@ -190,6 +195,10 @@ class BlockSpec:
     attention_backend: str = "sdpa"
     num_heads: int = 4
     num_kv_heads: int | None = None
+    head_dim: int | None = None
+    attention_inner_dim: int | None = None
+    intermediate_size: int | None = None
+    layer_attention_pattern: tuple[LayerAttentionSpec, ...] = ()
     is_causal: bool = True
     linear_bias: bool = True
     dropout_p: float = 0.0
@@ -215,6 +224,17 @@ class BlockSpec:
     byte_patch_size: int = 4
     byte_patch_stride: int = 4
     qk_gain_init: float = 1.0
+    qk_norm_kind: str = "none"
+    qk_norm_eps: float = 1e-6
+    q_scale_factor: float = 1.0
+    attention_gate: str = "none"
+    attention_gate_dim: int | None = None
+    norm_layout: str = "pre"
+    centered_rms_norm: bool = False
+    norm_eps: float = 1e-5
+    post_norm_eps: float = 1e-5
+    embedding_norm_kind: str = "none"
+    embedding_norm_eps: float = 1e-6
 ```
 
 Specifies the architecture of a single transformer block.
@@ -223,13 +243,17 @@ Specifies the architecture of a single transformer block.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `family` | `str` | *(required)* | Block family: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"`, `"jamba"`, `"ttt"`, `"hnet"`, `"universal"` |
+| `family` | `str` | *(required)* | Block family, including `"muse_glimmer"` for the exact Glimmer decoder |
 | `norm_type` | `str` | `"layernorm"` | `"layernorm"` or `"rmsnorm"` |
 | `mlp_type` | `str` | `"gelu"` | `"gelu"`, `"swiglu"`, or `"moe"` |
 | `pos_encoding` | `str` | `"absolute"` | `"absolute"` or `"rope"` |
 | `attention_backend` | `str` | `"sdpa"` | `"sdpa"`, `"flex"`, or `"math"` |
 | `num_heads` | `int` | `4` | Number of attention heads |
 | `num_kv_heads` | `int \| None` | `None` | Number of KV heads (None=MHA, smaller=GQA/MQA) |
+| `head_dim` | `int \| None` | `None` | Explicit per-head width; `None` preserves the legacy derived width |
+| `attention_inner_dim` | `int \| None` | `None` | Q/output attention width independent of `model_dim` |
+| `intermediate_size` | `int \| None` | `None` | Exact FFN width, bypassing multiplier rounding when set |
+| `layer_attention_pattern` | `tuple[LayerAttentionSpec, ...]` | `()` | Repeating local/full and RoPE/NoPE layer schedule |
 | `is_causal` | `bool` | `True` | Whether attention is causal |
 | `linear_bias` | `bool` | `True` | Whether linear layers have bias |
 | `dropout_p` | `float` | `0.0` | Dropout probability |
@@ -358,6 +382,8 @@ class ModelSpec:
     num_layers: int = 4
     vocab_size: int = 256
     tie_embeddings: bool = True
+    max_position_embeddings: int = 1024
+    output_multiplier: float = 1.0
     logit_softcap: float = 0.0
     z_loss_coef: float = 0.0
     block_spec: BlockSpec = field(default_factory=lambda: BlockSpec(family="gpt2"))
@@ -408,6 +434,8 @@ Complete model architecture specification.
 | `num_layers` | `int` | `4` | Number of transformer blocks |
 | `vocab_size` | `int` | `256` | Vocabulary size |
 | `tie_embeddings` | `bool` | `True` | Tie input embedding and LM head weights |
+| `max_position_embeddings` | `int` | `1024` | Serialized maximum position count |
+| `output_multiplier` | `float` | `1.0` | Scale applied to raw LM-head logits before any softcap |
 | `logit_softcap` | `float` | `0.0` | Logit soft-capping (0=disabled, >0=tanh softcap) |
 | `z_loss_coef` | `float` | `0.0` | Z-loss coefficient. `>0` adds `z_loss_coef * mean(logsumexp(logits, -1) ** 2)` to the token cross-entropy, anchoring the log-partition so the logit scale cannot drift over a long pretraining run. `0.0` reproduces plain cross-entropy exactly. Used by `gpt2_zloss` / `gpt2_stable` at `1e-4` |
 | `block_spec` | `BlockSpec` | GPT-2 defaults | Per-block architecture spec |
@@ -495,6 +523,7 @@ when constructing fine-tuning graphs.
 | `build_gpt2_diff_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + Differential Transformer attention; sets `attention_variant="differential"` and `diff_lambda_init=0.8` |
 | `build_gpt2_stable_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + z-loss and QK-norm stacked; the dense pretraining-stability recipe |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
+| `build_muse_glimmer_spec(**kwargs)` | muse_glimmer | dense | eager | Exact 30B text decoder: asymmetric GQA, 3-local/1-global RoPE/NoPE, gated attention, four centered norms, and an untied softcapped head; strict native BF16/K-Quant text, DFlash, native AR/SFT/LoRA/QLoRA, and CPU vision are separately artifact-gated |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |
 | `build_llama_fast_megakernel_spec(**kwargs)` | llama | dense | megakernel | LLaMA-fast shape with fused runtime metadata |

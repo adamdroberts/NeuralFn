@@ -6,8 +6,8 @@ NeuralFn ships a template system that generates complete, trainable transformer 
 
 Three dataclasses define a model:
 
-- **`ModelSpec`** -- top-level model dimensions: `model_dim`, `num_layers`, `vocab_size`, `tie_embeddings`, `logit_softcap`, plus the block and template specs.
-- **`BlockSpec`** -- per-block architecture: norm type, MLP type, positional encoding, attention backend, head counts, MoE settings, compression, adapter.
+- **`ModelSpec`** -- top-level model dimensions: `model_dim`, `num_layers`, `vocab_size`, `tie_embeddings`, `max_position_embeddings`, `output_multiplier`, `logit_softcap`, plus the block and template specs.
+- **`BlockSpec`** -- per-block architecture: norm type/layout, exact MLP width, positional encoding, attention backend, explicit head/attention widths, optional heterogeneous `LayerAttentionSpec` schedule, MoE settings, compression, adapter.
 - **`TemplateSpec`** -- high-level switches: `objective` (ar, diffusion, jepa, seq2seq, sft, dpo, ppo, reward_model), `backbone`, `tokenization`, `sparsity` (dense, moe), `router_mode`, `compression`, `adapter`, `runtime` (eager, compile, megakernel), and `backend_capabilities`.
 
 ---
@@ -58,6 +58,7 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `gpt2_diff` | `build_gpt2_diff_spec` | gpt2 | ar | dense | GPT-2 + Differential Transformer attention (`attention_variant="differential"`, `diff_lambda_init=0.8`) |
 | `gpt2_stable` | `build_gpt2_stable_spec` | gpt2 | ar | dense | GPT-2 + z-loss **and** QK-norm; the stacked pretraining-stability recipe, ~no throughput cost |
 | `llama` | `build_llama_spec` | llama | ar | dense | RMSNorm, SwiGLU, RoPE, GQA |
+| `muse_glimmer` | `build_muse_glimmer_spec` | muse_glimmer | ar | dense | Exact Muse Glimmer text decoder: non-square GQA, local/local/local/global RoPE/NoPE, gated attention, centered sandwich RMSNorms, untied head and ordered multiplier/softcap. Strict BF16/K-Quant CPU and CUDA text execution, DFlash, native AR/SFT/LoRA/QLoRA, and CPU vision are separately artifact-gated. |
 | `moe` / `mixllama` | `build_mixllama_spec` | mixllama | ar | moe | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | `build_llama_fast_spec` | llama | ar | dense | Like llama + `torch.compile` |
 | `mixllama_fast` | `build_mixllama_fast_spec` | mixllama | ar | moe | Like moe + `torch.compile` |
@@ -153,7 +154,7 @@ opening datasets or resolving token shards. The JSON action lists every shipped
 template selector plus `gpt` and `gpt3`, reports `token_shards_resolved: false`,
 and includes `selected_graph_support_status` plus
 `selected_graph_native_runnable` for each selector. This no-data catalog reports
-selector/family reachability, not graph-authored execution proof. All 66 shipped
+selector/family reachability, not graph-authored execution proof. All 67 shipped
 presets lower structurally into Native IR, but only seven reviewed GPT-2
 profiles (`gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
 `gpt2_softcap`, `gpt2_stable`, and `gpt2_zloss`), exact canonical `llama`

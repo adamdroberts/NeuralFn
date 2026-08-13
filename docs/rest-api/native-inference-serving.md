@@ -42,7 +42,7 @@ resource shapes for the bounded fields implemented here.
 | `GET` | `/health` | Loaded model, backend, effective capabilities, and queue state |
 | `GET` | `/v1/models` | OpenAI-shaped list containing the one served model |
 | `GET` | `/v1/models/{model}` | Retrieve the served model or return `model_not_found` |
-| `POST` | `/v1/chat/completions` | One text completion, buffered or streamed |
+| `POST` | `/v1/chat/completions` | One buffered or streamed completion; jointly proven Muse Glimmer artifacts also accept bounded image input |
 | `POST` | `/v1/responses` | Create a text response, or a jointly gated buffered constrained/function response |
 | `GET` | `/v1/responses/{id}` | Retrieve JSON, or replay an originally streamed background response with `stream=true` and optional `starting_after` |
 | `DELETE` | `/v1/responses/{id}` | Delete a terminal stored response and return `{id, object: "response", deleted: true}` |
@@ -105,8 +105,9 @@ across both SDK modules; the optional resident case was separately proved live.
 
 This evidence is intentionally narrower than full current-official
 compatibility. Only the constrained schema and forced-function profiles below
-are claimed; broader tools/schemas, multimodal input, non-stored background
-work, direct/incremental production HTTP/2 proxy behavior, representative trained and all shipped
+are claimed; multimedia beyond the separately gated Muse Glimmer Chat image
+contract, broader tools/schemas, non-stored background work,
+direct/incremental production HTTP/2 proxy behavior, representative trained and all shipped
 model/tokenizer artifacts, and portable OpenAI compaction still fail closed or remain
 local as documented below. Lower-level ASGI tests separately cover incremental delivery and both
 foreground disconnect cancellation and background disconnect continuation;
@@ -119,7 +120,10 @@ The bounded first milestone accepts these request fields:
 
 - `model` (must match the configured served name)
 - non-empty `messages` with `developer`, `system`, `user`, or `assistant` roles
-- string content or arrays containing text parts only
+- string content or arrays containing text parts
+- for a jointly proven Muse Glimmer vision artifact, `image_url` parts on user
+  messages whose URL is a base64 `data:image/*` URL and whose optional detail is
+  `auto` or `high`
 - `temperature`, `top_p`, and `seed`
 - `max_completion_tokens` or the legacy `max_tokens` alias
 - `n`, which must equal `1`
@@ -127,9 +131,12 @@ The bounded first milestone accepts these request fields:
 
 All other fields fail with `code: "unsupported_feature"`; they are never
 ignored. In particular, tools/tool calls, structured output, logprobs,
-penalties, stop strings, image/audio/file content, storage, and reasoning modes
-are unavailable. The server validates prompt plus reserved output tokens
-against the artifact's declared context limit before queue admission.
+penalties, stop strings, audio/file/video content, storage, and reasoning modes
+are unavailable. Image parts fail unless the loaded artifact and binding prove
+Muse Glimmer vision. External image URLs are never fetched; each decoded data
+URL is capped at 32 MiB and 100 million source pixels. The server validates the
+expanded media prompt plus reserved output tokens against the artifact's
+declared context limit before queue admission.
 
 Example:
 
@@ -142,6 +149,26 @@ curl http://127.0.0.1:8000/v1/chat/completions \
     "max_completion_tokens": 32,
     "temperature": 0
   }'
+```
+
+For a CPU vision-capable Muse Glimmer artifact, the message content may mix
+text and one or more image parts:
+
+```json
+{
+  "model": "muse-glimmer",
+  "messages": [{
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "Describe this image."},
+      {"type": "image_url", "image_url": {
+        "url": "data:image/png;base64,iVBORw0KGgo...",
+        "detail": "auto"
+      }}
+    ]
+  }],
+  "max_completion_tokens": 64
+}
 ```
 
 A non-streamed response uses the OpenAI `chat.completion` shape and includes
@@ -454,7 +481,7 @@ This is the compatible field/control surface, not a claim that NeuralFn
 reproduces OpenAI's exact payload-size normalization algorithm.
 `include` and `include[]` are accepted on retrieval for the official SDK query
 shape, but they do not enable tools, hosted resources, reasoning, or non-empty
-logprobs in this text-only server.
+logprobs in the text-only Responses surface.
 
 The ledger allocates contiguous sequence numbers transactionally and permits
 one terminal event. Success commits the response snapshot, output item,
@@ -630,6 +657,23 @@ invalid Bearer credentials are `401`, durable lineage/revision conflicts are
 failures are normalized to `500` without exposing internal paths.
 
 ## Current artifact boundary
+
+Muse Glimmer uses its strict pinned family converters rather than generic
+graph migration. Authenticated BF16 and official K-Quant-Dynamic/K-Quant-17GB
+bundles can serve text through the resident C++ CPU or whole-model CUDA text
+runner. An authenticated BF16 or packed `dflash` companion enables startup
+policy `--speculative-decoding off|auto|required`; a full-BF16 CPU artifact can
+serve embedded vision, and a packed CPU artifact can attach the official
+still-image `mmproj`. The current binding advertises `vision_cuda=false`, so a
+CUDA load that requests vision fails before a model/session handle is created.
+
+`--weight-precision auto|bf16|k-quant-dynamic|k-quant-17gb`,
+`--speculative-decoding`, and repeated `--companion-checkpoint` values are
+startup-only server policy. CUDA `auto` selects a profile before load using
+authenticated resident/workspace/cache/session byte plans and current free
+VRAM; an explicit profile never downgrades. The Glimmer bundle supplies its
+authenticated `tokenizer.json` and exact ATEM renderer, and `--chat-template
+auto` must select that contract—`plain_roles` is not a Glimmer fallback.
 
 The compiled resident engine currently supports the seven reviewed dense GPT
 preset topologies (`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and softcap)

@@ -6,6 +6,10 @@ SOURCES=(
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_binding.cpp"
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_dense.cpp"
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_llama.cpp"
+  "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_glimmer.cpp"
+  "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_glimmer_vision.cpp"
+  "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_glimmer_assistant.cpp"
+  "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_glimmer_cuda.cpp"
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_moe.cpp"
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_tile_turboquant.cpp"
   "${ROOT_DIR}/neuralfn/csrc/native_gpt2/resident_turboquant.cpp"
@@ -17,6 +21,6 @@ PY_INCLUDES="$("${PYTHON_BIN}" -c 'import sysconfig; paths = sysconfig.get_paths
 OUT="${1:-${ROOT_DIR}/neuralfn/_native_inference${EXT_SUFFIX}}"
 
 mkdir -p "$(dirname "${OUT}")"
-"${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic -fPIC -shared ${PY_INCLUDES} \
+"${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic -pthread -fPIC -shared ${PY_INCLUDES} \
   "${SOURCES[@]}" -ldl -o "${OUT}"
 printf '%s\n' "${OUT}"

@@ -25,6 +25,7 @@ STRICT_TILE_OPS_LIB="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB:-${ROOT_DIR}/bui
 MISSING_TARGETS=(
   nfn_gpt2_evo_native_train
   nfn_nanogpt_native_train
+  nfn_muse_glimmer_native_train
   nfn_llama_native_train
   nfn_mixllama_native_train
   nfn_jepa_native_train

@@ -115,7 +115,7 @@ canonical target and optional exclusive IR/plan materialization. Require
 `gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`, canonical `llama`, and its exact
 compile-runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`,
 and `mixllama_fast`, plus trusted-planner proof-bound `gpt2_diff` training, are
-ready after exact validation (13 ready; 53 blocked). `gpt2_diff` migration and
+ready after exact validation (13 ready; 54 blocked). `gpt2_diff` migration and
 resident inference remain blocked. Materialized graph training requires the
 exact `graph_file` / `graph_fingerprint` / `graph_preflight_proof` triplet; the
 unkeyed proof digest is local-handoff integrity, not caller authenticity. Its
@@ -166,7 +166,7 @@ Use `native_lowering_specs()`, `native_trainer_specs()`,
 `registered_native_module_types()`, `classify_native_model()`, and
 `capability_proof_for()` for deterministic capability inspection. Do not infer
 runtime support from structural lowering or trainer registration. Although all
-66 shipped text presets structurally lower, trainer registration and executable
+67 shipped text presets structurally lower, trainer registration and executable
 routing are not forward proof. NanoGPT specifically remains blocked because its
 bias-free/dropout graph differs from the biased, dropout-free shared dense-v5
 contract; require false persistence/forward/resident gates for all three
@@ -268,6 +268,19 @@ When code needs the exact profile string, import the public module constant
 `CPU_TURBOQUANT_SESSION_PREFIX_COW_PROFILE` from
 `neuralfn.native_inference` instead of duplicating it; importing the constant
 does not prove or enable the capability.
+
+Muse Glimmer is a separate strict resident family. Use
+`NativeModelLoadConfig(runtime="cpu"|"native-cuda", weight_precision="auto"|
+"bf16"|"k-quant-dynamic"|"k-quant-17gb", companion_checkpoints=(...),
+speculative_decoding="off"|"auto"|"required")` and pass it as
+`NativeInferenceModel.load(..., load_config=...)`. Weight selection must remain
+independent from `KVCacheConfig`. CUDA `auto` queries and budgets current free
+VRAM before model creation; explicit precision never downgrades; CPU `auto`
+uses the authenticated primary. DFlash, mmproj, and native LoRA companions
+must be jointly proven by manifest and binding and bound to the selected target
+digest. Glimmer exposes `encode_images()`, `encode_videos()`, and
+`prefill_with_embeddings()` only when the exact media ABI is effective.
+`vision_cuda` remains false and must fail before a CUDA mmproj load.
 For either COW path, detachment is transactional: failed/cancelled appends
 restore the original shared allocation and ownership/detach telemetry before
 surfacing the error. These remain the native session-fork primitives and do not
@@ -301,8 +314,9 @@ All other binding exceptions poison the session.
 `neuralfn.native_serve` is a separate inference-only FastAPI application for
 artifacts that already pass those resident gates. It loads one model before
 bind, creates an isolated session per request, bounds admission around one
-worker, and implements Models plus buffered/streamed text-only Chat
-Completions. Supplying `--state-db` additionally mounts the bounded text
+worker, and implements Models plus buffered/streamed bounded Chat Completions.
+Chat is text by default; a jointly proven CPU Muse Glimmer vision artifact may
+accept base64 image data URLs. Supplying `--state-db` additionally mounts the bounded text
 Responses/Conversations subset, API-key-scoped lineage and local compaction,
 semantic Responses SSE, and durable background/cancel processing. It does not
 provide a subprocess fallback. `NativeServeConfig.prefix_cache_capacity`

@@ -87,6 +87,7 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `nanogpt` | GPT-2 style | LayerNorm, GELU MLP, absolute position embeddings |
 | `gpt2` | GPT-2 | LayerNorm, GELU MLP, absolute pos, linear bias |
 | `llama` | LLaMA | RMSNorm, SwiGLU, RoPE, GQA |
+| `muse_glimmer` | Muse Glimmer 30B text decoder | Asymmetric GQA, 3-local/1-global RoPE/NoPE, gated attention, centered sandwich RMSNorms, exact untied logit transform |
 | `moe` / `mixllama` | LLaMA + MoE | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | LLaMA + compile | Like llama with `torch.compile` |
 | `mixllama_fast` | MoE + compile | Like moe with `torch.compile` |
@@ -107,6 +108,14 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `kv_pca_llama` | PCA KV cache | PCA-compressed keys/values |
 | `deepseek_v3` | DeepSeek-V3 | MLA + auxfree-balanced MoE + shared experts |
 | `deepseek_v4` | DeepSeek-V4-Pro | NSA attention + auxfree MoE + mHC residuals + QK-norm + FP8 |
+
+Muse Glimmer additionally exposes separate
+`build_muse_glimmer_assistant_graph()`, `build_muse_glimmer_vision_graph()`,
+and media-fusion builders. Keep them separate from the ordinary autoregressive
+root. Its SFT, LoRA/NF4-QLoRA, DPO, reward, and PPO wrappers must all use the
+shared exact Glimmer body; never rebuild a generic two-norm LLaMA body inside a
+fine-tuning root. Native K-Quant and DFlash execution is an artifact/binding
+capability, not something the Torch preset may infer.
 | `gemma3` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + softcap |
 
 For MoE presets, `mlp_multiplier` remains floating-point through graph
@@ -267,7 +276,7 @@ assert result.report.compatible
 The graph is validated and all variants are resolved before the checkpoint is
 opened. `.pt` loading happens only in an isolated `weights_only` worker, and
 the destination must not exist. The source graph/checkpoint are unchanged.
-Structural lowering covers all 66 shipped text presets. Trainer registration
+Structural lowering covers all 67 shipped text presets. Trainer registration
 does not prove execution: NanoGPT's bias-free/dropout graph is not represented
 by the biased, dropout-free dense-v5 loop, so all NanoGPT selectors retain
 false persistence/forward/resident gates. Canonical LLaMA is separately

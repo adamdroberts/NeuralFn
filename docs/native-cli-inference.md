@@ -91,6 +91,43 @@ canonical LLaMA. Text prompts and interactive transcript rendering still need
 an artifact-declared supported tokenizer; the fallback does not fabricate text
 or make the artifact HTTP-serving-ready.
 
+### Muse Glimmer weights and speculative decoding
+
+Strict Muse Glimmer bundles additionally accept:
+
+- `--runtime auto|cpu|native-cuda`;
+- `--weight-precision auto|bf16|k-quant-dynamic|k-quant-17gb`;
+- `--speculative-decoding off|auto|required`; and
+- repeatable `--companion-checkpoint dflash|mmproj|lora`.
+
+```bash
+nfn infer \
+  --checkpoint artifacts/glimmer-kquant \
+  --runtime native-cuda \
+  --weight-precision auto \
+  --speculative-decoding auto \
+  --companion-checkpoint dflash \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --prompt "Explain the local/global attention schedule." \
+  --native-info
+```
+
+CUDA `auto` queries free/total memory on the selected device before model
+allocation and budgets the authenticated target, enabled companions, load
+staging, workspace, hybrid target/assistant KV, configured context/session
+state, verification scratch, and reserve. It chooses BF16, Dynamic, then 17GB
+in fidelity order only among candidates that fit and whose kernel profile the
+binding proves. Explicit precision is a strict pin. CPU `auto` uses the
+authenticated primary and does not query VRAM.
+
+DFlash requires the lossless full/hybrid target cache. `auto` may omit an
+unavailable assistant only before model/session mutation; `required` fails.
+Every accepted target/assistant block is committed transactionally and emitted
+one token at a time. `--native-info` reports requested/effective precision,
+selection proof and VRAM bytes, effective speculation, and acceptance counters.
+A loaded native LoRA disables the stock assistant unless an exact adapted
+assistant lineage is supplied.
+
 ## Interactive transcript
 
 When both stdin and stdout are TTYs, the default mode is `transcript`:
@@ -127,9 +164,11 @@ mode flag.
 `--chat-template auto` prefers a supported template from the Native Execution
 manifest. The lean renderer accepts `plain_roles` or a literal `{messages}` /
 `{{messages}}` placeholder, with an optional `{assistant_prompt}` /
-`{{assistant_prompt}}` marker. Arbitrary Jinja is not evaluated. If auto cannot
-use the artifact template, the CLI emits one warning and uses `plain_roles` for
-that process. Select `--chat-template plain_roles` to make the fallback
+`{{assistant_prompt}}` marker. Arbitrary Jinja is not evaluated. Muse Glimmer
+uses its dedicated deterministic ATEM renderer and exact tokenizer hashes; it
+never falls back to `plain_roles`. For other families, if auto cannot use the
+artifact template, the CLI emits one warning and uses `plain_roles` for that
+process. Select `--chat-template plain_roles` to make the fallback
 explicit, or pass a data-only template file:
 
 ```text
@@ -197,7 +236,10 @@ positive subnormals, remain ordinary sampling requests; negative and non-finite
 values are rejected.
 
 This CLI path proves real resident inference for the seven reviewed dense-v5
-topologies, canonical LLaMA, and exact standard-MoE profiles. It does not make other native families
+topologies, canonical LLaMA, exact standard-MoE profiles, and strict Muse
+Glimmer BF16/K-Quant text profiles. Glimmer's CUDA text runner is separate from
+the legacy hybrid Tile attention path above; full-BF16/mmproj vision remains
+CPU-only and a CUDA mmproj request fails before load. It does not make other native families
 resident-ready and does not add graph interpretation, tools, persistence,
 batching, or server state. The standalone HTTP surface is documented separately in
 [Native Inference Serving](rest-api/native-inference-serving.md).

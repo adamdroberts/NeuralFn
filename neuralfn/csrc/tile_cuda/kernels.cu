@@ -1137,6 +1137,874 @@ __device__ __forceinline__ float quantized_weight_value_device(
   return weight[row * input_dim + col];
 }
 
+__device__ __forceinline__ float packed_half_to_float_device(
+    const std::uint8_t* bytes) {
+  return __half2float(*reinterpret_cast<const __half*>(bytes));
+}
+
+__device__ __forceinline__ void packed_k_scale_min_device(
+    const std::uint8_t* scales,
+    int index,
+    int* scale,
+    int* minimum) {
+  if (index < 4) {
+    *scale = scales[index] & 63;
+    *minimum = scales[index + 4] & 63;
+    return;
+  }
+  *scale = (scales[index + 4] & 0x0f) | ((scales[index - 4] >> 6) << 4);
+  *minimum = (scales[index + 4] >> 4) | ((scales[index] >> 6) << 4);
+}
+
+__device__ __forceinline__ float packed_weight_value_device(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    std::int64_t row,
+    std::int64_t col) {
+  const std::uint8_t* row_data =
+      descriptor.data + row * descriptor.row_stride_bytes;
+  if (descriptor.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_F32) {
+    return reinterpret_cast<const float*>(row_data)[col];
+  }
+  if (descriptor.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_BF16) {
+    return __bfloat162float(reinterpret_cast<const __nv_bfloat16*>(row_data)[col]);
+  }
+  if (descriptor.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64) {
+    constexpr float codebook[16] = {
+        -1.0f, -0.6961928009986877f, -0.5250730514526367f,
+        -0.39491748809814453f, -0.28444138169288635f,
+        -0.18477343022823334f, -0.09105003625154495f, 0.0f,
+        0.07958029955625534f, 0.16093020141124725f,
+        0.24611230194568634f, 0.33791524171829224f,
+        0.44070982933044434f, 0.5626170039176941f,
+        0.7229568362236023f, 1.0f};
+    const std::uint8_t* group = row_data + (col / 64) * 36;
+    const float scale = *reinterpret_cast<const float*>(group);
+    const std::uint8_t packed = group[4 + (col % 64) / 2];
+    const int code = (col & 1) == 0 ? packed & 0x0f : packed >> 4;
+    return scale * codebook[code];
+  }
+
+  const std::int64_t block_index = col / 256;
+  const int within = static_cast<int>(col % 256);
+  const std::uint8_t* block = row_data;
+  if (descriptor.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K) {
+    block += block_index * 144;
+    const float d = packed_half_to_float_device(block);
+    const float dmin = packed_half_to_float_device(block + 2);
+    const std::uint8_t* scales = block + 4;
+    const std::uint8_t* quants = block + 16;
+    const int group = within / 64;
+    const int lane = within % 32;
+    const bool high = (within % 64) >= 32;
+    int scale = 0;
+    int minimum = 0;
+    packed_k_scale_min_device(scales, group * 2 + (high ? 1 : 0), &scale, &minimum);
+    const int quant = high ? (quants[group * 32 + lane] >> 4)
+                           : (quants[group * 32 + lane] & 0x0f);
+    return d * static_cast<float>(scale * quant) -
+        dmin * static_cast<float>(minimum);
+  }
+  if (descriptor.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K) {
+    block += block_index * 176;
+    const float d = packed_half_to_float_device(block);
+    const float dmin = packed_half_to_float_device(block + 2);
+    const std::uint8_t* scales = block + 4;
+    const std::uint8_t* high_bits = block + 16;
+    const std::uint8_t* low_bits = block + 48;
+    const int group = within / 64;
+    const int lane = within % 32;
+    const bool high_half = (within % 64) >= 32;
+    int scale = 0;
+    int minimum = 0;
+    packed_k_scale_min_device(
+        scales, group * 2 + (high_half ? 1 : 0), &scale, &minimum);
+    const int low = high_half ? (low_bits[group * 32 + lane] >> 4)
+                              : (low_bits[group * 32 + lane] & 0x0f);
+    const int mask = (high_half ? 2 : 1) << (2 * group);
+    const int quant = low + ((high_bits[lane] & mask) ? 16 : 0);
+    return d * static_cast<float>(scale * quant) -
+        dmin * static_cast<float>(minimum);
+  }
+
+  // Q6_K: [128 low-nibble bytes][64 high-two-bit bytes]
+  // [16 signed scales][fp16 super-block scale].  The descriptor validator
+  // guarantees that this final branch is Q6_K.
+  block += block_index * 210;
+  const std::uint8_t* low_bits = block;
+  const std::uint8_t* high_bits = block + 128;
+  const std::int8_t* scales = reinterpret_cast<const std::int8_t*>(block + 192);
+  const float d = packed_half_to_float_device(block + 208);
+  const int half = within / 128;
+  const int position = within % 128;
+  const int quarter = position / 32;
+  const int lane = position % 32;
+  const std::uint8_t low_byte =
+      low_bits[half * 64 + lane + ((quarter == 1 || quarter == 3) ? 32 : 0)];
+  const std::uint8_t high_byte = high_bits[half * 32 + lane];
+  int quant = 0;
+  if (quarter == 0) {
+    quant = (low_byte & 0x0f) | (((high_byte >> 0) & 3) << 4);
+  } else if (quarter == 1) {
+    quant = (low_byte & 0x0f) | (((high_byte >> 2) & 3) << 4);
+  } else if (quarter == 2) {
+    quant = (low_byte >> 4) | (((high_byte >> 4) & 3) << 4);
+  } else {
+    quant = (low_byte >> 4) | (((high_byte >> 6) & 3) << 4);
+  }
+  const int scale_index = half * 8 + quarter * 2 + lane / 16;
+  return d * static_cast<float>(scales[scale_index]) * static_cast<float>(quant - 32);
+}
+
+__global__ void packed_weight_dequantize_float32_kernel(
+    NfnNativeTilePackedWeightDescriptorV1 descriptor,
+    float* __restrict__ output) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = descriptor.output_dim * descriptor.input_dim;
+  if (index >= count) {
+    return;
+  }
+  output[index] = packed_weight_value_device(
+      descriptor, index / descriptor.input_dim, index % descriptor.input_dim);
+}
+
+__global__ void linear_packed_weight_float32_kernel(
+    NfnNativeTilePackedWeightDescriptorV1 descriptor,
+    const float* __restrict__ input,
+    const float* __restrict__ bias,
+    float* __restrict__ output,
+    std::int64_t rows,
+    bool has_bias) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = rows * descriptor.output_dim;
+  if (index >= count) {
+    return;
+  }
+  const std::int64_t input_row = index / descriptor.output_dim;
+  const std::int64_t output_col = index % descriptor.output_dim;
+  float value = has_bias ? bias[output_col] : 0.0f;
+  for (std::int64_t input_col = 0; input_col < descriptor.input_dim; ++input_col) {
+    value += input[input_row * descriptor.input_dim + input_col] *
+        packed_weight_value_device(descriptor, output_col, input_col);
+  }
+  output[index] = value;
+}
+
+__global__ void linear_backward_input_packed_weight_float32_kernel(
+    NfnNativeTilePackedWeightDescriptorV1 descriptor,
+    const float* __restrict__ grad_output,
+    float* __restrict__ grad_input,
+    std::int64_t rows) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = rows * descriptor.input_dim;
+  if (index >= count) {
+    return;
+  }
+  const std::int64_t input_row = index / descriptor.input_dim;
+  const std::int64_t input_col = index % descriptor.input_dim;
+  float value = 0.0f;
+  for (std::int64_t output_col = 0; output_col < descriptor.output_dim; ++output_col) {
+    value += grad_output[input_row * descriptor.output_dim + output_col] *
+        packed_weight_value_device(descriptor, output_col, input_col);
+  }
+  grad_input[index] = value;
+}
+
+__global__ void glimmer_embedding_gather_float32_v1_kernel(
+    NfnNativeTilePackedWeightDescriptorV1 descriptor,
+    std::int64_t token_id,
+    float* __restrict__ output) {
+  const std::int64_t col =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (col < descriptor.input_dim) {
+    output[col] = packed_weight_value_device(descriptor, token_id, col);
+  }
+}
+
+__global__ void glimmer_embedding_batch_i32_float32_v1_kernel(
+    NfnNativeTilePackedWeightDescriptorV1 descriptor,
+    const std::int32_t* token_ids,
+    float* __restrict__ output,
+    std::int64_t rows) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = rows * descriptor.input_dim;
+  if (index >= count) return;
+  const std::int64_t row = index / descriptor.input_dim;
+  const std::int64_t col = index % descriptor.input_dim;
+  output[index] = packed_weight_value_device(descriptor, token_ids[row], col);
+}
+
+__global__ void glimmer_rms_norm_affine_float32_v1_kernel(
+    const float* __restrict__ input,
+    NfnNativeTilePackedWeightDescriptorV1 weight,
+    bool has_weight,
+    float* __restrict__ output,
+    std::int64_t width,
+    float eps,
+    bool centered) {
+  __shared__ float partials[256];
+  __shared__ float inverse_rms;
+  const std::int64_t row = blockIdx.x;
+  float square_sum = 0.0f;
+  for (std::int64_t col = threadIdx.x; col < width; col += blockDim.x) {
+    const float value = input[row * width + col];
+    square_sum = fmaf(value, value, square_sum);
+  }
+  partials[threadIdx.x] = square_sum;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    if (threadIdx.x < stride) {
+      partials[threadIdx.x] += partials[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    inverse_rms = rsqrtf(partials[0] / static_cast<float>(width) + eps);
+  }
+  __syncthreads();
+  for (std::int64_t col = threadIdx.x; col < width; col += blockDim.x) {
+    float scale = 1.0f;
+    if (has_weight) {
+      scale = packed_weight_value_device(weight, 0, col);
+      if (centered) {
+        scale += 1.0f;
+      }
+    }
+    output[row * width + col] = input[row * width + col] * inverse_rms * scale;
+  }
+}
+
+__global__ void glimmer_positioned_rope_float32_v1_kernel(
+    float* query,
+    float* key,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout) {
+  const std::int64_t total_heads = query_heads + kv_heads;
+  const std::int64_t head = blockIdx.x;
+  const std::int64_t pair =
+      static_cast<std::int64_t>(blockIdx.y) * blockDim.x + threadIdx.x;
+  if (head >= total_heads || pair >= head_dim / 2) {
+    return;
+  }
+  float* values = head < query_heads
+      ? query + head * head_dim
+      : key + (head - query_heads) * head_dim;
+  const std::int64_t first =
+      layout == NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED ? pair * 2 : pair;
+  const std::int64_t second =
+      layout == NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED ? pair * 2 + 1
+                                                        : pair + head_dim / 2;
+  const float angle = static_cast<float>(position) /
+      powf(theta, static_cast<float>(2 * pair) / static_cast<float>(head_dim));
+  float sine = 0.0f;
+  float cosine = 0.0f;
+  sincosf(angle, &sine, &cosine);
+  const float lhs = values[first];
+  const float rhs = values[second];
+  values[first] = fmaf(-rhs, sine, lhs * cosine);
+  values[second] = fmaf(lhs, sine, rhs * cosine);
+}
+
+__global__ void glimmer_gqa_decode_float32_v1_kernel(
+    NfnNativeTileGlimmerGqaDecodeDescriptorV1 descriptor) {
+  __shared__ float reductions[256];
+  __shared__ float shared_maximum;
+  __shared__ float shared_denominator;
+  __shared__ float shared_alpha;
+  __shared__ float shared_beta;
+  const std::int64_t query_head = blockIdx.x;
+  const std::int64_t dim = threadIdx.x;
+  if (query_head >= descriptor.query_heads) {
+    return;
+  }
+  const std::int64_t kv_head =
+      query_head * descriptor.kv_heads / descriptor.query_heads;
+  const float* query = descriptor.query + query_head * descriptor.head_dim;
+  float accumulated = 0.0f;
+  if (threadIdx.x == 0) {
+    shared_maximum = -CUDART_INF_F;
+    shared_denominator = 0.0f;
+  }
+  __syncthreads();
+  for (std::int64_t key_position = descriptor.first_key_position;
+       key_position <= descriptor.position;
+       ++key_position) {
+    const bool current = key_position == descriptor.position;
+    const std::int64_t slot = key_position % descriptor.cache_capacity;
+    const std::int64_t cache_index =
+        slot * descriptor.cache_row_stride + kv_head * descriptor.head_dim + dim;
+    float key_value = 0.0f;
+    float value_value = 0.0f;
+    if (dim < descriptor.head_dim) {
+      if (current) {
+        key_value = descriptor.current_key[kv_head * descriptor.head_dim + dim];
+        value_value = descriptor.current_value[kv_head * descriptor.head_dim + dim];
+      } else {
+        key_value = __bfloat162float(
+            reinterpret_cast<const __nv_bfloat16*>(descriptor.key_cache_bf16)[cache_index]);
+        value_value = __bfloat162float(
+            reinterpret_cast<const __nv_bfloat16*>(descriptor.value_cache_bf16)[cache_index]);
+      }
+      reductions[threadIdx.x] = query[dim] * key_value;
+    } else {
+      reductions[threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+      if (threadIdx.x < stride) {
+        reductions[threadIdx.x] += reductions[threadIdx.x + stride];
+      }
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      const float score = reductions[0] * descriptor.scale;
+      const float next_maximum = fmaxf(shared_maximum, score);
+      shared_alpha = expf(shared_maximum - next_maximum);
+      shared_beta = expf(score - next_maximum);
+      shared_denominator = shared_denominator * shared_alpha + shared_beta;
+      shared_maximum = next_maximum;
+    }
+    __syncthreads();
+    if (dim < descriptor.head_dim) {
+      accumulated = accumulated * shared_alpha + value_value * shared_beta;
+    }
+    __syncthreads();
+  }
+  if (dim < descriptor.head_dim) {
+    descriptor.output[query_head * descriptor.head_dim + dim] =
+        accumulated / shared_denominator;
+  }
+}
+
+__global__ void glimmer_cache_commit_bf16_v1_kernel(
+    NfnNativeTileGlimmerCacheCommitDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t width = descriptor.kv_heads * descriptor.head_dim;
+  if (index >= width) {
+    return;
+  }
+  const std::int64_t slot = descriptor.position % descriptor.cache_capacity;
+  const std::int64_t cache_index = slot * descriptor.cache_row_stride + index;
+  reinterpret_cast<__nv_bfloat16*>(descriptor.key_cache_bf16)[cache_index] =
+      __float2bfloat16(descriptor.current_key[index]);
+  reinterpret_cast<__nv_bfloat16*>(descriptor.value_cache_bf16)[cache_index] =
+      __float2bfloat16(descriptor.current_value[index]);
+}
+
+__global__ void dflash_block_attention_float32_v1_kernel(
+    NfnNativeTileDFlashBlockAttentionDescriptorV1 descriptor) {
+  __shared__ float reductions[256];
+  __shared__ float shared_maximum;
+  __shared__ float shared_denominator;
+  __shared__ float shared_alpha;
+  __shared__ float shared_beta;
+  const std::int64_t flat_head = blockIdx.x;
+  const std::int64_t query_row = flat_head / descriptor.query_heads;
+  const std::int64_t query_head = flat_head % descriptor.query_heads;
+  const std::int64_t dim = threadIdx.x;
+  if (query_row >= descriptor.query_rows) {
+    return;
+  }
+  const std::int64_t kv_head =
+      query_head * descriptor.kv_heads / descriptor.query_heads;
+  const float* query = descriptor.query +
+      (query_row * descriptor.query_heads + query_head) * descriptor.head_dim;
+  const std::int64_t query_position = descriptor.context_length + query_row;
+  const bool causal =
+      (descriptor.flags & NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL) != 0;
+  const std::int64_t first_key_position = max(
+      static_cast<std::int64_t>(0),
+      query_position - descriptor.sliding_window + (causal ? 1 : 0));
+  const std::int64_t last_key_position = causal
+      ? query_position
+      : min(descriptor.context_length + descriptor.block_rows - 1,
+            query_position + descriptor.sliding_window);
+  float accumulated = 0.0f;
+  if (threadIdx.x == 0) {
+    shared_maximum = -CUDART_INF_F;
+    shared_denominator = 0.0f;
+  }
+  __syncthreads();
+  for (std::int64_t key_position = first_key_position;
+       key_position <= last_key_position;
+       ++key_position) {
+    const bool block_row = key_position >= descriptor.context_length;
+    const std::int64_t source_row = block_row
+        ? key_position - descriptor.context_length
+        : key_position % descriptor.cache_capacity;
+    const std::int64_t source_index = block_row
+        ? (source_row * descriptor.kv_heads + kv_head) * descriptor.head_dim + dim
+        : source_row * descriptor.cache_row_stride + kv_head * descriptor.head_dim + dim;
+    float key_value = 0.0f;
+    float value_value = 0.0f;
+    if (dim < descriptor.head_dim) {
+      if (block_row) {
+        key_value = descriptor.block_key[source_index];
+        value_value = descriptor.block_value[source_index];
+      } else {
+        key_value = __bfloat162float(
+            reinterpret_cast<const __nv_bfloat16*>(descriptor.key_cache_bf16)[source_index]);
+        value_value = __bfloat162float(
+            reinterpret_cast<const __nv_bfloat16*>(descriptor.value_cache_bf16)[source_index]);
+      }
+      reductions[threadIdx.x] = query[dim] * key_value;
+    } else {
+      reductions[threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+      if (threadIdx.x < stride) {
+        reductions[threadIdx.x] += reductions[threadIdx.x + stride];
+      }
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      const float score = reductions[0] * descriptor.scale;
+      const float next_maximum = fmaxf(shared_maximum, score);
+      shared_alpha = expf(shared_maximum - next_maximum);
+      shared_beta = expf(score - next_maximum);
+      shared_denominator = shared_denominator * shared_alpha + shared_beta;
+      shared_maximum = next_maximum;
+    }
+    __syncthreads();
+    if (dim < descriptor.head_dim) {
+      accumulated = accumulated * shared_alpha + value_value * shared_beta;
+    }
+    __syncthreads();
+  }
+  if (dim < descriptor.head_dim) {
+    descriptor.output[
+        (query_row * descriptor.query_heads + query_head) * descriptor.head_dim + dim] =
+        accumulated / shared_denominator;
+  }
+}
+
+__global__ void glimmer_sigmoid_gate_float32_v1_kernel(
+    const float* __restrict__ values,
+    const float* __restrict__ gate,
+    float* __restrict__ output,
+    std::int64_t count) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index < count) {
+    output[index] = values[index] / (1.0f + expf(-gate[index]));
+  }
+}
+
+__global__ void glimmer_logit_transform_float32_v1_kernel(
+    float* logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index < count) {
+    logits[index] = softcap * tanhf(multiplier * logits[index] / softcap);
+  }
+}
+
+__global__ void glimmer_attention_forward_float32_v1_kernel(
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1 descriptor) {
+  __shared__ float reduction[256];
+  __shared__ float running_max;
+  __shared__ float denominator;
+  __shared__ float alpha;
+  __shared__ float beta;
+  const std::int64_t flat = blockIdx.x;
+  const std::int64_t query_head = flat % descriptor.query_heads;
+  const std::int64_t row = flat / descriptor.query_heads;
+  const std::int64_t batch = row / descriptor.sequence_length;
+  const std::int64_t query_position = row % descriptor.sequence_length;
+  const std::int64_t dim = threadIdx.x;
+  if (batch >= descriptor.batch_size) return;
+  const std::int64_t kv_head =
+      query_head * descriptor.kv_heads / descriptor.query_heads;
+  const std::int64_t first = descriptor.window > 0
+      ? max(static_cast<std::int64_t>(0), query_position - descriptor.window + 1)
+      : 0;
+  const std::int64_t last =
+      (descriptor.flags & NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL) != 0
+          ? query_position
+          : descriptor.sequence_length - 1;
+  const float* query = descriptor.query +
+      ((batch * descriptor.sequence_length + query_position) *
+           descriptor.query_heads + query_head) * descriptor.head_dim;
+  float accumulated = 0.0f;
+  if (threadIdx.x == 0) {
+    running_max = -CUDART_INF_F;
+    denominator = 0.0f;
+  }
+  __syncthreads();
+  for (std::int64_t key_position = first; key_position <= last; ++key_position) {
+    if (descriptor.sequence_ids != nullptr &&
+        descriptor.sequence_ids[batch * descriptor.sequence_length + key_position] !=
+            descriptor.sequence_ids[batch * descriptor.sequence_length + query_position]) {
+      continue;
+    }
+    const std::int64_t kv_offset =
+        ((batch * descriptor.sequence_length + key_position) *
+             descriptor.kv_heads + kv_head) * descriptor.head_dim;
+    const float key_value = dim < descriptor.head_dim
+        ? descriptor.key[kv_offset + dim] : 0.0f;
+    const float value_value = dim < descriptor.head_dim
+        ? descriptor.value[kv_offset + dim] : 0.0f;
+    reduction[threadIdx.x] = dim < descriptor.head_dim
+        ? query[dim] * key_value : 0.0f;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+      if (threadIdx.x < stride) reduction[threadIdx.x] += reduction[threadIdx.x + stride];
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      const float score = reduction[0] * descriptor.scale;
+      const float next_max = fmaxf(running_max, score);
+      alpha = expf(running_max - next_max);
+      beta = expf(score - next_max);
+      denominator = denominator * alpha + beta;
+      running_max = next_max;
+    }
+    __syncthreads();
+    if (dim < descriptor.head_dim) {
+      accumulated = accumulated * alpha + value_value * beta;
+    }
+    __syncthreads();
+  }
+  if (dim < descriptor.head_dim) {
+    descriptor.output[
+        ((batch * descriptor.sequence_length + query_position) *
+             descriptor.query_heads + query_head) * descriptor.head_dim + dim] =
+        accumulated / denominator;
+  }
+  if (threadIdx.x == 0) {
+    descriptor.logsumexp[
+        (batch * descriptor.sequence_length + query_position) *
+            descriptor.query_heads + query_head] = running_max + logf(denominator);
+  }
+}
+
+__global__ void glimmer_attention_backward_query_float32_v1_kernel(
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.query_heads * descriptor.head_dim;
+  if (index >= count) return;
+  const std::int64_t dim = index % descriptor.head_dim;
+  const std::int64_t head_row = index / descriptor.head_dim;
+  const std::int64_t query_head = head_row % descriptor.query_heads;
+  const std::int64_t row = head_row / descriptor.query_heads;
+  const std::int64_t batch = row / descriptor.sequence_length;
+  const std::int64_t query_position = row % descriptor.sequence_length;
+  const std::int64_t kv_head =
+      query_head * descriptor.kv_heads / descriptor.query_heads;
+  const std::int64_t first = descriptor.window > 0
+      ? max(static_cast<std::int64_t>(0), query_position - descriptor.window + 1)
+      : 0;
+  const std::int64_t last =
+      (descriptor.flags & NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL) != 0
+          ? query_position : descriptor.sequence_length - 1;
+  const float* query = descriptor.query + head_row * descriptor.head_dim;
+  const float* grad_output = descriptor.grad_output + head_row * descriptor.head_dim;
+  const float* output = descriptor.output + head_row * descriptor.head_dim;
+  const float lse = descriptor.logsumexp[head_row];
+  float grad = 0.0f;
+  for (std::int64_t key_position = first; key_position <= last; ++key_position) {
+    if (descriptor.sequence_ids != nullptr &&
+        descriptor.sequence_ids[batch * descriptor.sequence_length + key_position] !=
+            descriptor.sequence_ids[batch * descriptor.sequence_length + query_position]) {
+      continue;
+    }
+    const std::int64_t kv_offset =
+        ((batch * descriptor.sequence_length + key_position) *
+             descriptor.kv_heads + kv_head) * descriptor.head_dim;
+    float score = 0.0f;
+    float grad_probability = 0.0f;
+    float output_dot = 0.0f;
+    for (std::int64_t inner = 0; inner < descriptor.head_dim; ++inner) {
+      score += query[inner] * descriptor.key[kv_offset + inner];
+      grad_probability += grad_output[inner] * descriptor.value[kv_offset + inner];
+      output_dot += grad_output[inner] * output[inner];
+    }
+    const float probability = expf(score * descriptor.scale - lse);
+    const float grad_score = probability * (grad_probability - output_dot);
+    grad += grad_score * descriptor.key[kv_offset + dim] * descriptor.scale;
+  }
+  descriptor.grad_query[index] = grad;
+}
+
+__global__ void glimmer_attention_backward_kv_float32_v1_kernel(
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.kv_heads * descriptor.head_dim;
+  if (index >= count) return;
+  const std::int64_t dim = index % descriptor.head_dim;
+  const std::int64_t head_row = index / descriptor.head_dim;
+  const std::int64_t kv_head = head_row % descriptor.kv_heads;
+  const std::int64_t row = head_row / descriptor.kv_heads;
+  const std::int64_t batch = row / descriptor.sequence_length;
+  const std::int64_t key_position = row % descriptor.sequence_length;
+  const std::int64_t query_group = descriptor.query_heads / descriptor.kv_heads;
+  float grad_key = 0.0f;
+  float grad_value = 0.0f;
+  for (std::int64_t group = 0; group < query_group; ++group) {
+    const std::int64_t query_head = kv_head * query_group + group;
+    for (std::int64_t query_position = 0;
+         query_position < descriptor.sequence_length; ++query_position) {
+      const bool causal =
+          (descriptor.flags & NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL) != 0;
+      if ((causal && key_position > query_position) ||
+          (descriptor.window > 0 &&
+           key_position < query_position - descriptor.window + 1) ||
+          (descriptor.sequence_ids != nullptr &&
+           descriptor.sequence_ids[batch * descriptor.sequence_length + key_position] !=
+               descriptor.sequence_ids[batch * descriptor.sequence_length + query_position])) continue;
+      const std::int64_t query_head_row =
+          (batch * descriptor.sequence_length + query_position) *
+              descriptor.query_heads + query_head;
+      const float* query = descriptor.query + query_head_row * descriptor.head_dim;
+      const float* grad_output =
+          descriptor.grad_output + query_head_row * descriptor.head_dim;
+      const float* output = descriptor.output + query_head_row * descriptor.head_dim;
+      const float* key = descriptor.key + head_row * descriptor.head_dim;
+      const float* value = descriptor.value + head_row * descriptor.head_dim;
+      float score = 0.0f;
+      float grad_probability = 0.0f;
+      float output_dot = 0.0f;
+      for (std::int64_t inner = 0; inner < descriptor.head_dim; ++inner) {
+        score += query[inner] * key[inner];
+        grad_probability += grad_output[inner] * value[inner];
+        output_dot += grad_output[inner] * output[inner];
+      }
+      const float probability = expf(
+          score * descriptor.scale - descriptor.logsumexp[query_head_row]);
+      const float grad_score = probability * (grad_probability - output_dot);
+      grad_key += grad_score * query[dim] * descriptor.scale;
+      grad_value += probability * grad_output[dim];
+    }
+  }
+  descriptor.grad_key[index] = grad_key;
+  descriptor.grad_value[index] = grad_value;
+}
+
+__global__ void glimmer_rms_norm_backward_input_float32_v1_kernel(
+    NfnNativeTileGlimmerRmsNormBackwardDescriptorV1 descriptor,
+    NfnNativeTilePackedWeightDescriptorV1 weight,
+    bool has_weight) {
+  __shared__ float square_partials[256];
+  __shared__ float dot_partials[256];
+  __shared__ float inverse_rms;
+  __shared__ float correction;
+  const std::int64_t row = blockIdx.x;
+  float square_sum = 0.0f;
+  float dot_sum = 0.0f;
+  for (std::int64_t col = threadIdx.x; col < descriptor.width; col += blockDim.x) {
+    const float x = descriptor.input[row * descriptor.width + col];
+    const float scale = has_weight
+        ? packed_weight_value_device(weight, 0, col) +
+              (descriptor.centered != 0 ? 1.0f : 0.0f)
+        : 1.0f;
+    square_sum = fmaf(x, x, square_sum);
+    dot_sum = fmaf(descriptor.grad_output[row * descriptor.width + col] * scale,
+                   x, dot_sum);
+  }
+  square_partials[threadIdx.x] = square_sum;
+  dot_partials[threadIdx.x] = dot_sum;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    if (threadIdx.x < stride) {
+      square_partials[threadIdx.x] += square_partials[threadIdx.x + stride];
+      dot_partials[threadIdx.x] += dot_partials[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    inverse_rms = rsqrtf(
+        square_partials[0] / static_cast<float>(descriptor.width) + descriptor.eps);
+    correction = dot_partials[0] * inverse_rms * inverse_rms * inverse_rms /
+        static_cast<float>(descriptor.width);
+  }
+  __syncthreads();
+  for (std::int64_t col = threadIdx.x; col < descriptor.width; col += blockDim.x) {
+    const float x = descriptor.input[row * descriptor.width + col];
+    const float scale = has_weight
+        ? packed_weight_value_device(weight, 0, col) +
+              (descriptor.centered != 0 ? 1.0f : 0.0f)
+        : 1.0f;
+    descriptor.grad_input[row * descriptor.width + col] =
+        descriptor.grad_output[row * descriptor.width + col] * scale * inverse_rms -
+        x * correction;
+  }
+}
+
+__global__ void glimmer_rms_norm_backward_weight_float32_v1_kernel(
+    NfnNativeTileGlimmerRmsNormBackwardDescriptorV1 descriptor) {
+  const std::int64_t col =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (col >= descriptor.width || descriptor.grad_weight == nullptr) return;
+  float grad = 0.0f;
+  for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+    float square_sum = 0.0f;
+    for (std::int64_t inner = 0; inner < descriptor.width; ++inner) {
+      const float x = descriptor.input[row * descriptor.width + inner];
+      square_sum = fmaf(x, x, square_sum);
+    }
+    const float inverse = rsqrtf(
+        square_sum / static_cast<float>(descriptor.width) + descriptor.eps);
+    grad += descriptor.grad_output[row * descriptor.width + col] *
+        descriptor.input[row * descriptor.width + col] * inverse;
+  }
+  descriptor.grad_weight[col] = grad;
+}
+
+__global__ void glimmer_positioned_rope_batch_float32_v1_kernel(
+    float* query,
+    float* key,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t start_position,
+    float theta,
+    std::uint32_t layout,
+    bool inverse) {
+  const std::int64_t pair =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t pairs_per_row =
+      (query_heads + kv_heads) * (head_dim / 2);
+  const std::int64_t count = rows * pairs_per_row;
+  if (pair >= count) return;
+  const std::int64_t row = pair / pairs_per_row;
+  const std::int64_t local = pair % pairs_per_row;
+  const std::int64_t head = local / (head_dim / 2);
+  const std::int64_t frequency = local % (head_dim / 2);
+  float* values = head < query_heads
+      ? query + (row * query_heads + head) * head_dim
+      : key + (row * kv_heads + head - query_heads) * head_dim;
+  const std::int64_t first = layout == NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED
+      ? frequency * 2 : frequency;
+  const std::int64_t second = layout == NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED
+      ? frequency * 2 + 1 : frequency + head_dim / 2;
+  float angle = static_cast<float>(start_position + row) /
+      powf(theta, static_cast<float>(2 * frequency) / static_cast<float>(head_dim));
+  if (inverse) angle = -angle;
+  float sine = 0.0f, cosine = 0.0f;
+  sincosf(angle, &sine, &cosine);
+  const float lhs = values[first], rhs = values[second];
+  values[first] = fmaf(-rhs, sine, lhs * cosine);
+  values[second] = fmaf(lhs, sine, rhs * cosine);
+}
+
+__global__ void glimmer_sigmoid_gate_backward_float32_v1_kernel(
+    const float* values, const float* gate, const float* grad_output,
+    float* grad_values, float* grad_gate, std::int64_t count) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const float sigmoid = 1.0f / (1.0f + expf(-gate[index]));
+  grad_values[index] = grad_output[index] * sigmoid;
+  grad_gate[index] = grad_output[index] * values[index] * sigmoid * (1.0f - sigmoid);
+}
+
+__global__ void glimmer_logit_transform_backward_float32_v1_kernel(
+    const float* transformed, const float* grad_transformed, float* grad_raw,
+    std::int64_t count, float multiplier, float softcap) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const float ratio = transformed[index] / softcap;
+  grad_raw[index] = grad_transformed[index] * multiplier * (1.0f - ratio * ratio);
+}
+
+__global__ void glimmer_masked_cross_entropy_i32_float32_v1_kernel(
+    NfnNativeTileGlimmerMaskedCeDescriptorV1 descriptor) {
+  const std::int64_t row = blockIdx.x;
+  if (row >= descriptor.rows || threadIdx.x != 0) return;
+  const std::int32_t target = descriptor.targets[row];
+  const float mask = descriptor.loss_mask == nullptr ? 1.0f : descriptor.loss_mask[row];
+  if (target == descriptor.ignore_index || !(mask > 0.0f)) {
+    descriptor.row_loss[row] = 0.0f;
+    if (descriptor.grad_transformed_logits != nullptr) {
+      for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+        descriptor.grad_transformed_logits[row * descriptor.vocab_size + col] = 0.0f;
+    }
+    return;
+  }
+  float maximum = -CUDART_INF_F;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    maximum = fmaxf(maximum, descriptor.transformed_logits[row * descriptor.vocab_size + col]);
+  double denominator = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    denominator += exp(static_cast<double>(
+        descriptor.transformed_logits[row * descriptor.vocab_size + col] - maximum));
+  const float log_denominator = maximum + static_cast<float>(log(denominator));
+  descriptor.row_loss[row] = mask *
+      (log_denominator - descriptor.transformed_logits[row * descriptor.vocab_size + target]);
+  if (descriptor.grad_transformed_logits != nullptr) {
+    for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) {
+      const float probability = expf(
+          descriptor.transformed_logits[row * descriptor.vocab_size + col] - log_denominator);
+      descriptor.grad_transformed_logits[row * descriptor.vocab_size + col] =
+          descriptor.grad_scale * mask * (probability - (col == target ? 1.0f : 0.0f));
+    }
+  }
+}
+
+__global__ void token_embedding_backward_weight_i32_float32_kernel(
+    const std::int32_t* token_ids, const float* grad_output, float* grad_weight,
+    std::int64_t rows, std::int64_t vocab_size, std::int64_t embedding_dim) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = vocab_size * embedding_dim;
+  if (index >= count) return;
+  const std::int64_t token = index / embedding_dim;
+  const std::int64_t dim = index % embedding_dim;
+  float grad = 0.0f;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    if (token_ids[row] == token) grad += grad_output[row * embedding_dim + dim];
+  }
+  grad_weight[index] = grad;
+}
+
+__global__ void glimmer_adamw_bf16_float32_v1_kernel(
+    std::uint16_t* parameter_bf16,
+    const float* gradient,
+    float* exp_avg,
+    float* exp_avg_sq,
+    std::int64_t count,
+    float learning_rate,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    float bias_correction1,
+    float bias_correction2,
+    float gradient_scale) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const float grad = gradient[index] * gradient_scale;
+  const float next_avg = beta1 * exp_avg[index] + (1.0f - beta1) * grad;
+  const float next_avg_sq =
+      beta2 * exp_avg_sq[index] + (1.0f - beta2) * grad * grad;
+  exp_avg[index] = next_avg;
+  exp_avg_sq[index] = next_avg_sq;
+  float parameter = bf16_bits_to_f32_device(parameter_bf16[index]);
+  const float update = (next_avg / bias_correction1) /
+      (sqrtf(next_avg_sq / bias_correction2) + eps);
+  parameter -= learning_rate * (update + weight_decay * parameter);
+  parameter_bf16[index] = f32_to_bf16_bits_device(parameter);
+}
+
 __device__ __forceinline__ float quantized_expert_weight_value_device(
     const float* weight,
     std::int64_t expert,
@@ -7809,6 +8677,24 @@ __global__ void evo_adopt_candidate_float32_kernel(
 
 __tile_global__ void uint16_to_int64_kernel(
     const std::uint16_t* __restrict__ source,
+    std::int64_t* __restrict__ dest,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  source = ct::assume_aligned(source, 16_ic);
+  dest = ct::assume_aligned(dest, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto token_tile = ct::load_masked(source + idx, mask);
+  ct::store_masked(dest + idx, ct::element_cast<std::int64_t>(token_tile), mask);
+}
+
+__tile_global__ void uint32_to_int64_kernel(
+    const std::uint32_t* __restrict__ source,
     std::int64_t* __restrict__ dest,
     std::int64_t n) {
   namespace ct = cuda::tiles;
@@ -21043,8 +21929,23 @@ void launch_uint16_to_int64(
     std::int64_t* dest,
     std::int64_t n,
     cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   uint16_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_uint32_to_int64(
+    const std::uint32_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  uint32_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
 }
 
 void launch_uint8_to_int64(
@@ -21052,6 +21953,9 @@ void launch_uint8_to_int64(
     std::int64_t* dest,
     std::int64_t n,
     cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   uint8_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
 }
@@ -23917,6 +24821,254 @@ void launch_linear_backward_input_quantized_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   linear_backward_input_quantized_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
       grad_out, weight, grad_x, rows, input_dim, output_dim, kind);
+}
+
+void launch_packed_weight_dequantize_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    float* output,
+    cudaStream_t stream) {
+  const std::int64_t count = descriptor.output_dim * descriptor.input_dim;
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  packed_weight_dequantize_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      descriptor, output);
+}
+
+void launch_linear_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const float* input,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias,
+    cudaStream_t stream) {
+  const std::int64_t count = rows * descriptor.output_dim;
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  linear_packed_weight_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      descriptor, input, bias, output, rows, has_bias);
+}
+
+void launch_linear_backward_input_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t rows,
+    cudaStream_t stream) {
+  const std::int64_t count = rows * descriptor.input_dim;
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  linear_backward_input_packed_weight_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      descriptor, grad_output, grad_input, rows);
+}
+
+void launch_glimmer_embedding_gather_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    std::int64_t token_id,
+    float* output,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>(
+      (descriptor.input_dim + kTileSize - 1) / kTileSize);
+  glimmer_embedding_gather_float32_v1_kernel<<<blocks, kTileSize, 0, stream>>>(
+      descriptor, token_id, output);
+}
+
+void launch_glimmer_embedding_batch_i32_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const std::int32_t* token_ids,
+    float* output,
+    std::int64_t rows,
+    cudaStream_t stream) {
+  const std::int64_t count = rows * descriptor.input_dim;
+  glimmer_embedding_batch_i32_float32_v1_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(descriptor, token_ids, output, rows);
+}
+
+void launch_glimmer_rms_norm_affine_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    cudaStream_t stream) {
+  glimmer_rms_norm_affine_float32_v1_kernel<<<
+      static_cast<int>(rows), 256, 0, stream>>>(
+      input, weight, has_weight, output, width, eps, centered);
+}
+
+void launch_glimmer_positioned_rope_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    cudaStream_t stream) {
+  const dim3 grid(
+      static_cast<unsigned int>(query_heads + kv_heads),
+      static_cast<unsigned int>((head_dim / 2 + kTileSize - 1) / kTileSize));
+  glimmer_positioned_rope_float32_v1_kernel<<<grid, kTileSize, 0, stream>>>(
+      query, key, query_heads, kv_heads, head_dim, position, theta, layout);
+}
+
+void launch_glimmer_gqa_decode_float32_v1(
+    const NfnNativeTileGlimmerGqaDecodeDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  glimmer_gqa_decode_float32_v1_kernel<<<
+      static_cast<int>(descriptor.query_heads), 256, 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_cache_commit_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t count = descriptor.kv_heads * descriptor.head_dim;
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  glimmer_cache_commit_bf16_v1_kernel<<<blocks, kTileSize, 0, stream>>>(descriptor);
+}
+
+void launch_dflash_block_attention_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t rows = descriptor.query_rows * descriptor.query_heads;
+  dflash_block_attention_float32_v1_kernel<<<
+      static_cast<int>(rows), 256, 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_sigmoid_gate_float32_v1(
+    const float* values,
+    const float* gate,
+    float* output,
+    std::int64_t count,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  glimmer_sigmoid_gate_float32_v1_kernel<<<blocks, kTileSize, 0, stream>>>(
+      values, gate, output, count);
+}
+
+void launch_glimmer_logit_transform_float32_v1(
+    float* logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
+  glimmer_logit_transform_float32_v1_kernel<<<blocks, kTileSize, 0, stream>>>(
+      logits, count, multiplier, softcap);
+}
+
+void launch_glimmer_attention_forward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t blocks = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.query_heads;
+  glimmer_attention_forward_float32_v1_kernel<<<
+      static_cast<unsigned int>(blocks), 256, 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_attention_backward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t q_count = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.query_heads * descriptor.head_dim;
+  const std::int64_t kv_count = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.kv_heads * descriptor.head_dim;
+  glimmer_attention_backward_query_float32_v1_kernel<<<
+      static_cast<unsigned int>((q_count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(descriptor);
+  glimmer_attention_backward_kv_float32_v1_kernel<<<
+      static_cast<unsigned int>((kv_count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_rms_norm_backward_float32_v1(
+    const NfnNativeTileGlimmerRmsNormBackwardDescriptorV1& descriptor,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    cudaStream_t stream) {
+  glimmer_rms_norm_backward_input_float32_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.rows), 256, 0, stream>>>(
+      descriptor, weight, has_weight);
+  if (descriptor.grad_weight != nullptr) {
+    glimmer_rms_norm_backward_weight_float32_v1_kernel<<<
+        static_cast<unsigned int>((descriptor.width + kTileSize - 1) / kTileSize),
+        kTileSize, 0, stream>>>(descriptor);
+  }
+}
+
+void launch_glimmer_positioned_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t start_position,
+    float theta,
+    std::uint32_t layout,
+    bool inverse,
+    cudaStream_t stream) {
+  const std::int64_t count = rows * (query_heads + kv_heads) * (head_dim / 2);
+  glimmer_positioned_rope_batch_float32_v1_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(
+      query, key, rows, query_heads, kv_heads, head_dim, start_position,
+      theta, layout, inverse);
+}
+
+void launch_glimmer_sigmoid_gate_backward_float32_v1(
+    const float* values, const float* gate, const float* grad_output,
+    float* grad_values, float* grad_gate, std::int64_t count,
+    cudaStream_t stream) {
+  glimmer_sigmoid_gate_backward_float32_v1_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(
+      values, gate, grad_output, grad_values, grad_gate, count);
+}
+
+void launch_glimmer_logit_transform_backward_float32_v1(
+    const float* transformed, const float* grad_transformed, float* grad_raw,
+    std::int64_t count, float multiplier, float softcap, cudaStream_t stream) {
+  glimmer_logit_transform_backward_float32_v1_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(
+      transformed, grad_transformed, grad_raw, count, multiplier, softcap);
+}
+
+void launch_glimmer_masked_cross_entropy_i32_float32_v1(
+    const NfnNativeTileGlimmerMaskedCeDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  glimmer_masked_cross_entropy_i32_float32_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.rows), 1, 0, stream>>>(descriptor);
+}
+
+void launch_token_embedding_backward_weight_i32_float32(
+    const std::int32_t* token_ids, const float* grad_output, float* grad_weight,
+    std::int64_t rows, std::int64_t vocab_size, std::int64_t embedding_dim,
+    cudaStream_t stream) {
+  const std::int64_t count = vocab_size * embedding_dim;
+  token_embedding_backward_weight_i32_float32_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(
+      token_ids, grad_output, grad_weight, rows, vocab_size, embedding_dim);
+}
+
+void launch_glimmer_adamw_bf16_float32_v1(
+    std::uint16_t* parameter_bf16, const float* gradient,
+    float* exp_avg, float* exp_avg_sq, std::int64_t count,
+    float learning_rate, float beta1, float beta2, float eps,
+    float weight_decay, std::int64_t step, float gradient_scale,
+    cudaStream_t stream) {
+  const float bias_correction1 = 1.0f - powf(beta1, static_cast<float>(step));
+  const float bias_correction2 = 1.0f - powf(beta2, static_cast<float>(step));
+  glimmer_adamw_bf16_float32_v1_kernel<<<
+      static_cast<unsigned int>((count + kTileSize - 1) / kTileSize),
+      kTileSize, 0, stream>>>(
+      parameter_bf16, gradient, exp_avg, exp_avg_sq, count, learning_rate,
+      beta1, beta2, eps, weight_decay, bias_correction1, bias_correction2,
+      gradient_scale);
 }
 
 void launch_split_last_dim_float32(

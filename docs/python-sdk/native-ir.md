@@ -10,15 +10,15 @@ execute graph-supplied Python.
 
 | Capability | Status in v1 |
 |---|---|
-| Structural lowering | All 66 shipped text presets and all root variant-library entries lower through an explicit module allow-list. |
+| Structural lowering | All 67 shipped text presets and all root variant-library entries lower through an explicit module allow-list. |
 | Graph preservation | File migration leaves the source bytes unchanged; programmatic compilation deep-copies the graph before variant resolution. |
 | Checkpoint conversion | Legacy `.pt` conversion is isolated; compatible native dense-v5 `.bin`, source-bound dense-MoA metadata `.json`, canonical native-family LLaMA metadata `.json`, and graph-bound standard-MoE metadata `.json` inputs are inspected without Torch and bound directly. All run only after graph preflight. |
-| Native architecture forward | One-shot family proof exists for ordinary dense `gpt`, `gpt2`, and `gpt3`; exact `gpt2_moa`, canonical native-family `llama`, and standard-MoE `moe`/`mixllama`/`mixllama_fast` additionally prove their persisted architecture forwards. GPT2-Evo is preflight-only because its native delegate does not match the authored whole-block evolution contract. Graph-authored `gpt2_diff` is excluded until migration/resident consumers validate its additive learned-lambda bundle, and NanoGPT is excluded until its bias/dropout semantics are persisted. |
-| Resident model/session runtime | Seven reviewed dense-v5 preset topologies (`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and softcap), canonical `llama`, and exact standard-MoE `moe`/`mixllama`/`mixllama_fast` load through an in-process CPU ABI v1 engine; neighboring variants and all other family adapters fail closed. MoA additionally requires its strict source-bound sibling metadata. |
-| Retained lossless cache | Those reviewed dense-v5, canonical LLaMA, and exact standard-MoE artifacts support preallocated `auto`/`full` K/V state with whole-logit parity against `off` recomputation. |
+| Native architecture forward | One-shot family proof exists for ordinary dense `gpt`, `gpt2`, and `gpt3`; exact `gpt2_moa`, canonical native-family `llama`, and standard-MoE `moe`/`mixllama`/`mixllama_fast` additionally prove their persisted architecture forwards. The strict pinned Muse Glimmer converter/trainer/resident path proves its production topology separately from generic graph migration. GPT2-Evo is preflight-only because its native delegate does not match the authored whole-block evolution contract. Graph-authored `gpt2_diff` is excluded until migration/resident consumers validate its additive learned-lambda bundle, and NanoGPT is excluded until its bias/dropout semantics are persisted. |
+| Resident model/session runtime | Seven reviewed dense-v5 preset topologies (`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and softcap), canonical `llama`, and exact standard-MoE `moe`/`mixllama`/`mixllama_fast` load through an in-process CPU ABI v1 engine. Strict pinned Muse Glimmer BF16/K-Quant bundles separately support resident CPU and whole-model CUDA text. Neighboring variants and unproved family adapters fail closed. MoA additionally requires its strict source-bound sibling metadata. |
+| Retained lossless cache | The reviewed dense-v5, canonical LLaMA, and exact standard-MoE artifacts support preallocated `auto`/`full` K/V state with whole-logit parity against `off` recomputation. Muse Glimmer uses its exact local-ring/global-full hybrid cache, including paired transactional target/assistant state when DFlash is enabled. |
 | TurboQuant cache | Bound reviewed dense-v5 artifacts with even head dimensions prove native packed CPU `mse-3.5`/`qjl-3.5` cache ABI v1. Contexts at most 16K with even head dimensions in 2..256 separately prove `turboquant_tile_attention` feature ABI v1; an explicit strict-sidecar request can run packed historical attention on CUDA while CPU remains the default. Other families remain unavailable. |
 | Session prefix COW | Bound resident-ready dense-v5, canonical-LLaMA, and exact standard-MoE artifacts with lossless-cache proof emit `capabilities.session_prefix_cow=true` plus `kernel_abi.session_prefix_cow={version:1,status:"ready",profile:<format-specific-profile>,operation:"fork_session"}`. The full-cache profiles are `dense-full-cache-kv-final-hidden-v1`, `llama-full-cache-gqa-kv-final-hidden-v1`, and `standard-moe-full-cache-gqa-kv-final-hidden-v1`. Reviewed dense-v5 TurboQuant artifacts separately emit `capabilities.session_prefix_cow_cpu_turboquant=true` and `kernel_abi.session_prefix_cow_cpu_turboquant={version:1,status:"ready",profile:"dense-cpu-turboquant-mse-qjl-packed-kv-final-hidden-v1",operation:"fork_session",backend:"cpu-reference-packed"}`. Both are whole-storage SDK/native session-fork primitives; Tile device state and serving lineage remain unavailable. |
-| Native serving | Compatible dense-v5, canonical LLaMA, and exact standard-MoE artifacts prove the resident/lean-serving model ABI; LLaMA and MoE still need separately supported tiktoken and chat metadata before server bind. `--state-db` adds the bounded text Responses/Conversations, local compaction, and durable background subset. Exact artifact metadata can additionally enable buffered strict flat JSON-schema output and one forced client-executed function call/result; all broader tools, schemas, and multimedia remain unavailable. |
+| Native serving | Compatible dense-v5, canonical LLaMA, exact standard-MoE, and strict Muse Glimmer bundles prove their respective resident/lean-serving ABIs; LLaMA and MoE still need separately supported tokenizer/chat metadata, while Glimmer binds authenticated `tokenizer.json` plus ATEM. `--state-db` adds bounded text Responses/Conversations, local compaction, and durable background work. Exact metadata can enable buffered strict flat JSON schema and one forced client-executed function call/result. Chat media is limited to independently proven CPU Glimmer base64 images; broader tools, schemas, Responses multimedia, and CUDA vision remain unavailable. |
 
 Structural compatibility is not proof of a native forward, resident adapter,
 cache, or serving path. Read `manifest.capabilities` and the compatibility report's
@@ -29,11 +29,32 @@ The shipped-catalog guard derives its matrix from the preset and native-family
 registries rather than a duplicate allow-list. Every preset must lower and have
 one native-family owner; persistence and resident inference must be either
 proved or accompanied by explicit machine-readable blocked evidence. The
-current persistence-plus-resident status is 12 ready and 54 explicitly blocked
-out of 66. Exact trusted-planner graph training separately has 13 ready and 53
+current persistence-plus-resident status is 12 ready and 55 explicitly blocked
+out of 67. Exact trusted-planner graph training separately has 13 ready and 54
 blocked because proof-bound `gpt2_diff` is training-only. These guards prevent a
 new preset from shipping with an unclassified native status, but they do not
 turn a blocked declaration into runtime proof.
+
+Muse Glimmer is deliberately outside those generic graph-migration counts. Its
+production artifact is built by a pinned family converter, not by inferring a
+30B checkpoint layout from the preview-sized preset graph. The dedicated path
+now provides:
+
+- strict streaming BF16 target/full/assistant conversion;
+- strict canonical GGUF K-Quant-Dynamic, K-Quant-17GB, DFlash, and mmproj
+  inspection/bundling;
+- additive `primary_checkpoint_variant`, `checkpoint_variants`,
+  `companion_checkpoints`, `speculative_decoding`, memory-profile, and
+  compatibility fields while preserving the v1 top-level `checkpoint` object;
+- resident CPU and whole-model CUDA text execution, hybrid lossless cache,
+  DFlash, and load-time weight-precision selection; and
+- exact graph preflight into the dedicated `nfn_muse_glimmer_native_train`
+  target for production AR/SFT and native LoRA/QLoRA configurations.
+
+The generic catalog's preview `muse_glimmer` graph remains blocked from its
+ordinary one-checkpoint migration proof because preview geometry is not the
+pinned 52-layer production checkpoint. This is intentional: use the strict
+family commands below rather than relabeling a preview graph as resident-ready.
 
 NanoGPT remains in the blocked set even though its family is registered and its
 commands resolve to `nfn_gpt_native_train`. The authored NanoGPT graphs require
@@ -45,6 +66,41 @@ for `nanogpt`, `nanogpt_megakernel`, and `nanogpt_modern`. Do not infer graph
 execution from target resolution or geometry selection.
 
 ## CLI migration
+
+Convert the pinned Muse Glimmer BF16 family without Torch:
+
+```bash
+nfn migrate muse-glimmer-to-native \
+  --source /models/Muse-Glimmer-30B \
+  --component full \
+  --output-dir artifacts/glimmer-bf16
+```
+
+Bundle one or both canonical official packed profiles and optional companions:
+
+```bash
+nfn migrate muse-glimmer-gguf-to-native \
+  --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
+  --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
+  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --tokenizer-source /models/Muse-Glimmer-30B \
+  --output-dir artifacts/glimmer-kquant
+```
+
+Attach a strict native LoRA/QLoRA checkpoint atomically:
+
+```bash
+nfn migrate muse-glimmer-lora-to-native \
+  --artifact artifacts/glimmer-bf16 \
+  --checkpoint runs/glimmer-adapter/checkpoint-step-100
+```
+
+The converters pin exact repository revisions, source file hashes, tensor
+names/shapes/dtypes/counts, tokenizer/chat hashes, and official GGUF profile
+digests. Unknown encodings, retained lowercase legacy files, partial shards,
+wrong target lineage, and source/companion mismatches fail before publication.
+See [Resident Native Inference](native-inference.md) for model-load and VRAM
+selection APIs.
 
 Validate without writing an artifact:
 
@@ -258,6 +314,14 @@ expert count, top-k, and router auxiliary-loss coefficient.
 - `checkpoint`: source and target formats, source/target hashes, output length,
   safe-loader flags, and preserved JSON-safe checkpoint metadata when weights
   were supplied.
+- `primary_checkpoint_variant` and `checkpoint_variants`: optional additive
+  Muse Glimmer weight-profile catalog. Each selected entry repeats the existing
+  executable checkpoint fields exactly and adds an authenticated kernel and
+  memory contract; the top-level `checkpoint` must equal the primary entry.
+- `companion_checkpoints` and `speculative_decoding`: optional exact
+  assistant/mmproj/adapter descriptors with target/tokenizer/processor
+  allowlists and the transactional DFlash profile. These fields round-trip in
+  manifest v1 and do not reinterpret legacy one-checkpoint artifacts.
 - `session_state_kinds`: a classification of the state a future adapter would
   need, such as `kv`, `latent_kv`, or hybrid attention/recurrent state. This is
   not evidence that the state is implemented.
@@ -514,7 +578,7 @@ adds an exact-byte `source-graph.json` snapshot and
 node-specific `training_issues`, artifact metadata, proof flags, and stable
 blockers.
 
-All 66 shipped text presets still lower structurally and route to a registered
+All 67 shipped text presets still lower structurally and route to a registered
 family for diagnostic reporting. Thirteen exact profiles currently have reviewed
 execution-ready production adapters: `gpt2`, `gpt2_megakernel`, `gpt2_moa`,
 `gpt2_qknorm`, `gpt2_softcap`, `gpt2_stable`,

@@ -62,6 +62,7 @@ _LLAMA_TRAINING_SELECTORS = frozenset({"llama", "llama_fast"})
 _STANDARD_MOE_TRAINING_SELECTORS = frozenset(
     {"moe", "mixllama", "mixllama_fast"}
 )
+_MUSE_GLIMMER_TRAINING_SELECTORS = frozenset({"muse_glimmer"})
 
 # Shape hashes are over operation/port/edge structure only.  Geometry and
 # behavior switches are checked independently below.  Block indices are
@@ -113,6 +114,8 @@ _GPT2_DIFF_INACTIVE_SPEC_CONTRACT: dict[str, Any] = {
     "layer_evo_population": 8,
     "layer_evo_seed": None,
     "max_recurrence_steps": 4,
+    "max_position_embeddings": 1024,
+    "output_multiplier": 1.0,
     "route_chunk_size": 32,
     "route_evo_enabled": True,
     "route_evo_fraction": 0.1,
@@ -131,14 +134,21 @@ _GPT2_DIFF_INACTIVE_SPEC_CONTRACT: dict[str, Any] = {
 }
 _GPT2_DIFF_INACTIVE_BLOCK_CONTRACT: dict[str, Any] = {
     "adapter_dim": 0,
+    "attention_gate": "none",
+    "attention_gate_dim": None,
+    "attention_inner_dim": None,
     "auxfree_bias_lr": 0.001,
     "byte_patch_size": 4,
     "byte_patch_stride": 4,
+    "centered_rms_norm": False,
     "dyt_alpha_init": 1.0,
     "experts": None,
     "fp8_amax_history_len": 16,
     "fp8_use_stochastic_rounding": True,
     "group_norm_groups": 1,
+    "head_dim": None,
+    "intermediate_size": None,
+    "layer_attention_pattern": [],
     "lora_alpha": 16.0,
     "lora_bias": False,
     "lora_dropout": 0.0,
@@ -150,12 +160,18 @@ _GPT2_DIFF_INACTIVE_BLOCK_CONTRACT: dict[str, Any] = {
     "multiple_of": None,
     "mx_block_size": 32,
     "nsa_compress_stride": 16,
+    "norm_eps": 1.0e-6,
+    "norm_layout": "pre",
     "num_sinks": 0,
     "qk_gain_init": 1.0,
+    "qk_norm_eps": 1.0e-6,
+    "qk_norm_kind": "none",
+    "q_scale_factor": 1.0,
     "qlora_compute_dtype": "bf16",
     "qlora_group_size": 64,
     "rope_scaling": None,
     "rope_theta": 10000.0,
+    "post_norm_eps": 1.0e-6,
     "router_aux_loss_coef": 0.0,
     "router_score_fn": "softmax",
     "shared_experts": 0,
@@ -163,6 +179,8 @@ _GPT2_DIFF_INACTIVE_BLOCK_CONTRACT: dict[str, Any] = {
     "top_k": None,
     "ttt_hidden_dim": 16,
     "window_size": None,
+    "embedding_norm_kind": "none",
+    "embedding_norm_eps": 1.0e-6,
 }
 _GPT2_DIFF_REQUIRED_SPEC_KEYS = frozenset(
     {
@@ -1433,6 +1451,215 @@ def _validate_gpt2_configuration(
     return tuple(issues)
 
 
+def _validate_muse_glimmer_training_contract(
+    manifest: NativeExecutionManifest,
+) -> tuple[NativeLoweringIssue, ...]:
+    model = _mapping(manifest.model)
+    spec = _mapping(model.get("template_spec"))
+    template = _mapping(spec.get("template"))
+    block = _mapping(spec.get("block_spec"))
+    objective = _normalized(template.get("objective"))
+    adapter_type = _normalized(block.get("adapter_type"))
+    finetune = _mapping(spec.get("finetune"))
+    issues: list[NativeLoweringIssue] = []
+    expected_spec = {
+        "model_dim": 6656,
+        "num_layers": 52,
+        "vocab_size": 202048,
+        "tie_embeddings": False,
+        "max_position_embeddings": 131072,
+        "output_multiplier": 0.19611613513818404,
+        "logit_softcap": 20.0,
+    }
+    expected_template = {
+        "objective": objective,
+        "backbone": "muse_glimmer",
+        "runtime": "eager",
+        "sparsity": "dense",
+        "adapter": "none",
+    }
+    expected_block = {
+        "family": "muse_glimmer",
+        "norm_type": "rmsnorm",
+        "mlp_type": "swiglu",
+        "pos_encoding": "none",
+        "num_heads": 32,
+        "num_kv_heads": 2,
+        "head_dim": 128,
+        "attention_inner_dim": 4096,
+        "intermediate_size": 19968,
+        "is_causal": True,
+        "linear_bias": False,
+        "dropout_p": 0.0,
+        "use_qk_norm": True,
+        "qk_norm_kind": "weightless_rms",
+        "qk_norm_eps": 1.0e-5,
+        "q_scale_factor": 3.87,
+        "attention_gate": "sigmoid",
+        "attention_gate_dim": 4096,
+        "norm_layout": "sandwich",
+        "centered_rms_norm": True,
+        "norm_eps": 1.0e-5,
+        "post_norm_eps": 1.0e-8,
+        "embedding_norm_kind": "weightless_rms",
+        "embedding_norm_eps": 1.0e-5,
+    }
+    for mapping, expected, prefix in (
+        (spec, expected_spec, "template_spec"),
+        (template, expected_template, "template"),
+        (block, expected_block, "block_spec"),
+    ):
+        for key, value in expected.items():
+            if mapping.get(key) != value:
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        f"{prefix}.{key} must be {value!r} for the exact Muse Glimmer trainer; "
+                        f"got {mapping.get(key)!r}.",
+                    )
+                )
+    if adapter_type not in {"none", "lora", "qlora"}:
+        issues.append(
+            _issue(
+                "unsupported_training_adapter",
+                "The exact Muse Glimmer native trainer accepts adapter_type='none', 'lora', or 'qlora'.",
+            )
+        )
+    if objective not in {"ar", "sft"}:
+        issues.append(
+            _issue(
+                "unsupported_training_configuration",
+                "The exact Muse Glimmer native trainer currently accepts only ar or full sft.",
+            )
+        )
+    elif objective == "ar" and (spec.get("finetune") is not None or adapter_type != "none"):
+        issues.append(
+            _issue(
+                "unsupported_training_configuration",
+                "Muse Glimmer autoregressive pretraining requires template_spec.finetune=null.",
+            )
+        )
+    elif objective == "sft":
+        for key in ("tokenizer_sha256", "chat_template_sha256"):
+            value = str(finetune.get(key) or "")
+            if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        f"Muse Glimmer native SFT requires finetune.{key} as a lowercase SHA-256 digest.",
+                    )
+                )
+        if finetune.get("objective") != "sft":
+            issues.append(
+                _issue(
+                    "unsupported_training_configuration",
+                    "Muse Glimmer native post-training requires finetune.objective='sft'.",
+                )
+            )
+        if adapter_type in {"lora", "qlora"}:
+            allowed_targets = {
+                "q_proj", "k_proj", "v_proj", "o_proj", "attn_gate_proj",
+                "gate_proj", "up_proj", "down_proj",
+            }
+            raw_targets = block.get("lora_targets")
+            targets = (
+                tuple(str(value) for value in raw_targets)
+                if isinstance(raw_targets, (tuple, list))
+                else ()
+            )
+            try:
+                rank = int(block.get("lora_rank"))
+                alpha = float(block.get("lora_alpha"))
+                dropout = float(block.get("lora_dropout"))
+            except (TypeError, ValueError):
+                rank, alpha, dropout = 0, 0.0, -1.0
+            if (
+                not targets
+                or len(targets) != len(set(targets))
+                or not set(targets) <= allowed_targets
+                or rank <= 0
+                or alpha <= 0.0
+                or not 0.0 <= dropout < 1.0
+                or block.get("lora_bias") is not False
+                or finetune.get("adapter_only_save") is not True
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_adapter",
+                        "Muse Glimmer native LoRA requires unique reviewed projection targets, "
+                        "positive rank/alpha, dropout in [0,1), lora_bias=false, and "
+                        "finetune.adapter_only_save=true.",
+                    )
+                )
+            if adapter_type == "qlora" and (
+                block.get("qlora_group_size") != 64
+                or _normalized(block.get("qlora_compute_dtype")) not in {"bf16", "bfloat16"}
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_adapter",
+                        "Muse Glimmer native QLoRA requires qlora_group_size=64 and BF16 compute.",
+                    )
+                )
+    pattern = block.get("layer_attention_pattern")
+    expected_pattern = (
+        ("local", 2048, "rope", 500000.0),
+        ("local", 2048, "rope", 500000.0),
+        ("local", 2048, "rope", 500000.0),
+        ("full", None, "none", 500000.0),
+    )
+    if not isinstance(pattern, (tuple, list)) or len(pattern) != 4:
+        issues.append(
+            _issue(
+                "unsupported_training_configuration",
+                "Muse Glimmer requires the exact local/local/local/global attention schedule.",
+            )
+        )
+    else:
+        for index, (raw, expected) in enumerate(zip(pattern, expected_pattern, strict=True)):
+            entry = _mapping(raw)
+            actual = (
+                _normalized(entry.get("kind")), entry.get("window_size"),
+                _normalized(entry.get("pos_encoding")), entry.get("rope_theta"),
+            )
+            if actual != expected:
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        f"Muse Glimmer layer schedule entry {index} must be {expected!r}; got {actual!r}.",
+                    )
+                )
+    required_operations = {
+        "tensor_scale", "rms_norm", "qk_norm", "rotary_embedding",
+        "sliding_window_attention", "scaled_dot_product_attention",
+        "sigmoid", "silu", "multiply",
+        "logit_softcap",
+        "masked_token_cross_entropy" if objective == "sft" else "token_cross_entropy",
+    }
+    required_operations.add(
+        "nf4_linear"
+        if adapter_type == "qlora"
+        else "lora_linear"
+        if adapter_type == "lora"
+        else "linear"
+    )
+    operations = {
+        str(node.get("operation") or "")
+        for graph in _active_graphs(manifest.topology)
+        for node in graph.get("nodes", ())
+        if isinstance(node, Mapping)
+    }
+    missing = sorted(required_operations - operations)
+    if missing:
+        issues.append(
+            _issue(
+                "unsupported_training_topology",
+                "Muse Glimmer active topology is missing operations: " + ", ".join(missing),
+            )
+        )
+    return tuple(issues)
+
+
 def _normalize_block_path(value: Any) -> str:
     return re.sub(r"block_\d+", "block_*", str(value))
 
@@ -2236,6 +2463,8 @@ def _training_issues(
         return _validate_llama_training_contract(manifest)
     if selector in _STANDARD_MOE_TRAINING_SELECTORS:
         return _validate_standard_moe_training_contract(manifest)
+    if selector in _MUSE_GLIMMER_TRAINING_SELECTORS:
+        return _validate_muse_glimmer_training_contract(manifest)
 
     # gpt2_diff deliberately remains unproved in the generic capability
     # registry because classification happens before this exact validator.  Its
@@ -2426,6 +2655,50 @@ def _adapter_trainer_arguments(
             "--graph-fingerprint",
             graph_fingerprint,
         )
+    if selector in _MUSE_GLIMMER_TRAINING_SELECTORS:
+        if re.fullmatch(r"[0-9a-f]{64}", graph_fingerprint) is None:
+            return ()
+        arguments = [
+            "--graph-fingerprint",
+            graph_fingerprint,
+            "--activation-checkpoint-interval",
+            "4",
+        ]
+        objective = _normalized(_mapping(spec.get("template")).get("objective"))
+        arguments.extend(["--objective", objective])
+        if objective == "sft":
+            finetune = _mapping(spec.get("finetune"))
+            arguments.extend(
+                ["--chat-template-sha256", str(finetune.get("chat_template_sha256") or "")]
+            )
+            block = _mapping(spec.get("block_spec"))
+            adapter_type = _normalized(block.get("adapter_type"))
+            if adapter_type in {"lora", "qlora"}:
+                raw_targets = block.get("lora_targets")
+                targets = (
+                    tuple(str(value) for value in raw_targets)
+                    if isinstance(raw_targets, (tuple, list))
+                    else ()
+                )
+                arguments.extend(
+                    [
+                        "--adapter",
+                        adapter_type,
+                        "--lora-targets",
+                        ",".join(targets),
+                        "--lora-rank",
+                        str(_as_int(block.get("lora_rank"))),
+                        "--lora-alpha",
+                        format(_as_float(block.get("lora_alpha")), ".17g"),
+                        "--lora-dropout",
+                        format(_as_float(block.get("lora_dropout")), ".17g"),
+                    ]
+                )
+                if adapter_type == "qlora":
+                    arguments.extend(
+                        ["--qlora-group-size", str(_as_int(block.get("qlora_group_size")))]
+                    )
+        return tuple(arguments)
     if selector in _STANDARD_MOE_TRAINING_SELECTORS:
         if re.fullmatch(r"[0-9a-f]{64}", graph_fingerprint) is None:
             return ()

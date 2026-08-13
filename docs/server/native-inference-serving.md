@@ -13,8 +13,10 @@ calling `uvicorn.run()`:
 1. validate host/auth policy and load private API-key material;
 2. read and validate Native Execution Manifest v1, including both
    `capabilities.serve=true` and `model.text_generation=true`;
-3. load the artifact-declared tiktoken codec;
-4. resolve the artifact chat template or explicit operator fallback;
+3. load the authenticated artifact-declared tiktoken codec or
+   `tokenizer.json`;
+4. resolve the artifact chat template, including exact Muse Glimmer ATEM, or
+   an allowed explicit operator fallback;
 5. require a positive authoritative context limit;
 6. load `NativeInferenceModel`, proving resident ABI and cache capabilities;
 7. when structured output is jointly advertised, require artifact-selected
@@ -52,6 +54,15 @@ Standard MoE uses the same one-model/many-session server lifecycle and lossless
 `auto`/`full` cache as its SDK path. It does not advertise TurboQuant. LLaMA and
 MoE still require separately supported tokenizer and chat-template metadata
 before server startup can pass presentation validation.
+
+Muse Glimmer is a separate strict resident family. Authenticated BF16 and
+official K-Quant-Dynamic/K-Quant-17GB bundles can run text on CPU or the
+whole-model native-CUDA text backend, and can attach an authenticated BF16 or
+packed DFlash companion. Weight precision, speculative policy, and companions
+are resolved once at startup. Full-BF16 CPU artifacts may expose embedded
+image/video vision; packed CPU artifacts may attach the official still-image
+`mmproj`. `vision_cuda=false`, so a CUDA load that requests vision fails before
+model/session creation.
 
 MoA startup additionally requires the migrated manifest's source-bound
 `checkpoint.moa` contract, originally produced from
@@ -276,12 +287,13 @@ terminal instead of the Chat Completions `[DONE]` sentinel.
 
 ## Presentation boundary
 
-Serving accepts only artifact-declared tiktoken encodings. `--chat-template
-auto` accepts manifest `plain_roles` metadata or a literal `{messages}`
-placeholder template. Operators can explicitly select `plain_roles` or a local
-template file containing that placeholder. Arbitrary Jinja/Hugging Face chat
-templates are rejected by this lean milestone rather than interpreted
-partially.
+Serving accepts authenticated artifact-declared tiktoken encodings and the
+pinned Hugging Face `tokenizer.json` profile used by Muse Glimmer.
+`--chat-template auto` accepts manifest `plain_roles` metadata, a literal
+`{messages}` placeholder template, or the reviewed Muse Glimmer ATEM profile.
+Operators can explicitly select `plain_roles` or a local placeholder template
+for eligible legacy artifacts. Glimmer requires its authenticated ATEM profile
+and never falls back to `plain_roles`. Arbitrary artifact Jinja is not executed.
 
 Canonical LLaMA now proves the resident model ABI and raw-token SDK/CLI path,
 but its native-family checkpoint migration does not make this presentation
@@ -304,18 +316,21 @@ token.
 
 ## Dependencies and exclusions
 
-The `[serve]` extra contains FastAPI, Pydantic, tiktoken, and Uvicorn. Importing
-the serving module does not import Torch, NumPy, NetworkX, SQLAlchemy, or
-`server.app`.
+The `[serve]` extra contains FastAPI, Pydantic, tiktoken, Hugging Face
+Tokenizers, Pillow, and Uvicorn. Importing the serving module does not import
+Torch, NumPy, NetworkX, SQLAlchemy, or `server.app`.
 
 The SQLite service is opt-in through `--state-db`; without it, Responses and
 Conversations remain unmounted and return `unsupported_resource`. With state
 enabled, only the exact buffered flat-schema and single forced client-function
 profiles described above are additive. General/parallel/hosted tools,
 nested/array schemas, constrained streaming/background execution, Chat
-Completions tools, reasoning modes, multimedia, Responses WebSocket mode,
-Realtime, and legacy Completions are not implemented. They return explicit
-OpenAI-shaped capability errors rather than being partially interpreted.
+Completions tools, reasoning modes, Responses multimedia, Responses WebSocket
+mode, Realtime, and legacy Completions are not implemented. Chat has only the
+independently gated Muse Glimmer base64-image exception; external URLs, audio,
+files, server-side video decoding, and CUDA vision remain unavailable.
+Unsupported requests return explicit OpenAI-shaped capability errors rather
+than being partially interpreted.
 
 The serving prefix LRU is a second opt-in through
 `--prefix-cache-capacity`; its default `0` preserves cold-per-request behavior.

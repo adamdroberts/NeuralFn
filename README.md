@@ -16,6 +16,76 @@ NeuralFn is a graph-native neural network framework where each neuron can be a b
 
 NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph-backed Torch modules remain in the source tree for old experiments, but Torch is no longer an installable NeuralFn dependency extra. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`. The public `neuralfn.trainer`, `neuralfn.evolutionary`, `neuralfn.hybrid`, and `neuralfn.inference` modules are also lean at import time: importing training configs, constructing scalar trainers, or importing checkpoint/cache helper names does not import Torch or NumPy. Calling scalar training methods still enters the legacy NumPy/PyTorch training stack as needed, and calling legacy `.pt` checkpoint or `InferenceCache` operations still enters the Torch inference stack, so install NumPy and/or PyTorch explicitly for those workflows.
 
+The shipped GPT catalog now includes `muse_glimmer`, an exact text-decoder
+template for `meta-models/Muse-Glimmer-30B`. It preserves the model's
+6,656-wide residual stream with asymmetric 4,096-wide Q / 256-wide K/V
+projections, three-local/one-global RoPE/NoPE schedule, gated attention,
+four centered sandwich norms, decomposed SwiGLU, untied head, and ordered
+output multiplier plus softcap. Use it through the normal template entry point:
+
+```python
+from neuralfn.torch_templates import build_gpt_template_payload
+
+payload = build_gpt_template_payload("glimmer", {"preset": "muse_glimmer"})
+```
+
+The same exact contract now extends through strict checkpoint conversion,
+native training, and resident inference. The implemented native path includes:
+
+- BF16 and the canonical `K-Quant-Dynamic` / `K-Quant-17GB` GGUF profiles;
+- C++ CPU and whole-model CUDA text prefill/decode with hybrid local/global KV;
+- the BF16 or packed DFlash assistant with transactional greedy or lossless
+  sampled speculative decoding;
+- load-time `auto|bf16|k-quant-dynamic|k-quant-17gb` weight selection, where
+  CUDA `auto` uses current free VRAM plus context/companion/workspace budgets;
+- native pretraining, full masked SFT, all-projection LoRA, and NF4 group-64
+  QLoRA with strict save/resume and adapter deployment; and
+- CPU full-BF16 image/video vision plus still-image execution through the
+  official packed `mmproj` companion.
+
+Convert and run an official packed bundle like this:
+
+```bash
+nfn migrate muse-glimmer-gguf-to-native \
+  --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
+  --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
+  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --tokenizer-source /models/Muse-Glimmer-30B \
+  --output-dir artifacts/glimmer-kquant
+
+nfn infer \
+  --checkpoint artifacts/glimmer-kquant \
+  --runtime native-cuda \
+  --weight-precision auto \
+  --speculative-decoding auto \
+  --companion-checkpoint dflash \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --prompt "Hello from Glimmer" \
+  --native-info
+```
+
+The same family has a dedicated Torch-free trainer. Pretraining uses uint32
+token shards; SFT/LoRA/QLoRA uses structured records with exact ATEM lineage:
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-full.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-sft \
+  --objective sft \
+  --chat-template-sha256 cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678 \
+  --adapter qlora \
+  --sequence-length 2048 \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-qlora
+```
+
+Capabilities remain independent and fail closed. Native DPO/reward/PPO,
+K-Quant adapter training, DFlash distillation, distributed 30B training, and
+whole-model CUDA vision are not advertised. See the precise implementation
+matrix and kernel boundary in
+[`docs/glimmer-support-todo.md`](docs/glimmer-support-todo.md).
+
 ## Native Execution IR and graph migration
 
 Native Execution IR v1 is the ahead-of-time boundary between NeuralFn graph
@@ -99,7 +169,7 @@ migration never overwrites an artifact or modifies the source graph/checkpoint.
 Unsupported module types and arbitrary graph-supplied Python functions fail
 closed with stable node paths in the report.
 
-The v1 structural registry currently lowers all 66 shipped text presets,
+The v1 structural registry currently lowers all 67 shipped text presets,
 including resolved nested subgraphs and every root variant-library entry. This
 is a representation guarantee, not an all-family serving claim. Seven reviewed
 dense GPT presets (`gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_zloss`,
@@ -137,9 +207,10 @@ SwiGLU experts, an untied head, and preallocated lossless K/V state. Their graph
 adapter preserves floating `mlp_multiplier`, maps `multiple_of=None` to the
 native `--multiple-of 0` sentinel, and applies the configured all-expert router
 auxiliary loss. `auto`, `full`, and `off` are supported; TurboQuant fails
-closed. Differential-attention, modern/megakernel LLaMA or MoE variants,
-JEPA neighbors, and every other non-dense family remain fail-closed, as do generic
-`.pt` bundles and graph-only artifacts. An additive Tile-sidecar feature ABI
+closed. Differential-attention, modern/megakernel LLaMA or MoE variants, JEPA
+neighbors, and non-dense families outside the separately described strict Muse
+Glimmer path remain fail-closed, as do generic `.pt` bundles and graph-only
+artifacts. An additive Tile-sidecar feature ABI
 provides direct CUDA attention over the same packed CPU-v1 MSE/QJL records,
 including MHA/GQA, an exact current row, and chunked stable softmax through a
 16K total context. Reviewed dense-v5 artifacts with an even 2..256 head
@@ -278,7 +349,7 @@ the strict proof is issued; `capability_proof_for()`, migration manifests, and
 resident capability records remain false.
 Supplying `.pt`, raw `.bin`, or `.diff.json` weights for a
 `gpt2_diff` migration raises the explicit unimplemented-bundle error before
-generic checkpoint dispatch or output creation. Across all 66 shipped presets,
+generic checkpoint dispatch or output creation. Across all 67 shipped presets,
 the graph-training planner now has 13 exact execution-ready profiles and 53
 blocked profiles; persistence plus resident inference remain 12 ready and 54
 blocked. Python SDK configs allow all three graph/proof fields to remain absent
@@ -486,8 +557,10 @@ nfn infer \
 It validates the artifact, tokenizer, chat renderer, context limit, resident
 ABI/binding, cache request, and remote-auth policy before opening
 `127.0.0.1:8000`. The isolated app exposes `/health`, `/v1/models`, and
-text-only `/v1/chat/completions`; real committed-token SSE ends with
-`data: [DONE]`. Supplying `--state-db` additionally enables text Responses,
+bounded `/v1/chat/completions`; real committed-token SSE ends with
+`data: [DONE]`. Chat is text by default, while a jointly proven CPU Muse
+Glimmer vision artifact may accept base64 image data URLs. Supplying
+`--state-db` additionally enables text Responses,
 Responses input-token/item resources, scoped `previous_response_id` lineage,
 lossless scope-bound response compaction, Conversations CRUD/items, and durable
 background/cancel processing. `--prefix-cache-capacity N` is a separate opt-in
@@ -578,11 +651,14 @@ function-call generation must use `store: true`, `stream: false`,
 `function_call`, never executes it, and consumes the client's string
 `function_call_output` as the sole item in a separate stored, buffered,
 foreground `previous_response_id` request. That continuation uses ordinary
-text generation and may choose ordinary sampling controls. Nested or
-array schemas, automatic/parallel/hosted tools, Conversations/compaction tool
+text generation and may choose ordinary sampling controls. Nested or array
+schemas, automatic/parallel/hosted tools, Conversations/compaction tool
 history, constrained streaming/background work, Chat Completions tools, and
-multimedia remain fail-closed. See the serving reference for the exact bounded
-schema and artifact metadata contract.
+Responses multimedia remain fail-closed. Chat Completions has one separate
+exception: an authenticated, vision-capable Muse Glimmer artifact accepts
+bounded base64 image data URLs; audio, files, external URLs, server video, and
+CUDA vision remain unavailable. See the serving reference for the exact
+bounded schema and artifact metadata contract.
 The pinned official `openai==2.44.0` transport gate also exercises real
 loopback sockets: Uvicorn TLS rejects the untrusted per-test certificate and
 accepts its explicit CA, an HTTP proxy observes a real `CONNECT` tunnel to that

@@ -4,13 +4,16 @@ import ast
 from copy import deepcopy
 import inspect
 import importlib.util
+import json
 import os
 import subprocess
 import textwrap
 import uuid
 from pathlib import Path
 
+import pytest
 import torch
+import torch.nn.functional as F
 
 from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
 from neuralfn.neuron import neuron_from_source, subgraph_neuron
@@ -21,11 +24,21 @@ from neuralfn.config import (
     SHIPPED_GPT_TEMPLATE_PRESETS,
     build_hnet_lm_spec,
     build_llm_jepa_spec,
+    build_muse_glimmer_spec,
     build_ttt_llama_spec,
     build_universal_llama_spec,
 )
 import neuralfn.torch_templates as torch_templates
-from neuralfn.torch_backend import CompiledTorchGraph, JEPAMaskStage, TorchTrainConfig, TorchTrainer
+from neuralfn.torch_backend import (
+    CompiledTorchGraph,
+    DFlashAttentionStage,
+    JEPAMaskStage,
+    RMSNormStage,
+    TensorScaleStage,
+    TorchTrainConfig,
+    TorchTrainer,
+    MuseGlimmerVisionTowerStage,
+)
 from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config, make_terminal_def
 import server.dataset_manager as dataset_manager
 from server.dataset_manager import load_dataset_bytes
@@ -466,6 +479,581 @@ def test_standard_moe_presets_keep_unaligned_fractional_default() -> None:
 def test_root_graph_defaults_to_float32_amp() -> None:
     graph = build_gpt_root_graph(name="float32_default")
     assert graph.torch_config["amp_dtype"] == "float32"
+
+
+def test_muse_glimmer_production_spec_is_exact_and_capability_scoped() -> None:
+    spec = build_muse_glimmer_spec()
+
+    assert (spec.model_dim, spec.num_layers, spec.vocab_size) == (6_656, 52, 202_048)
+    assert spec.tie_embeddings is False
+    assert spec.max_position_embeddings == 131_072
+    assert spec.output_multiplier == 0.19611613513818404
+    assert spec.logit_softcap == 20.0
+    block = spec.block_spec
+    assert (block.num_heads, block.num_kv_heads, block.head_dim) == (32, 2, 128)
+    assert block.attention_inner_dim == 4_096
+    assert block.intermediate_size == 19_968
+    assert [entry.kind for entry in block.layer_attention_pattern] == ["local", "local", "local", "full"]
+    assert [entry.pos_encoding for entry in block.layer_attention_pattern] == ["rope", "rope", "rope", "none"]
+    assert [entry.window_size for entry in block.layer_attention_pattern] == [2_048, 2_048, 2_048, None]
+    assert block.qk_norm_kind == "weightless_rms"
+    assert block.qk_norm_eps == 1e-5
+    assert block.q_scale_factor == 3.87
+    assert block.attention_gate == "sigmoid"
+    assert block.norm_layout == "sandwich"
+    assert block.centered_rms_norm is True
+    assert (block.norm_eps, block.post_norm_eps) == (1e-5, 1e-8)
+    assert block.embedding_norm_eps == 1e-5
+    for capability in (
+        "native_train",
+        "native_inference",
+        "whole_model_cuda",
+        "k_quant",
+        "speculative_decoding",
+    ):
+        assert spec.template.backend_capabilities[capability] is True
+    assert spec.template.backend_capabilities["multimodal"] is True
+    assert spec.vision is not None
+    assert (
+        spec.vision.num_hidden_layers,
+        spec.vision.hidden_size,
+        spec.vision.intermediate_size,
+        spec.vision.num_attention_heads,
+    ) == (50, 1_536, 8_960, 16)
+    assert (spec.vision.patch_temporal, spec.vision.patch_size, spec.vision.merge_size) == (2, 14, 2)
+    assert (spec.vision.image_token_id, spec.vision.video_token_id) == (200_092, 200_091)
+    assert spec.dflash is not None
+    assert spec.dflash.target_layer_ids == (1, 13, 25, 37, 49)
+
+
+def test_muse_glimmer_graph_preserves_nonsquare_schedule_gate_and_sandwich_norms() -> None:
+    spec = build_muse_glimmer_spec(
+        num_layers=4,
+        model_dim=32,
+        num_heads=4,
+        num_kv_heads=2,
+        head_dim=4,
+        attention_inner_dim=16,
+        intermediate_size=96,
+        vocab_size=128,
+        window_size=8,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_contract", model_spec=spec)
+    assert set(graph.variant_library) == {
+        "muse_glimmer_attention",
+        "muse_glimmer_mlp",
+        "muse_glimmer_block",
+    }
+
+    local = graph.variant_library["muse_glimmer_attention"]["local"]
+    global_attention = graph.variant_library["muse_glimmer_attention"]["global"]
+    assert local.nodes["q_proj"].neuron_def.module_config["output_dim"] == 16
+    assert local.nodes["k_proj"].neuron_def.module_config["output_dim"] == 8
+    assert local.nodes["v_proj"].neuron_def.module_config["output_dim"] == 8
+    assert local.nodes["o_proj"].neuron_def.module_config == {
+        "input_dim": 16,
+        "output_dim": 32,
+        "bias": False,
+    }
+    assert local.nodes["q_scale"].neuron_def.module_config["scale"] == 3.87
+    assert local.nodes["qk_norm"].neuron_def.module_config == {
+        "eps": 1e-5,
+        "force_float32": True,
+    }
+    assert local.nodes["sdpa"].neuron_def.module_type == "sliding_window_attention"
+    assert local.nodes["sdpa"].neuron_def.module_config["window_size"] == 8
+    assert "rope" in local.nodes
+    assert local.nodes["rope"].neuron_def.module_config["convention"] == "hf"
+    assert local.nodes["attn_gate_proj"].neuron_def.module_config["output_dim"] == 16
+    assert {"gate_sigmoid", "gate_mul"}.issubset(local.nodes)
+    assert global_attention.nodes["sdpa"].neuron_def.module_type == "scaled_dot_product_attention"
+    assert "rope" not in global_attention.nodes
+
+    block = graph.variant_library["muse_glimmer_block"]["local"]
+    assert block.nodes["self_attn"].neuron_def.variant_ref == {
+        "family": "muse_glimmer_attention",
+        "version": "local",
+    }
+    for node_id, eps in (
+        ("input_layernorm", 1e-5),
+        ("post_attention_layernorm", 1e-8),
+        ("pre_feedforward_layernorm", 1e-5),
+        ("post_feedforward_layernorm", 1e-8),
+    ):
+        config = block.nodes[node_id].neuron_def.module_config
+        assert config["centered"] is True
+        assert config["force_float32"] is True
+        assert config["eps"] == eps
+
+    mlp = graph.variant_library["muse_glimmer_mlp"]["default"]
+    assert {"gate_proj", "up_proj", "silu", "swiglu_mul", "down_proj"}.issubset(mlp.nodes)
+    assert mlp.nodes["gate_proj"].neuron_def.module_config["output_dim"] == 96
+    assert mlp.nodes["down_proj"].neuron_def.module_config["input_dim"] == 96
+
+    stage = graph.nodes["model"].neuron_def.subgraph
+    assert stage is not None
+    decoder = stage.nodes["decoder"].neuron_def.subgraph
+    assert decoder is not None
+    body = decoder.nodes["body"].neuron_def.subgraph
+    assert body is not None
+    assert [body.nodes[f"block_{idx}"].neuron_def.variant_ref["version"] for idx in range(4)] == [
+        "local",
+        "local",
+        "local",
+        "global",
+    ]
+    assert body.nodes["embedding_norm"].neuron_def.module_config.get("model_dim") is None
+    assert body.nodes["final_norm"].neuron_def.module_config["centered"] is False
+    assert decoder.nodes["lm_head"].neuron_def.module_type == "lm_head"
+    assert decoder.nodes["output_multiplier"].neuron_def.module_config["scale"] == 0.19611613513818404
+    assert decoder.edges["e_head_multiplier"].dst_node == "output_multiplier"
+    assert decoder.edges["e_multiplier_softcap"].src_node == "output_multiplier"
+
+
+def test_muse_glimmer_dflash_companion_graph_contract_and_backward() -> None:
+    target = build_muse_glimmer_spec(
+        num_layers=4,
+        model_dim=8,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+        attention_inner_dim=4,
+        intermediate_size=16,
+        vocab_size=13,
+        window_size=3,
+        max_position_embeddings=12,
+    )
+    graph = torch_templates.build_muse_glimmer_assistant_graph(
+        "muse_glimmer_dflash_contract",
+        target,
+        num_layers=2,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+        intermediate_size=16,
+        block_size=4,
+        mask_token_id=12,
+        window_size=3,
+        target_layer_ids=(0, 2),
+    )
+    assert graph.input_node_ids == [
+        "target_taps_in",
+        "noise_embeddings_in",
+        "context_positions_in",
+        "block_positions_in",
+    ]
+    assert set(graph.variant_library) == {
+        "muse_glimmer_dflash_attention",
+        "muse_glimmer_dflash_mlp",
+        "muse_glimmer_dflash_block",
+    }
+    assert graph.torch_config["dflash_spec"] == {
+        "block_size": 4,
+        "proposal_tokens": 3,
+        "mask_token_id": 12,
+        "target_layer_ids": [0, 2],
+        "shared_target_embedding": True,
+        "shared_target_lm_head": True,
+    }
+    attention = graph.variant_library["muse_glimmer_dflash_attention"]["default"]
+    core = attention.nodes["dflash_attention"].neuron_def
+    assert core.module_type == "dflash_attention"
+    assert core.module_config == {
+        "model_dim": 8,
+        "num_heads": 2,
+        "num_kv_heads": 1,
+        "head_dim": 2,
+        "window_size": 3,
+        "rope_base": 500000.0,
+        "norm_eps": 1e-5,
+        "convention": "hf",
+        "bias": False,
+        "dropout_p": 0.0,
+    }
+    block = graph.variant_library["muse_glimmer_dflash_block"]["default"]
+    assert block.nodes["input_layernorm"].neuron_def.module_config["centered"] is False
+    assert block.nodes["post_attention_layernorm"].neuron_def.module_config["centered"] is False
+
+    torch.manual_seed(11)
+    compiled = CompiledTorchGraph(graph)
+    taps = torch.randn(1, 3, 16)
+    raw_embeddings = torch.randn(1, 4, 8)
+    context_positions = torch.arange(3).unsqueeze(0)
+    block_positions = torch.arange(3, 7).unsqueeze(0)
+    hidden = compiled(
+        taps, raw_embeddings, context_positions, block_positions
+    )[0]
+    assert hidden.shape == (1, 4, 8)
+    hidden.square().mean().backward()
+    assert all(parameter.grad is not None for parameter in compiled.parameters())
+
+
+def _tiny_multimodal_glimmer_spec():
+    return build_muse_glimmer_spec(
+        num_layers=4,
+        model_dim=8,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+        attention_inner_dim=4,
+        intermediate_size=16,
+        vocab_size=32,
+        max_position_embeddings=32,
+        enable_dflash=False,
+        enable_vision=True,
+        vision_num_hidden_layers=2,
+        vision_hidden_size=8,
+        vision_intermediate_size=16,
+        vision_num_attention_heads=2,
+        vision_patch_size=2,
+        vision_patch_temporal=1,
+        vision_merge_size=2,
+        vision_pos_emb_height=2,
+        vision_pos_emb_width=2,
+        projector_hidden_size=6,
+        image_token_id=30,
+        video_token_id=31,
+    )
+
+
+def test_muse_glimmer_vision_and_media_fusion_graphs_compile_and_backward() -> None:
+    spec = _tiny_multimodal_glimmer_spec()
+    graph = torch_templates.build_muse_glimmer_vision_graph("glimmer_vision", spec)
+    tower = graph.nodes["vision_tower"].neuron_def
+    assert tower.module_type == "muse_glimmer_vision_tower"
+    assert tower.module_config == {
+        "hidden_size": 8,
+        "intermediate_size": 16,
+        "num_heads": 2,
+        "num_layers": 2,
+        "patch_size": 2,
+        "patch_temporal": 1,
+        "merge_size": 2,
+        "pos_emb_height": 2,
+        "pos_emb_width": 2,
+        "rope_theta": 10000.0,
+        "eps": 1e-5,
+    }
+    compiled = CompiledTorchGraph(graph)
+    patches = torch.randn(4, 12, requires_grad=True)
+    grid = torch.tensor([[1, 2, 2]])
+    features = compiled(patches, grid)[0]
+    assert features.shape == (1, 8)
+    features.square().mean().backward()
+    assert patches.grad is not None
+    assert all(parameter.grad is not None for parameter in compiled.parameters())
+
+    fusion = CompiledTorchGraph(
+        torch_templates.build_muse_glimmer_media_fusion_graph("fusion", spec)
+    )
+    embeddings = torch.zeros(1, 4, 8)
+    token_ids = torch.tensor([[1, 30, 2, 31]])
+    image = torch.full((1, 8), 2.0)
+    video = torch.full((1, 8), 3.0)
+    fused = fusion(embeddings, token_ids, image, video)[0]
+    assert torch.equal(fused[0, 1], image[0])
+    assert torch.equal(fused[0, 3], video[0])
+    with pytest.raises(ValueError, match="placeholders"):
+        fusion(embeddings, token_ids, image[:0], video)
+
+
+def test_muse_glimmer_vision_tower_matches_installed_transformers_oracle() -> None:
+    if importlib.util.find_spec("transformers.models.muse_glimmer") is None:
+        pytest.skip("installed Transformers has no Muse Glimmer oracle")
+    from transformers.models.muse_glimmer.configuration_muse_glimmer import (
+        MuseGlimmerVisionConfig,
+    )
+    from transformers.models.muse_glimmer.modeling_muse_glimmer import (
+        MuseGlimmerVisionModel,
+    )
+
+    torch.manual_seed(4)
+    config = MuseGlimmerVisionConfig(
+        hidden_size=8,
+        intermediate_size=16,
+        num_attention_heads=2,
+        num_hidden_layers=2,
+        patch_size=2,
+        patch_temporal=1,
+        merge_size=2,
+        pos_emb_height=2,
+        pos_emb_width=2,
+        max_position_embeddings=4,
+        rope_parameters={"rope_type": "default", "rope_theta": 10000.0},
+        layer_types=["window_attention", "full_attention"],
+    )
+    oracle = MuseGlimmerVisionModel(config).eval()
+    stage = MuseGlimmerVisionTowerStage(
+        hidden_size=8,
+        intermediate_size=16,
+        num_heads=2,
+        num_layers=2,
+        patch_size=2,
+        patch_temporal=1,
+        merge_size=2,
+        pos_emb_height=2,
+        pos_emb_width=2,
+    ).eval()
+    with torch.no_grad():
+        stage.patch_embedding.weight.copy_(oracle.patch_embedder.patch_embedding.weight)
+        stage.position_embedding.weight.copy_(oracle.patch_embedder.position_embedding_table.weight)
+        stage.pre_norm.load_state_dict(oracle.ln_pre.state_dict())
+        stage.post_norm.load_state_dict(oracle.ln_post.state_dict())
+        for ours, theirs in zip(stage.layers, oracle.layers):
+            ours.norm1.load_state_dict(theirs.norm1.state_dict())
+            ours.norm2.load_state_dict(theirs.norm2.state_dict())
+            ours.attn.load_state_dict(theirs.attn.state_dict())
+            ours.fc1.load_state_dict(theirs.mlp.fc1.state_dict())
+            ours.fc2.load_state_dict(theirs.mlp.fc2.state_dict())
+    patches = torch.randn(4, 12)
+    grid = torch.tensor([[1, 2, 2]])
+    with torch.no_grad():
+        expected = oracle(patches, grid).last_hidden_state
+        actual = stage(patches, grid)
+    assert torch.equal(actual, expected)
+
+
+def test_dflash_attention_matches_explicit_positioned_bidirectional_formula() -> None:
+    torch.manual_seed(23)
+    stage = DFlashAttentionStage(
+        model_dim=8,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+        window_size=3,
+        rope_base=500000.0,
+        norm_eps=1e-5,
+        convention="hf",
+    )
+    block = torch.randn(1, 4, 8)
+    context = torch.randn(1, 3, 8)
+    context_positions = torch.arange(3).unsqueeze(0)
+    block_positions = torch.arange(3, 7).unsqueeze(0)
+
+    def heads(value: torch.Tensor, count: int) -> torch.Tensor:
+        return value.view(1, value.shape[1], count, 2).transpose(1, 2)
+
+    def norm(value: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        return value * torch.rsqrt(value.square().mean(dim=-1, keepdim=True) + 1e-5) * weight
+
+    def rope(value: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        inverse = 1.0 / (
+            500000.0 ** (torch.arange(0, 2, 2, dtype=torch.float32) / 2)
+        )
+        angle = positions.float().unsqueeze(-1) * inverse
+        cosine = torch.cat((angle.cos(), angle.cos()), dim=-1).unsqueeze(1)
+        sine = torch.cat((angle.sin(), angle.sin()), dim=-1).unsqueeze(1)
+        first, second = value.chunk(2, dim=-1)
+        return value * cosine + torch.cat((-second, first), dim=-1) * sine
+
+    q = rope(norm(heads(stage.q_proj(block), 2), stage.q_norm), block_positions)
+    context_k = rope(
+        norm(heads(stage.k_proj(context), 1), stage.k_norm), context_positions
+    )
+    block_k = rope(
+        norm(heads(stage.k_proj(block), 1), stage.k_norm), block_positions
+    )
+    key = torch.cat((context_k, block_k), dim=-2)
+    value = torch.cat(
+        (heads(stage.v_proj(context), 1), heads(stage.v_proj(block), 1)), dim=-2
+    )
+    key_positions = torch.cat((context_positions, block_positions), dim=-1)
+    distance = key_positions.unsqueeze(1) - block_positions.unsqueeze(-1)
+    allowed = (distance >= -3) & (distance <= 3)
+    mask = torch.zeros((1, 1, 4, 7)).masked_fill(
+        ~allowed.unsqueeze(1), float("-inf")
+    )
+    expected = F.scaled_dot_product_attention(
+        q, key, value, attn_mask=mask, is_causal=False, enable_gqa=True
+    ).transpose(1, 2).contiguous().view(1, 4, 4)
+    assert torch.allclose(
+        stage(block, context, context_positions, block_positions),
+        expected,
+        atol=2e-6,
+        rtol=2e-5,
+    )
+
+
+def test_muse_glimmer_centered_rms_and_tensor_scale_reference_math() -> None:
+    x = torch.tensor([[[1.0, -2.0, 3.0, -4.0]]], dtype=torch.bfloat16)
+    norm = RMSNormStage(1e-5, 4, centered=True, force_float32=True)
+    with torch.no_grad():
+        norm.weight.copy_(torch.tensor([0.0, 0.25, -0.5, 1.0]))
+    expected = x.float() * torch.rsqrt(x.float().square().mean(dim=-1, keepdim=True) + 1e-5)
+    expected = expected * torch.tensor([1.0, 1.25, 0.5, 2.0])
+    actual = norm(x)
+    assert actual.dtype == x.dtype
+    assert torch.allclose(actual.float(), expected, atol=1e-2, rtol=1e-2)
+    assert torch.equal(TensorScaleStage(0.5)(x), x * 0.5)
+
+
+def _muse_rms(
+    x: torch.Tensor,
+    *,
+    eps: float,
+    weight: torch.Tensor | None = None,
+    centered: bool = False,
+) -> torch.Tensor:
+    dtype = x.dtype
+    out = x.float() * torch.pow(x.float().square().mean(dim=-1, keepdim=True) + eps, -0.5)
+    if weight is not None:
+        out = out * ((1.0 + weight.float()) if centered else weight.float())
+    return out.to(dtype)
+
+
+def _muse_hf_rope(x: torch.Tensor, *, theta: float) -> torch.Tensor:
+    head_dim = x.shape[-1]
+    inv_freq = 1.0 / (
+        theta ** (torch.arange(0, head_dim, 2, dtype=torch.float32, device=x.device) / head_dim)
+    )
+    freqs = torch.outer(torch.arange(x.shape[-2], dtype=torch.float32, device=x.device), inv_freq)
+    cos = freqs.cos()[None, None, :, :].to(x.dtype)
+    sin = freqs.sin()[None, None, :, :].to(x.dtype)
+    first, second = x.chunk(2, dim=-1)
+    return torch.cat((first * cos - second * sin, second * cos + first * sin), dim=-1)
+
+
+def _muse_glimmer_pinned_text_oracle(
+    params: dict[str, torch.nn.Parameter],
+    input_ids: torch.Tensor,
+    config: dict[str, object],
+) -> torch.Tensor:
+    """Direct formula transcribed from the immutable Transformers fixture.
+
+    This intentionally bypasses NeuralFn stages and graph execution so the
+    template test detects operation-order, mask, norm, and RoPE regressions.
+    """
+
+    prefix = "node_modules.body.node_modules."
+    hidden_size = int(config["hidden_size"])
+    num_heads = int(config["num_attention_heads"])
+    num_kv_heads = int(config["num_key_value_heads"])
+    head_dim = int(config["head_dim"])
+    rms_eps = float(config["rms_norm_eps"])
+    post_eps = float(config["post_norm_eps"])
+    q_scale = float(config["qk_scale_factor"])
+    window = int(config["sliding_window"])
+    layer_types = list(config["layer_types"])
+    layer_rope_theta = list(config["layer_rope_theta"])
+
+    hidden = F.embedding(input_ids, params[prefix + "token_embed.embedding.weight"])
+    hidden = _muse_rms(hidden, eps=rms_eps)
+    batch, seq_len = input_ids.shape
+    row = torch.arange(seq_len, device=input_ids.device).unsqueeze(1)
+    col = torch.arange(seq_len, device=input_ids.device).unsqueeze(0)
+
+    for layer_index, layer_type in enumerate(layer_types):
+        layer = prefix + f"block_{layer_index}.node_modules."
+        residual = hidden
+        normed = _muse_rms(
+            hidden,
+            eps=rms_eps,
+            weight=params[layer + "input_layernorm.weight"],
+            centered=True,
+        )
+        attn = layer + "self_attn.node_modules."
+        q = F.linear(normed, params[attn + "q_proj.proj.weight"])
+        k = F.linear(normed, params[attn + "k_proj.proj.weight"])
+        v = F.linear(normed, params[attn + "v_proj.proj.weight"])
+        q = q.view(batch, seq_len, num_heads, head_dim).transpose(1, 2)
+        k = k.view(batch, seq_len, num_kv_heads, head_dim).transpose(1, 2)
+        v = v.view(batch, seq_len, num_kv_heads, head_dim).transpose(1, 2)
+        q = _muse_rms(q, eps=rms_eps) * q_scale
+        k = _muse_rms(k, eps=rms_eps)
+        theta = float(layer_rope_theta[layer_index])
+        if theta:
+            q = _muse_hf_rope(q, theta=theta)
+            k = _muse_hf_rope(k, theta=theta)
+        repeats = num_heads // num_kv_heads
+        k = k.repeat_interleave(repeats, dim=1)
+        v = v.repeat_interleave(repeats, dim=1)
+        allowed = col <= row
+        if layer_type == "sliding_attention":
+            allowed &= col > row - window
+        mask = torch.zeros(seq_len, seq_len, device=hidden.device, dtype=hidden.dtype)
+        mask = mask.masked_fill(~allowed, float("-inf"))
+        attn_out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)
+        attn_out = attn_out.transpose(1, 2).contiguous().view(batch, seq_len, num_heads * head_dim)
+        gate = torch.sigmoid(F.linear(normed, params[attn + "attn_gate_proj.proj.weight"]))
+        attn_out = F.linear(attn_out * gate, params[attn + "o_proj.proj.weight"])
+        attn_out = _muse_rms(
+            attn_out,
+            eps=post_eps,
+            weight=params[layer + "post_attention_layernorm.weight"],
+            centered=True,
+        )
+        hidden = residual + attn_out
+
+        residual = hidden
+        normed = _muse_rms(
+            hidden,
+            eps=rms_eps,
+            weight=params[layer + "pre_feedforward_layernorm.weight"],
+            centered=True,
+        )
+        mlp = layer + "mlp.node_modules."
+        gated = F.silu(F.linear(normed, params[mlp + "gate_proj.proj.weight"]))
+        gated = gated * F.linear(normed, params[mlp + "up_proj.proj.weight"])
+        mlp_out = F.linear(gated, params[mlp + "down_proj.proj.weight"])
+        mlp_out = _muse_rms(
+            mlp_out,
+            eps=post_eps,
+            weight=params[layer + "post_feedforward_layernorm.weight"],
+            centered=True,
+        )
+        hidden = residual + mlp_out
+
+    hidden = _muse_rms(hidden, eps=rms_eps, weight=params[prefix + "final_norm.weight"])
+    logits = F.linear(hidden, params["node_modules.lm_head.proj.weight"])
+    logits = logits * float(config["output_multiplier"])
+    cap = float(config["final_logit_softcapping"])
+    return cap * torch.tanh(logits / cap)
+
+
+def test_muse_glimmer_tiny_forward_and_backward_match_pinned_formula() -> None:
+    fixture = json.loads((ROOT / "tests" / "fixtures" / "muse_glimmer" / "reference.json").read_text())
+    assert fixture["schema"] == "neuralfn.muse_glimmer.reference.v1"
+    assert fixture["transformers_revision"] == "d1123114da1ab4395198146f4f84dae7fe8b693e"
+    config = fixture["tiny_text_config"]
+    torch.manual_seed(int(fixture["seed"]))
+    spec = build_muse_glimmer_spec(
+        num_layers=int(config["num_hidden_layers"]),
+        model_dim=int(config["hidden_size"]),
+        num_heads=int(config["num_attention_heads"]),
+        num_kv_heads=int(config["num_key_value_heads"]),
+        head_dim=int(config["head_dim"]),
+        attention_inner_dim=int(config["num_attention_heads"]) * int(config["head_dim"]),
+        intermediate_size=int(config["intermediate_size"]),
+        vocab_size=int(config["vocab_size"]),
+        window_size=int(config["sliding_window"]),
+        max_position_embeddings=int(config["max_position_embeddings"]),
+    )
+    graph = torch_templates.build_muse_glimmer_logits_stage_graph("muse_glimmer_parity", spec)
+    graph.torch_config = {**graph.torch_config, "device": "cpu", "amp_dtype": "float32"}
+    compiled = CompiledTorchGraph(graph)
+    reference = CompiledTorchGraph(deepcopy(graph))
+    reference.load_state_dict(compiled.state_dict())
+    input_ids = torch.tensor(fixture["input_ids"], dtype=torch.long)
+
+    actual = compiled(input_ids)[0]
+    expected = _muse_glimmer_pinned_text_oracle(dict(reference.named_parameters()), input_ids, config)
+    assert torch.allclose(actual, expected, atol=2e-6, rtol=2e-5)
+
+    probe = torch.linspace(-0.5, 0.5, actual.numel(), dtype=actual.dtype).view_as(actual)
+    (actual * probe).sum().backward()
+    (expected * probe).sum().backward()
+    actual_params = dict(compiled.named_parameters())
+    reference_params = dict(reference.named_parameters())
+    assert actual_params.keys() == reference_params.keys()
+    for name in actual_params:
+        assert actual_params[name].grad is not None, name
+        assert reference_params[name].grad is not None, name
+        assert torch.allclose(
+            actual_params[name].grad,
+            reference_params[name].grad,
+            atol=3e-6,
+            rtol=3e-5,
+        ), name
 
 
 def test_template_terminals_only_quantize_discrete_token_ports() -> None:

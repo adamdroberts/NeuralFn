@@ -93,6 +93,12 @@ struct SessionStats {
     std::int64_t cache_capacity_bytes = 0;
     std::int64_t uncompressed_cache_bytes = 0;
     std::int64_t decode_rows_processed = 0;
+    std::int64_t speculative_blocks = 0;
+    std::int64_t speculative_proposed_tokens = 0;
+    std::int64_t speculative_accepted_tokens = 0;
+    std::int64_t speculative_rejected_tokens = 0;
+    std::int64_t assistant_cache_bytes = 0;
+    bool speculative_decoding = false;
     std::int64_t prefix_cow_forks_created = 0;
     std::int64_t prefix_cow_forked_from_tokens = 0;
     std::int64_t prefix_cow_storage_use_count = 0;

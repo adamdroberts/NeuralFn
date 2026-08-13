@@ -3,7 +3,8 @@
 This module deliberately does not import ``server.app`` or initialize editor
 authentication, databases, persistence workers, Torch, NumPy, or NetworkX.
 It serves one already-proven resident native model through a bounded
-single-worker compute queue.  Text Chat Completions are always available;
+single-worker compute queue.  Text Chat Completions are always available and
+jointly proven Muse Glimmer artifacts may also accept bounded image data URLs;
 opt-in local state additionally enables text Responses and Conversations.
 """
 
@@ -41,7 +42,16 @@ from .native_inference import (
     GenerationResult,
     KVCacheConfig,
     NativeInferenceCapabilities,
+    NativeInferenceCapabilityError,
     NativeInferenceModel,
+    NativeModelLoadConfig,
+)
+from .native_chat import (
+    NativeChatConfigurationError,
+    NativeChatMessage,
+    NativeTextCodec,
+    load_native_text_codec,
+    resolve_native_chat_renderer,
 )
 from ._native_prefix_cache import NativePrefixCache
 from .native_constrained import (
@@ -61,6 +71,8 @@ _MANIFEST_VERSION = 1
 _TEXT_ROLES = frozenset({"developer", "system", "user", "assistant"})
 _SUPPORTED_MESSAGE_FIELDS = frozenset({"content", "name", "role"})
 _SUPPORTED_TEXT_PART_FIELDS = frozenset({"text", "type"})
+_SUPPORTED_IMAGE_PART_FIELDS = frozenset({"image_url", "type"})
+_SUPPORTED_IMAGE_URL_FIELDS = frozenset({"detail", "url"})
 _SUPPORTED_CHAT_FIELDS = frozenset(
     {
         "max_completion_tokens",
@@ -91,6 +103,7 @@ _RESPONSE_INCLUDE_VALUES = frozenset(
 _TERMINAL_RESPONSE_STREAM_EVENTS = frozenset(
     {"response.completed", "response.failed", "response.incomplete"}
 )
+_IMAGE_MARKER_PREFIX = "\x00neuralfn_muse_glimmer_image_"
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +160,7 @@ class NativeServeConfig:
     session_limit: int | None = None
     max_output_tokens: int = 256
     kv_cache: KVCacheConfig = field(default_factory=lambda: KVCacheConfig(mode="auto"))
+    model_load: NativeModelLoadConfig = field(default_factory=NativeModelLoadConfig)
     chat_template: str = "auto"
     api_key_file: Path | None = None
     state_db: Path | None = None
@@ -347,22 +361,14 @@ class _TiktokenCodec(_TextCodec):
 
 
 def _load_text_codec(manifest: Mapping[str, Any]) -> _TextCodec:
-    raw = manifest.get("tokenizer")
-    if not isinstance(raw, Mapping):
-        raise NativeServingConfigurationError(
-            "Serving requires tokenizer metadata in the Native Execution manifest"
-        )
-    family = str(raw.get("family") or raw.get("tokenizer_family") or "").strip().lower()
-    encoding_name = str(raw.get("encoding_name") or raw.get("tokenizer_name") or "").strip()
-    tokenization = str(raw.get("tokenization") or "").strip().lower()
-    if encoding_name and (
-        family in {"", "tiktoken", "tiktoken_bpe", "gpt2_bpe"}
-        or tokenization in {"", "gpt2_bpe", "tiktoken", "tiktoken_bpe"}
-    ):
-        return _TiktokenCodec(encoding_name)
-    raise NativeServingConfigurationError(
-        "This serving milestone supports artifact-declared tiktoken encodings only"
-    )
+    artifact_root = manifest.get("__artifact_root__")
+    try:
+        return load_native_text_codec(
+            manifest,
+            artifact_root=Path(str(artifact_root)) if artifact_root else None,
+        )  # type: ignore[return-value]
+    except NativeChatConfigurationError as exc:
+        raise NativeServingConfigurationError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +376,7 @@ class _ChatMessage:
     role: str
     content: str
     name: str | None = None
+    image_sources: tuple[str, ...] = ()
 
 
 class _ChatRenderer:
@@ -408,34 +415,31 @@ class _PlaceholderRenderer(_ChatRenderer):
         return self._template.replace("{messages}", _plain_role_transcript(messages))
 
 
-def _load_chat_renderer(manifest: Mapping[str, Any], selection: str) -> _ChatRenderer:
-    normalized = selection.strip()
-    if normalized.lower() == "plain_roles":
-        return _PlainRolesRenderer()
-    if normalized.lower() != "auto":
-        path = Path(normalized).expanduser().resolve()
-        if not path.is_file():
-            raise NativeServingConfigurationError(f"Chat template file does not exist: {path}")
-        return _PlaceholderRenderer(path.read_text(encoding="utf-8"), name=str(path))
+class _NativeChatRendererAdapter(_ChatRenderer):
+    def __init__(self, renderer: Any) -> None:
+        self.name = str(renderer.name)
+        self._renderer = renderer
 
-    metadata = manifest.get("chat_template")
-    if not isinstance(metadata, Mapping):
-        raise NativeServingConfigurationError(
-            "Artifact has no chat template. Serving requires explicit "
-            "--chat-template plain_roles or a template PATH."
+    def render(self, messages: Sequence[_ChatMessage]) -> str:
+        converted = tuple(
+            NativeChatMessage(role=message.role, content=message.content, name=message.name)
+            for message in messages
         )
-    template = metadata.get("template")
-    format_name = str(metadata.get("format") or "").strip().lower()
-    if format_name == "plain_roles" or (
-        isinstance(template, str) and template.strip().lower() == "plain_roles"
-    ):
-        return _PlainRolesRenderer()
-    if isinstance(template, str) and "{messages}" in template:
-        return _PlaceholderRenderer(template, name="artifact")
-    raise NativeServingConfigurationError(
-        "Artifact chat template is unavailable or unsupported by the lean renderer. "
-        "Select --chat-template plain_roles or a PATH containing {messages}."
-    )
+        return self._renderer.render(converted, include_assistant_prompt=True)
+
+
+def _load_chat_renderer(manifest: Mapping[str, Any], selection: str) -> _ChatRenderer:
+    artifact_root = manifest.get("__artifact_root__")
+    try:
+        resolution = resolve_native_chat_renderer(
+            manifest,
+            selection,
+            allow_auto_fallback=False,
+            artifact_root=Path(str(artifact_root)) if artifact_root else None,
+        )
+    except NativeChatConfigurationError as exc:
+        raise NativeServingConfigurationError(str(exc)) from exc
+    return _NativeChatRendererAdapter(resolution.renderer)
 
 
 def _read_manifest(artifact: Path) -> tuple[Path, dict[str, Any]]:
@@ -496,6 +500,7 @@ class _PreparedChat:
     generation: GenerationConfig
     stream: bool
     include_usage: bool
+    media_batch: Any | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -655,9 +660,11 @@ class NativeServingRuntime:
             raise NativeServingConfigurationError(
                 "Resident prefix caching rejects Tile-CUDA TurboQuant attention"
             )
-        _manifest_path, manifest = _read_manifest(config.artifact)
-        codec = _load_text_codec(manifest)
-        renderer = _load_chat_renderer(manifest, config.chat_template)
+        manifest_path, manifest = _read_manifest(config.artifact)
+        presentation_manifest = dict(manifest)
+        presentation_manifest["__artifact_root__"] = str(manifest_path.parent)
+        codec = _load_text_codec(presentation_manifest)
+        renderer = _load_chat_renderer(presentation_manifest, config.chat_template)
         context_limit = _context_limit(manifest)
         _require_serving_capability(manifest)
         model_metadata = manifest.get("model")
@@ -677,6 +684,7 @@ class NativeServingRuntime:
                 config.artifact,
                 binding=binding,
                 kv_cache=config.kv_cache,
+                load_config=config.model_load,
             )
         except BaseException:
             if state_store is not None:
@@ -742,6 +750,50 @@ class NativeServingRuntime:
                 code="unsupported_feature",
             )
         messages = _parse_messages(payload.get("messages"))
+        media_batch = None
+        image_sources = tuple(
+            source for message in messages for source in message.image_sources
+        )
+        if image_sources:
+            if not self._capabilities.vision:
+                raise OpenAIAPIError(
+                    400,
+                    "This resident artifact does not have a loaded, jointly proven Muse Glimmer image encoder.",
+                    param="messages",
+                    code="unsupported_feature",
+                )
+            try:
+                from .native_glimmer_media import (
+                    NativeMuseGlimmerMediaError,
+                    prepare_images_for_model,
+                )
+
+                media_batch = prepare_images_for_model(self.model, image_sources)
+            except (NativeMuseGlimmerMediaError, OSError) as exc:
+                raise OpenAIAPIError(
+                    400,
+                    f"Unable to preprocess Muse Glimmer image input: {exc}",
+                    param="messages",
+                    code="invalid_image",
+                ) from exc
+            fragments = iter(media_batch.prompt_fragments)
+            rendered_messages: list[_ChatMessage] = []
+            for message in messages:
+                content = message.content
+                for local_index in range(len(message.image_sources)):
+                    marker = f"{_IMAGE_MARKER_PREFIX}{local_index}\x00"
+                    if content.count(marker) != 1:
+                        raise OpenAIAPIError(
+                            400,
+                            "Image content marker accounting is inconsistent.",
+                            param="messages",
+                            code="invalid_image",
+                        )
+                    content = content.replace(marker, next(fragments), 1)
+                rendered_messages.append(
+                    _ChatMessage(role=message.role, content=content, name=message.name)
+                )
+            messages = tuple(rendered_messages)
 
         stream = payload.get("stream", False)
         if not isinstance(stream, bool):
@@ -842,6 +894,7 @@ class NativeServingRuntime:
             generation=generation,
             stream=stream,
             include_usage=include_usage,
+            media_batch=media_batch,
         )
 
     def complete(
@@ -852,7 +905,25 @@ class NativeServingRuntime:
         cancel_event: threading.Event | None = None,
     ) -> _CompletedChat:
         with self.model.create_session() as session:
-            session.prefill(request.prompt_token_ids)
+            if request.media_batch is None:
+                session.prefill(request.prompt_token_ids)
+            else:
+                embeddings = self.model.encode_media(
+                    request.media_batch.packed_patches,
+                    request.media_batch.grid_thw,
+                )
+                positions = request.media_batch.replacement_positions(
+                    request.prompt_token_ids
+                )
+                if len(embeddings) != len(positions):
+                    raise NativeInferenceCapabilityError(
+                        "Resident image rows do not match rendered patch placeholders"
+                    )
+                session.prefill_with_embeddings(
+                    request.prompt_token_ids,
+                    replacement_positions=positions,
+                    replacement_embeddings=embeddings,
+                )
 
             def committed(event: GenerationEvent) -> None:
                 if on_token is not None:
@@ -914,7 +985,7 @@ def _parse_messages(raw: Any) -> tuple[_ChatMessage, ...]:
             field_name = unknown_message_fields[0]
             raise OpenAIAPIError(
                 400,
-                f"{param}.{field_name} is not supported by this text-only server.",
+                f"{param}.{field_name} is not supported by this bounded server.",
                 param=f"{param}.{field_name}",
                 code="unsupported_feature",
             )
@@ -922,37 +993,94 @@ def _parse_messages(raw: Any) -> tuple[_ChatMessage, ...]:
         if role not in _TEXT_ROLES:
             raise OpenAIAPIError(
                 400,
-                f"{param}.role {role!r} is not supported; tool and multimodal items are unavailable.",
+                f"{param}.role {role!r} is not supported; tool roles are unavailable.",
                 param=f"{param}.role",
                 code="unsupported_feature",
             )
         content = item.get("content")
+        image_sources: list[str] = []
         if isinstance(content, str):
+            if _IMAGE_MARKER_PREFIX in content:
+                raise OpenAIAPIError(400, f"{param}.content contains a reserved marker.", param=param)
             text = content
         elif isinstance(content, list) and content:
             parts: list[str] = []
             for part_index, part in enumerate(content):
                 part_param = f"{param}.content.{part_index}"
-                if not isinstance(part, Mapping) or part.get("type") != "text":
+                if not isinstance(part, Mapping):
                     raise OpenAIAPIError(
                         400,
-                        f"{part_param} is not a supported text content part.",
+                        f"{part_param} must be an object.",
+                        param=part_param,
+                    )
+                part_type = part.get("type")
+                if part_type == "text":
+                    unknown_part_fields = sorted(set(part) - _SUPPORTED_TEXT_PART_FIELDS)
+                    if unknown_part_fields:
+                        field_name = unknown_part_fields[0]
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param}.{field_name} is not supported.",
+                            param=f"{part_param}.{field_name}",
+                            code="unsupported_feature",
+                        )
+                    text_part = part.get("text")
+                    if not isinstance(text_part, str):
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param}.text must be a string.",
+                            param=part_param,
+                        )
+                    if _IMAGE_MARKER_PREFIX in text_part:
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param}.text contains a reserved marker.",
+                            param=part_param,
+                        )
+                    parts.append(text_part)
+                elif part_type == "image_url":
+                    if role != "user":
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param} is only supported on user messages.",
+                            param=part_param,
+                            code="unsupported_feature",
+                        )
+                    unknown_part_fields = sorted(set(part) - _SUPPORTED_IMAGE_PART_FIELDS)
+                    image_url = part.get("image_url")
+                    if unknown_part_fields or not isinstance(image_url, Mapping):
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param} has an invalid image_url contract.",
+                            param=part_param,
+                        )
+                    unknown_url_fields = sorted(
+                        set(image_url) - _SUPPORTED_IMAGE_URL_FIELDS
+                    )
+                    url = image_url.get("url")
+                    detail = image_url.get("detail", "auto")
+                    if (
+                        unknown_url_fields
+                        or not isinstance(url, str)
+                        or not url
+                        or detail not in {"auto", "high"}
+                    ):
+                        raise OpenAIAPIError(
+                            400,
+                            f"{part_param}.image_url must provide a data URL and auto/high detail.",
+                            param=f"{part_param}.image_url",
+                        )
+                    parts.append(
+                        f"{_IMAGE_MARKER_PREFIX}{len(image_sources)}\x00"
+                    )
+                    image_sources.append(url)
+                else:
+                    raise OpenAIAPIError(
+                        400,
+                        f"{part_param} is not a supported text/image content part.",
                         param=part_param,
                         code="unsupported_feature",
                     )
-                unknown_part_fields = sorted(set(part) - _SUPPORTED_TEXT_PART_FIELDS)
-                if unknown_part_fields:
-                    field_name = unknown_part_fields[0]
-                    raise OpenAIAPIError(
-                        400,
-                        f"{part_param}.{field_name} is not supported.",
-                        param=f"{part_param}.{field_name}",
-                        code="unsupported_feature",
-                    )
-                text_part = part.get("text")
-                if not isinstance(text_part, str):
-                    raise OpenAIAPIError(400, f"{part_param}.text must be a string.", param=part_param)
-                parts.append(text_part)
             text = "".join(parts)
         else:
             raise OpenAIAPIError(
@@ -964,7 +1092,14 @@ def _parse_messages(raw: Any) -> tuple[_ChatMessage, ...]:
         name = item.get("name")
         if name is not None and (not isinstance(name, str) or not name):
             raise OpenAIAPIError(400, f"{param}.name must be a non-empty string.", param=f"{param}.name")
-        messages.append(_ChatMessage(role=role, content=text, name=name))
+        messages.append(
+            _ChatMessage(
+                role=role,
+                content=text,
+                name=name,
+                image_sources=tuple(image_sources),
+            )
+        )
     return tuple(messages)
 
 

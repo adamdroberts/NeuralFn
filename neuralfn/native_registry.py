@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import math
+import re
 from typing import Any, Mapping, Sequence
 
 _NATIVE_IR_VERSION = 1
@@ -36,6 +37,7 @@ _NATIVE_TRAIN_FAMILY_TARGETS: dict[str, str] = {
     "nanogpt": "nfn_gpt_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
+    "muse-glimmer": "nfn_muse_glimmer_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
     "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
@@ -69,6 +71,7 @@ _SHIPPED_PRESETS_BY_FAMILY: dict[str, tuple[str, ...]] = {
         "modern_norms_llama", "mxfp4_llama", "qwen3_longctx", "ternary_b158",
         "ternary_b158_modern",
     ),
+    "muse-glimmer": ("muse_glimmer",),
     "mixllama": (
         "deepseek_v3", "mixllama", "mixllama_fast", "mixllama_fast_megakernel",
         "moe", "moe_modern",
@@ -237,14 +240,19 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "latent_pool",
     "layer_norm",
     "linear",
+    "lora_linear",
+    "nf4_linear",
     "lm_head",
     "load_balance_loss",
     "logit_softcap",
     "loss_scale",
+    "tensor_scale",
     "mamba",
     "manifold_hyper_connection",
     "mask_scheduler",
+    "masked_token_cross_entropy",
     "merge_heads",
+    "multiply",
     "multi_latent_attention",
     "mx_linear",
     "native_sparse_attention",
@@ -269,7 +277,10 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "semantic_hasher",
     "semantic_moe_jepa_evo_router",
     "semantic_projector",
+    "sigmoid",
+    "silu",
     "sliding_window_attention",
+    "sft_dataset_source",
     "swiglu",
     "tied_lm_head",
     "token_cross_entropy",
@@ -404,6 +415,15 @@ def native_trainer_specs() -> tuple[NativeTrainerSpec, ...]:
                 "resident-dense-in-process-abi-v1",
                 "resident-dense-lossless-kv-cache-v1",
             )
+        elif normalized_family == "muse-glimmer":
+            capability_evidence = (
+                "muse-glimmer-exact-native-training-abi-v1",
+                "muse-glimmer-bf16-parameter-checkpoint-resume-v1",
+                "muse-glimmer-frozen-base-native-lora-v1",
+                "muse-glimmer-frozen-nf4-base-native-qlora-v1",
+                "resident-muse-glimmer-cpu-cuda-abi-v1",
+                "resident-muse-glimmer-hybrid-lossless-kv-cache-v1",
+            )
         elif normalized_family == "nanogpt":
             capability_evidence = _NANOGPT_UNPROVEN_EVIDENCE
         else:
@@ -415,13 +435,17 @@ def native_trainer_specs() -> tuple[NativeTrainerSpec, ...]:
                 shipped_presets=presets_by_family.get(normalized_family, ()),
                 text_generation=True,
                 trainer_registered=True,
-                architecture_persistence_proven=dense_forward,
+                architecture_persistence_proven=(
+                    dense_forward or normalized_family == "muse-glimmer"
+                ),
                 native_forward=(
                     "one-shot-architecture-forward"
-                    if dense_forward
+                    if dense_forward or normalized_family == "muse-glimmer"
                     else "diagnostic-transition-only"
                 ),
-                resident_inference=dense_forward,
+                resident_inference=(
+                    dense_forward or normalized_family == "muse-glimmer"
+                ),
                 evidence=(
                     "native_train.NATIVE_TRAIN_FAMILY_TARGETS",
                     *capability_evidence,
@@ -507,7 +531,23 @@ def native_graph_training_adapters() -> tuple[NativeGraphTrainingAdapter, ...]:
         )
         for selector in ("moe", "mixllama", "mixllama_fast")
     )
-    return (*dense_adapters, *llama_adapters, *standard_moe_adapters)
+    glimmer_adapter = NativeGraphTrainingAdapter(
+        selector="muse_glimmer",
+        family="muse-glimmer",
+        native_target=_NATIVE_TRAIN_FAMILY_TARGETS["muse-glimmer"],
+        adapter_mode="validated-muse-glimmer-graph-file-v1",
+        trainer_consumes_native_ir=False,
+        architecture_persistence_proven=True,
+        evidence=(
+            "native-ir-safe-payload-compiler-v1",
+            "muse-glimmer-exact-active-topology-contract-v1",
+            "muse-glimmer-exact-native-training-abi-v1",
+            "muse-glimmer-bf16-parameter-checkpoint-resume-v1",
+            "muse-glimmer-frozen-base-native-lora-v1",
+            "muse-glimmer-frozen-nf4-base-native-qlora-v1",
+        ),
+    )
+    return (*dense_adapters, *llama_adapters, *standard_moe_adapters, glimmer_adapter)
 
 
 def native_lowering_specs() -> tuple[NativeLoweringSpec, ...]:
@@ -536,6 +576,141 @@ def _template_parts(model: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mappin
     return spec, template, block
 
 
+def _resident_muse_glimmer_v1_graph_compatible(
+    model_mapping: Mapping[str, Any],
+    topology_mapping: Mapping[str, Any],
+    classification: Mapping[str, Any],
+    *,
+    allow_training_objectives: bool = False,
+) -> bool:
+    """Require the immutable production Muse Glimmer decoder contract.
+
+    The compiled trainer consumes the authenticated BF16 tensor table rather
+    than arbitrary Native IR.  This gate therefore admits only the exact
+    shipped 52-layer graph; preview/tiny graphs remain test oracles and cannot
+    inherit production capability.
+    """
+
+    del topology_mapping  # module lowering is checked independently
+    if classification.get("model_family") != "muse-glimmer":
+        return False
+    model = _mapping(model_mapping)
+    spec, template, block = _template_parts(model)
+    exact_spec = {
+        "model_dim": 6656,
+        "num_layers": 52,
+        "vocab_size": 202048,
+        "tie_embeddings": False,
+        "max_position_embeddings": 131072,
+        "output_multiplier": 0.19611613513818404,
+        "logit_softcap": 20.0,
+    }
+    if any(spec.get(key) != value for key, value in exact_spec.items()):
+        return False
+    objective = _normalize_name(template.get("objective"))
+    if objective not in ({"ar", "sft"} if allow_training_objectives else {"ar"}):
+        return False
+    exact_template = {
+        "backbone": "muse_glimmer",
+        "runtime": "eager",
+        "sparsity": "dense",
+    }
+    if any(_normalize_name(template.get(key)) != _normalize_name(value)
+           for key, value in exact_template.items()):
+        return False
+    exact_block = {
+        "family": "muse_glimmer",
+        "norm_type": "rmsnorm",
+        "mlp_type": "swiglu",
+        "num_heads": 32,
+        "num_kv_heads": 2,
+        "head_dim": 128,
+        "attention_inner_dim": 4096,
+        "intermediate_size": 19968,
+        "is_causal": True,
+        "linear_bias": False,
+        "use_qk_norm": True,
+        "qk_norm_kind": "weightless_rms",
+        "qk_norm_eps": 1.0e-5,
+        "q_scale_factor": 3.87,
+        "attention_gate": "sigmoid",
+        "attention_gate_dim": 4096,
+        "norm_layout": "sandwich",
+        "centered_rms_norm": True,
+        "norm_eps": 1.0e-5,
+        "post_norm_eps": 1.0e-8,
+        "embedding_norm_kind": "weightless_rms",
+        "embedding_norm_eps": 1.0e-5,
+    }
+    if any(block.get(key) != value for key, value in exact_block.items()):
+        return False
+    pattern = block.get("layer_attention_pattern")
+    if not isinstance(pattern, (tuple, list)) or len(pattern) != 4:
+        return False
+    expected = (
+        ("local", 2048, "rope", 500000.0),
+        ("local", 2048, "rope", 500000.0),
+        ("local", 2048, "rope", 500000.0),
+        ("full", None, "none", 500000.0),
+    )
+    for item, wanted in zip(pattern, expected, strict=True):
+        entry = _mapping(item)
+        actual = (
+            _normalize_name(entry.get("kind")),
+            entry.get("window_size"),
+            _normalize_name(entry.get("pos_encoding")),
+            entry.get("rope_theta"),
+        )
+        if actual != wanted:
+            return False
+    if objective == "ar":
+        return spec.get("finetune") in (None, {})
+    finetune = _mapping(spec.get("finetune"))
+    adapter_type = _normalize_name(block.get("adapter_type"))
+    if not (
+        finetune.get("objective") == "sft"
+        and _normalize_name(template.get("adapter")) == "none"
+        and adapter_type in {"none", "lora", "qlora"}
+        and all(
+            re.fullmatch(r"[0-9a-f]{64}", str(finetune.get(key) or "")) is not None
+            for key in ("tokenizer_sha256", "chat_template_sha256")
+        )
+    ):
+        return False
+    if adapter_type == "none":
+        return True
+    allowed_targets = {
+        "q_proj", "k_proj", "v_proj", "o_proj", "attn_gate_proj",
+        "gate_proj", "up_proj", "down_proj",
+    }
+    raw_targets = block.get("lora_targets")
+    targets = tuple(str(value) for value in raw_targets) if isinstance(raw_targets, (list, tuple)) else ()
+    try:
+        rank = int(block.get("lora_rank"))
+        alpha = float(block.get("lora_alpha"))
+        dropout = float(block.get("lora_dropout"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        bool(targets)
+        and len(targets) == len(set(targets))
+        and set(targets) <= allowed_targets
+        and rank > 0
+        and alpha > 0.0
+        and 0.0 <= dropout < 1.0
+        and block.get("lora_bias") is False
+        and finetune.get("adapter_only_save") is True
+        and (
+            adapter_type != "qlora"
+            or (
+                block.get("qlora_group_size") == 64
+                and _normalize_name(block.get("qlora_compute_dtype"))
+                in {"bf16", "bfloat16"}
+            )
+        )
+    )
+
+
 def classify_native_graph_training_selector(
     model_mapping: Mapping[str, Any],
     topology_mapping: Mapping[str, Any],
@@ -561,6 +736,14 @@ def classify_native_graph_training_selector(
     spec, template, block = _template_parts(model)
     classification = classify_native_model(model, topology)
     family = str(classification["model_family"])
+    if family == "muse-glimmer":
+        return (
+            "muse_glimmer"
+            if _resident_muse_glimmer_v1_graph_compatible(
+                model, topology, classification, allow_training_objectives=True
+            )
+            else ""
+        )
     if family == "llama":
         if not _resident_llama_v1_graph_compatible(model, topology, classification):
             return ""
@@ -2257,6 +2440,9 @@ def capability_proof_for(
     standard_moe_profile = _resident_standard_moe_v1_graph_compatible(
         model_mapping, topology_mapping, classification
     )
+    muse_glimmer_profile = _resident_muse_glimmer_v1_graph_compatible(
+        model_mapping, topology_mapping, classification
+    )
     architecture_persistence = bool(
         trainer is not None
         and not selector_proof_blocked
@@ -2264,6 +2450,7 @@ def capability_proof_for(
             trainer.architecture_persistence_proven
             or llama_profile
             or standard_moe_profile
+            or muse_glimmer_profile
         )
     )
 
@@ -2283,6 +2470,7 @@ def capability_proof_for(
             trainer.native_forward == "one-shot-architecture-forward"
             or llama_profile
             or standard_moe_profile
+            or muse_glimmer_profile
         )
     )
     if not native_forward:
@@ -2298,7 +2486,13 @@ def capability_proof_for(
     resident_standard_moe = bool(
         lowering_supported and native_forward and standard_moe_profile
     )
-    resident_inference = resident_dense or resident_llama or resident_standard_moe
+    resident_muse_glimmer = bool(
+        lowering_supported and native_forward and muse_glimmer_profile
+    )
+    resident_inference = (
+        resident_dense or resident_llama or resident_standard_moe
+        or resident_muse_glimmer
+    )
     lossless_cache = resident_inference
     turboquant_cache = bool(
         resident_dense and _resident_dense_turboquant_compatible(model_mapping)
@@ -2367,6 +2561,16 @@ def capability_proof_for(
                 "resident-standard-moe-gqa-lossless-kv-cache-v1",
                 "resident-standard-moe-softmax-topk-renormalized-v1",
                 "resident-standard-moe-lean-serving-abi-v1",
+            )
+        )
+    elif resident_muse_glimmer:
+        evidence.extend(
+            (
+                "muse-glimmer-bf16-and-kquant-strict-checkpoint-v1",
+                "resident-muse-glimmer-cpu-cuda-abi-v1",
+                "resident-muse-glimmer-hybrid-lossless-kv-cache-v1",
+                "resident-muse-glimmer-dflash-feature-abi-v1",
+                "muse-glimmer-vram-auto-weight-profile-v1",
             )
         )
     else:

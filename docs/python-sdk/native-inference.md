@@ -14,12 +14,13 @@ bash tools/build_native_inference_binding.sh
 ```
 
 That extension loads native dense GPT-family bf16 v5, canonical native-family
-LLaMA float32, or exact graph-bound standard-MoE float32 checkpoint weights
-once, keeps them immutable, and runs the
+LLaMA float32, exact graph-bound standard-MoE float32, or strict Muse Glimmer
+BF16/K-Quant checkpoint weights once, keeps them immutable, and runs the
 corresponding real autoregressive forward/sampling math in C++.
 It provides isolated session token/RNG/cancellation state and all ABI v1
-lifecycle operations without spawning a process. Its current backend is
-reported as `cpu-reference-resident`. `auto` and `full` use preallocated,
+lifecycle operations without spawning a process. Legacy reviewed families
+report `cpu-reference-resident`; a strict Muse Glimmer load may instead report
+its whole-model native-CUDA text backend. `auto` and `full` use preallocated,
 lossless per-layer K/V storage plus final-hidden history; `off` keeps the
 full-prefix recomputation path as a parity oracle. The reviewed `gpt2`,
 `gpt2_megakernel`, `gpt2_moa`, `gpt2_zloss`, `gpt2_qknorm`, `gpt2_stable`, and
@@ -60,6 +61,31 @@ the ordered RMSNorm/GQA/router/expert tensor table. The resident engine executes
 routed SwiGLU experts and supports `off`, `auto`, and `full`; explicit
 TurboQuant fails closed. Raw-token SDK/CLI inference is proved. Text/HTTP use
 still depends on artifact tokenizer and chat metadata.
+
+Muse Glimmer uses a separate exact resident family rather than the canonical
+LLaMA adapter. A runnable bundle is created by
+`nfn migrate muse-glimmer-to-native` for pinned BF16 safetensors or
+`nfn migrate muse-glimmer-gguf-to-native` for the canonical official
+K-Quant-Dynamic/K-Quant-17GB files. The C++ CPU and CUDA text runners preserve
+the 6,656 residual width, 4,096 Q/gate width, 256 K/V width, explicit head
+dimension 128, three-local/one-global RoPE/NoPE schedule, four centered norms,
+untied head, and multiplier-before-softcap output. Local layers use ring caches
+at 2,048 rows while global layers retain the full configured context.
+
+An authenticated `dflash` companion adds BF16 or packed five-layer speculative
+decoding on CPU or CUDA. It consumes target layers `[1,13,25,37,49]`, proposes
+15 tokens in a 16-position block, verifies with the target in parallel, and
+atomically commits/crops both caches. Greedy and lossless sampled modes preserve
+the target distribution. The load policy is `off`, `auto`, or `required`;
+`required` fails before mutation when the companion, cache mode, device
+backend, or digest binding is unavailable.
+
+Full-BF16 artifacts can expose embedded CPU vision for images and decoded
+videos. Official packed bundles can attach the CPU `mmproj` for still images.
+The packed temporal projection cannot represent two distinct frames, and the
+current vision tower has no whole-model CUDA runner, so `video=false` for
+mmproj and `vision_cuda=false` everywhere. A CUDA load that requests mmproj
+fails before creating the model handle instead of running vision on CPU.
 
 This remains a topology-specific foundation rather than an all-family runtime.
 `nfn migrate graph-to-native` accepts either a graph-compatible native dense-v5
@@ -160,6 +186,7 @@ from neuralfn import (
     GenerationEvent,
     GenerationResult,
     KVCacheConfig,
+    NativeModelLoadConfig,
     NativeInferenceCapabilities,
     NativeInferenceCancelledError,
     NativeInferenceCapabilityError,
@@ -219,9 +246,63 @@ with NativeInferenceModel.load(
     print(result.text)
 ```
 
+For a multi-variant Muse Glimmer bundle, model-weight selection is separate
+from KV-cache configuration:
+
+```python
+from neuralfn import GenerationConfig, KVCacheConfig, NativeInferenceModel
+from neuralfn.native_inference import NativeModelLoadConfig
+
+load = NativeModelLoadConfig(
+    runtime="native-cuda",
+    weight_precision="auto",  # bf16 > Dynamic > 17GB among fitting profiles
+    cuda_device=0,
+    tile_ops_lib="/absolute/path/libnfn_native_train_tile_ops.so",
+    context_tokens=32_768,
+    session_count=1,
+    companion_checkpoints=("dflash",),
+    speculative_decoding="auto",
+)
+with NativeInferenceModel.load(
+    "artifacts/glimmer-kquant",
+    load_config=load,
+    kv_cache=KVCacheConfig(mode="full"),
+) as model:
+    with model.create_session(seed=7) as session:
+        session.prefill([200000, 200022, 1556, 200023])
+        result = session.decode(GenerationConfig(max_new_tokens=32))
+        print(
+            result.speculative_proposed_tokens,
+            result.speculative_accepted_tokens,
+            result.speculative_rejected_tokens,
+        )
+```
+
+`NativeModelLoadConfig.weight_precision` accepts `auto`, `bf16`,
+`k-quant-dynamic`, or `k-quant-17gb`. On CUDA, `auto` queries current free and
+total VRAM before model allocation and budgets target/companion weights,
+staging, workspace, hybrid target/assistant caches, configured context and
+session count, and reserve. It chooses quality-first only among authenticated,
+available, binding-supported profiles that fit. An explicit value is a strict
+pin and never downgrades. CPU `auto` selects the authenticated primary and does
+not reuse the CUDA VRAM policy. Weight precision, activation storage, and
+`KVCacheConfig` are independent.
+
+Glimmer media helpers are model methods:
+
+```python
+encoded_image = model.encode_images([image_data_url])
+encoded_video = model.encode_videos([decoded_pillow_frames], fps=2.0)
+```
+
+They return exact packed-media metadata and projected decoder-width rows.
+`NativeInferenceSession.prefill_with_embeddings()` replaces the rendered
+`<|patch|>` or `<|video|>` positions transactionally. External URL fetching
+and video-container decoding are intentionally outside the resident process.
+
 `NativeInferenceModel` exposes `load`, `create_session`, `fork_session`,
-`prefill`, `decode`, `current_logits`, `truncate`, `reset`, `cancel`, `stats`,
-and `close`. A
+`encode_media`, `encode_images`, `encode_videos`, `prefill`, `decode`,
+`current_logits`, `truncate`, `reset`, `cancel`, `stats`, and `close`. A
 `NativeInferenceSession` exposes the same state operations after creation.
 Closing is idempotent, and closing a model closes its remaining sessions.
 Model close publishes one atomic admission boundary under the lifecycle lock.
@@ -579,10 +660,11 @@ and native cached rows; `cache_write_tokens` counts only newly written prompt
 rows, excluding decode. Response/conversation/item deletion purges the whole
 API-key scope and fences old leases. Restart is cold.
 
-The first serving milestone exposes `/health`, `/v1/models`,
-`/v1/models/{model}`, and text-only `/v1/chat/completions`. A bounded
-single-worker queue creates one isolated SDK session per request and forwards
-SSE deltas only after token commitment. `NativeServeConfig`, `BearerAuth`,
+The serving surface exposes `/health`, `/v1/models`, `/v1/models/{model}`, and
+bounded `/v1/chat/completions`. Chat is text by default; a jointly proven CPU
+Muse Glimmer vision artifact may additionally accept base64 image data URLs. A
+bounded single-worker queue creates one isolated SDK session per request and
+forwards SSE deltas only after token commitment. `NativeServeConfig`, `BearerAuth`,
 `NativeServingRuntime`, and `create_native_inference_app()` are available from
 `neuralfn.native_serve` for embedding the isolated app.
 
@@ -761,7 +843,8 @@ additionally requires `temperature=0` and `top_p=1`; the separate function
 result continuation is ordinary text generation and may use ordinary sampling
 controls, but requires disabled truncation.
 General/parallel/hosted tools, nested/array schemas, constrained streaming or
-background work, Chat Completions tools, multimedia, and hosted resources
-remain explicitly unsupported. See the
+background work, Chat Completions tools, Responses multimedia, audio/files,
+server video, CUDA vision, and hosted resources remain explicitly unsupported.
+See the
 [REST contract](../rest-api/native-inference-serving.md) and
 [server architecture](../server/native-inference-serving.md).

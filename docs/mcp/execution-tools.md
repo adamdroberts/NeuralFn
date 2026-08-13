@@ -133,7 +133,7 @@ the source graph, training-only shard identity, counters/sampler, seed,
 accumulation, optimizer/LR horizon, BF16 routes, and a canonical profile of
 supported effective numerics before Tile/CUDA/H2D. Completion returns the
 strict `.diff.json` only after full bundle validation. The graph-training total
-is 13 ready and 53 blocked; migration/resident stay 12 ready and 54 blocked.
+is 13 ready and 54 blocked; migration/resident stay 12 ready and 55 blocked.
 LLaMA preflight derives and binds its complete trainer geometry and source SHA;
 the server accepts its final checkpoint only when validated v2 metadata carries
 the same source digest. A completed graph-bound `gpt2_moa` run similarly returns the

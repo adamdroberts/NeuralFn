@@ -133,8 +133,8 @@ Exact graph-training plans report local persistence/execution readiness true
 only after issuing the proof. Generic Native IR capability, migration, and
 resident inference remain false because those consumers do not yet consume the
 additive state or implement differential attention. The graph-training split is
-13 ready and 53 blocked; persistence plus resident inference remain 12 ready
-and 54 blocked.
+13 ready and 54 blocked; persistence plus resident inference remain 12 ready
+and 55 blocked.
 
 NanoGPT command routing is likewise not graph-faithful execution proof. The
 shared dense target can select NanoGPT geometry, but its persisted and executed
@@ -159,6 +159,43 @@ Other graph profiles fail before trainer resolution with node-specific
 compatibility JSON instead of falling back to Torch or a diagnostic transition
 sampler. The adapter records that graph preflight is enforced while the current
 trainer remains selector-driven and does not parse Native IR directly.
+
+### Muse Glimmer native training and post-training
+
+The production `muse_glimmer` graph has a dedicated source-bound native target,
+`nfn_muse_glimmer_native_train`. Unlike generic preview-preset planning, it
+requires the exact 52-layer/627-tensor topology and pinned BF16 source digest.
+It consumes versioned uint32 shards for AR pretraining or structured SFT
+records carrying `input_ids`, targets, loss masks, boundaries, tokenizer/chat
+hashes, and split/objective metadata.
+
+The C++/CUDA loop implements full parameter updates, all-eight-projection LoRA,
+and frozen NF4 group-64 QLoRA. It persists optimizer moments, RNG/sampler
+cursor, data identity, graph/source hashes, objective/adapter mode, and
+activation-recomputation settings. Resume validates those fields before Tile or
+CUDA state is created. QLoRA reconstructs immutable packed base rows from the
+same BF16 source, computes packed base forward and backward-input only, and
+saves adapter matrices rather than a second base model.
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-full.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-sft \
+  --objective sft \
+  --chat-template-sha256 cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678 \
+  --adapter qlora \
+  --lora-targets q_proj,k_proj,v_proj,o_proj,attn_gate_proj,gate_proj,up_proj,down_proj \
+  --qlora-group-size 64 \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-qlora
+```
+
+Exact Torch Glimmer roots additionally implement DPO with a frozen reference,
+sequence-masked reward modeling, and a real PPO rollout/value/GAE path. Those
+three objectives are not yet native C++ trainers. K-Quant-base adapter tuning,
+DFlash distillation, multimodal native tuning, and distributed 30B training
+also remain fail-closed; NF4 QLoRA must not be described as K-Quant training.
 
 Dense GPT native transformer training now fuses token embedding, absolute
 position embedding, and the scaled embedding residual add in the raw Tile-CUDA

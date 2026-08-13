@@ -56,9 +56,17 @@ cache ABI v1. MoA additionally requires migration through its source-bound
 candidates, selected activation, and positive interval. Canonical LLaMA backed by inference-checkpoint v2 metadata is the
 one non-dense resident exception: migration copies `model.f32` and supports
 lossless `off`/`auto`/`full`; TurboQuant and text serving without presentation
-metadata remain unavailable. Generic `.pt`/graph-only artifacts, bare MoA
-`.bin` files, differential/modern variants, every other non-dense adapter, and CUDA/Tile
-TurboQuant remain unavailable.
+metadata remain unavailable. Under generic graph migration, `.pt`/graph-only
+artifacts, bare MoA `.bin` files, differential/modern variants, other
+unreviewed non-dense adapters, and CUDA/Tile TurboQuant remain unavailable.
+
+Muse Glimmer is a separate strict family boundary. Pinned BF16 and official
+K-Quant-Dynamic/K-Quant-17GB bundles support resident C++ CPU and whole-model
+CUDA text execution, optional BF16 or packed DFlash, VRAM-aware weight-profile
+selection, and CPU image/video helpers under independent capability bits. See
+[native-inference.md](native-inference.md) and
+[glimmer-support-todo.md](../glimmer-support-todo.md) for the exact supported
+and remaining profiles.
 
 See [turboquant-reference.md](turboquant-reference.md) for the portable
 paper-aligned MSE/QJL codec oracle, deterministic tables, mixed-bit packing,
@@ -88,6 +96,7 @@ from neuralfn import (
     NativeCompatibilityReport, NativeExecutionManifest, NativeLoweringIssue,
     NativeMigrationResult, NativeTensorSpec, NativeGraphTrainPlan,
     GenerationConfig, GenerationEvent, GenerationResult, KVCacheConfig,
+    NativeModelLoadConfig,
     NativeInferenceCapabilities, NativeInferenceCapabilityError,
     NativeInferenceClosedError, NativeInferenceError,
     NativeInferenceModel, NativeInferenceSession,

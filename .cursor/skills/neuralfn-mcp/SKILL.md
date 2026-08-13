@@ -85,7 +85,7 @@ for `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
 `gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`, canonical `llama`, and its exact
 compile-runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`,
 and `mixllama_fast`, plus trusted-planner proof-bound `gpt2_diff` training (13
-ready; 53 blocked). `gpt2_diff` migration and resident inference remain
+ready; 54 blocked). `gpt2_diff` migration and resident inference remain
 unready because they do not consume its graph-bound learned-lambda bundle; its exact
 low-level native path is packed-QKV-only. Its version-2 continuation metadata
 binds all five binaries, the source, training-only shard identity,
@@ -218,6 +218,7 @@ the current compiled ABI.
 | `nanogpt` | GPT-2 style (LayerNorm, GELU, absolute pos) | AR |
 | `gpt2` | GPT-2 (with bias) | AR |
 | `llama` | LLaMA (RMSNorm, SwiGLU, RoPE, GQA) | AR |
+| `muse_glimmer` | Exact Muse Glimmer 30B decoder; strict native BF16/K-Quant/DFlash support is separately artifact-gated, with CPU-only vision | AR |
 | `moe` / `mixllama` | LLaMA + Mixture of Experts | AR |
 | `llama_fast` | LLaMA with torch.compile | AR |
 | `mixllama_fast` | MoE with torch.compile | AR |

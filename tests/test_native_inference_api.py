@@ -21,6 +21,7 @@ from neuralfn.native_inference import (
     NativeInferenceCapabilityError,
     NativeInferenceClosedError,
     NativeInferenceModel,
+    NativeModelLoadConfig,
     SESSION_PREFIX_COW_PROFILE,
     STANDARD_MOE_SESSION_PREFIX_COW_PROFILE,
     CPU_TURBOQUANT_SESSION_PREFIX_COW_PROFILE,
@@ -46,10 +47,15 @@ def _write_artifact(
     ),
     resident_abi_version: int | None = 1,
     resident_abi_status: str = "ready",
+    speculative_decoding: bool = False,
 ) -> Path:
     root.mkdir()
     checkpoint_bytes = b"neuralfn-fake-resident-checkpoint-v1"
     (root / "checkpoint.bin").write_bytes(checkpoint_bytes)
+    checkpoint_sha256 = hashlib.sha256(checkpoint_bytes).hexdigest()
+    dflash_bytes = b"neuralfn-fake-dflash-checkpoint-v1"
+    if speculative_decoding:
+        (root / "dflash.bin").write_bytes(dflash_bytes)
     payload = {
         "schema": "neuralfn.native_execution_manifest",
         "version": 1,
@@ -149,13 +155,75 @@ def _write_artifact(
                     else None
                 ),
             },
+            "speculative_decoding": {
+                "version": 1 if speculative_decoding else 0,
+                "status": "ready" if speculative_decoding else "unavailable",
+                "profile": (
+                    "muse-glimmer-dflash-block16-v1"
+                    if speculative_decoding
+                    else None
+                ),
+                "load_operation": "load_companion" if speculative_decoding else None,
+                "decode_operation": (
+                    "decode_speculative_block" if speculative_decoding else None
+                ),
+                "block_size": 16 if speculative_decoding else None,
+                "proposal_tokens": 15 if speculative_decoding else None,
+            },
         },
         "checkpoint": {
             "format": checkpoint_format,
             "artifact_path": "checkpoint.bin",
             "target_nbytes": len(checkpoint_bytes),
-            "target_sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
+            "target_sha256": checkpoint_sha256,
         },
+        "primary_checkpoint_variant": "bf16" if speculative_decoding else None,
+        "checkpoint_variants": (
+            {
+                "bf16": {
+                    "format": checkpoint_format,
+                    "artifact_path": "checkpoint.bin",
+                    "target_nbytes": len(checkpoint_bytes),
+                    "target_sha256": checkpoint_sha256,
+                    "required_kernel_profile": "fixture-bf16",
+                    "resident_weight_bytes": len(checkpoint_bytes),
+                    "peak_load_staging_bytes": 0,
+                    "max_workspace_bytes": 0,
+                    "memory_profile": {
+                        "version": 1,
+                        "minimum_total_vram_bytes": 1,
+                        "backend_fingerprint": "fixture-cpu-v1",
+                        "fixed_runtime_bytes": 0,
+                        "kv_cache_bytes_per_context_token_per_session": 1,
+                        "session_bytes": 1,
+                    },
+                }
+            }
+            if speculative_decoding
+            else {}
+        ),
+        "companion_checkpoints": (
+            {
+                "dflash": {
+                    "format": "neuralfn.native_family_muse_glimmer_dflash.bf16.v1",
+                    "artifact_path": "dflash.bin",
+                    "target_nbytes": len(dflash_bytes),
+                    "target_sha256": hashlib.sha256(dflash_bytes).hexdigest(),
+                    "resident_weight_bytes": len(dflash_bytes),
+                    "target_compatibility": {
+                        "allowed_target_checkpoint_sha256": [checkpoint_sha256],
+                        "target_layer_ids_zero_based": [1, 13, 25, 37, 49],
+                        "block_size": 16,
+                        "proposal_tokens": 15,
+                        "mask_token_id": 201818,
+                        "shared_embedding": True,
+                        "shared_lm_head": True,
+                    },
+                }
+            }
+            if speculative_decoding
+            else {}
+        ),
         "session_state_kinds": ["kv"],
         "capabilities": {
             "native_inference": native_inference,
@@ -167,8 +235,13 @@ def _write_artifact(
             "structured_output": structured_output,
             "session_prefix_cow": session_prefix_cow,
             "session_prefix_cow_cpu_turboquant": session_prefix_cow_cpu_turboquant,
+            "speculative_decoding": speculative_decoding,
         },
     }
+    if not speculative_decoding:
+        payload.pop("primary_checkpoint_variant", None)
+        payload.pop("checkpoint_variants", None)
+        payload.pop("companion_checkpoints", None)
     (root / "native-execution-manifest.json").write_text(
         json.dumps(payload),
         encoding="utf-8",
@@ -195,6 +268,7 @@ class FakeResidentBinding:
             LLAMA_SESSION_PREFIX_COW_PROFILE,
             STANDARD_MOE_SESSION_PREFIX_COW_PROFILE,
         ),
+        speculative_decoding: bool = False,
     ) -> None:
         self.turboquant = turboquant
         self.tile_attention = tile_attention
@@ -204,6 +278,7 @@ class FakeResidentBinding:
         self.session_prefix_cow = session_prefix_cow
         self.session_prefix_cow_cpu_turboquant = session_prefix_cow_cpu_turboquant
         self.session_prefix_cow_profiles = session_prefix_cow_profiles
+        self.speculative_decoding = speculative_decoding
         self.model_loads = 0
         self.model_closes = 0
         self.session_closes = 0
@@ -232,6 +307,17 @@ class FakeResidentBinding:
                 "operation": "fork_session",
                 "profiles": list(self.session_prefix_cow_profiles),
             },
+            "weight_kernel_profiles": ["fixture-bf16"],
+            "speculative_decoding": self.speculative_decoding,
+            "dflash_cpu": self.speculative_decoding,
+            "dflash_cuda": self.speculative_decoding,
+            "speculative_decoding_abi": {
+                "version": 1,
+                "load_operation": "load_companion",
+                "decode_operation": "decode_speculative_block",
+                "block_size": 16,
+                "proposal_tokens": 15,
+            },
         }
 
     def load_model(self, artifact_root: str, manifest: dict[str, Any]) -> str:
@@ -243,6 +329,19 @@ class FakeResidentBinding:
         assert model == "model-handle"
         self.model_closes += 1
         self.calls.append(("close_model",))
+
+    def load_companion(
+        self,
+        model: str,
+        artifact_root: str,
+        descriptor: dict[str, Any],
+    ) -> Mapping[str, Any]:
+        assert model == "model-handle"
+        assert descriptor["format"] == (
+            "neuralfn.native_family_muse_glimmer_dflash.bf16.v1"
+        )
+        self.calls.append(("load_companion", artifact_root, descriptor["target_sha256"]))
+        return {"loaded": True, "component": "dflash", "whole_model_cuda": True}
 
     def configure_model_turboquant_attention(
         self,
@@ -325,6 +424,42 @@ class FakeResidentBinding:
             )
         )
         return {"token_id": token_id, "text": f"<{token_id}>", "finish_reason": None}
+
+    def decode_speculative_block(
+        self,
+        model: str,
+        session: int,
+        config: dict[str, Any],
+    ) -> Mapping[str, Any]:
+        assert model == "model-handle"
+        state = self.sessions[session]
+        count = min(3, config["max_tokens_remaining"])
+        rows: list[dict[str, Any]] = []
+        for _index in range(count):
+            token_id = session * 100 + len(state["tokens"])
+            finish = "stop" if token_id in config["stop_token_ids"] else None
+            state["tokens"].append(token_id)
+            rows.append(
+                {
+                    "token_id": token_id,
+                    "text": f"<{token_id}>",
+                    "finish_reason": finish,
+                }
+            )
+            if finish is not None:
+                break
+        proposed = max(0, len(rows) - 1)
+        self.calls.append(
+            ("decode_speculative_block", session, tuple(row["token_id"] for row in rows))
+        )
+        return {
+            "tokens": rows,
+            "proposed_tokens": proposed,
+            "accepted_tokens": proposed,
+            "rejected_tokens": 0,
+            "target_rows": len(rows),
+            "assistant_blocks": 1 if proposed else 0,
+        }
 
     def current_logits(self, model: str, session: int) -> list[float]:
         assert model == "model-handle"
@@ -457,6 +592,124 @@ def test_model_loads_once_and_keeps_multi_session_state_isolated(tmp_path: Path)
 
     assert binding.model_closes == 1
     assert binding.session_closes == 2
+
+
+def test_dflash_required_loads_companion_and_mirrors_atomic_blocks_before_callbacks(
+    tmp_path: Path,
+) -> None:
+    artifact = _write_artifact(
+        tmp_path / "artifact",
+        speculative_decoding=True,
+    )
+    binding = FakeResidentBinding(speculative_decoding=True)
+    observed_native_lengths: list[int] = []
+
+    with NativeInferenceModel.load(
+        artifact,
+        binding=binding,
+        load_config=NativeModelLoadConfig(
+            runtime="cpu",
+            speculative_decoding="required",
+        ),
+    ) as model:
+        assert model.capabilities.speculative_decoding is True
+        assert model.capabilities.dflash_cpu is True
+        assert model.stats()["effective_speculative_decoding"] == "dflash"
+        session = model.create_session(seed=7)
+        session.prefill([1, 2])
+        result = session.decode(
+            GenerationConfig(max_new_tokens=5, temperature=0.0),
+            on_token=lambda _event: observed_native_lengths.append(
+                len(binding.sessions[1]["tokens"])
+            ),
+        )
+
+        assert result.token_ids == (102, 103, 104, 105, 106)
+        assert result.speculative_proposed_tokens == 3
+        assert result.speculative_accepted_tokens == 3
+        assert result.speculative_rejected_tokens == 0
+        assert result.speculative_target_rows == 5
+        assert result.speculative_assistant_blocks == 2
+        assert observed_native_lengths == [5, 5, 5, 7, 7]
+        assert session.token_ids == tuple(binding.sessions[1]["tokens"])
+
+    assert any(call[0] == "load_companion" for call in binding.calls)
+
+
+def test_dflash_stop_boundary_and_callback_failure_preserve_mirrored_state(
+    tmp_path: Path,
+) -> None:
+    artifact = _write_artifact(
+        tmp_path / "artifact",
+        speculative_decoding=True,
+    )
+    binding = FakeResidentBinding(speculative_decoding=True)
+    with NativeInferenceModel.load(
+        artifact,
+        binding=binding,
+        load_config=NativeModelLoadConfig(
+            runtime="cpu",
+            speculative_decoding="required",
+        ),
+    ) as model:
+        stopped = model.create_session()
+        stopped.prefill([1, 2])
+        result = stopped.decode(
+            GenerationConfig(
+                max_new_tokens=5,
+                temperature=0.0,
+                stop_token_ids=(104,),
+            )
+        )
+        assert result.token_ids == (102, 103, 104)
+        assert result.finish_reason == "stop"
+        assert stopped.token_ids == (1, 2, 102, 103, 104)
+
+        callback_session = model.create_session()
+        callback_session.prefill([8])
+
+        def fail_callback(_event: GenerationEvent) -> None:
+            raise RuntimeError("callback failed")
+
+        with pytest.raises(RuntimeError, match="callback failed"):
+            callback_session.decode(
+                GenerationConfig(max_new_tokens=3, temperature=0.0),
+                on_token=fail_callback,
+            )
+        assert callback_session.token_ids == tuple(binding.sessions[2]["tokens"])
+        assert callback_session.token_ids == (8, 201, 202, 203)
+
+
+def test_speculative_off_uses_target_decode_and_required_fails_without_binding_proof(
+    tmp_path: Path,
+) -> None:
+    artifact = _write_artifact(
+        tmp_path / "artifact",
+        speculative_decoding=True,
+    )
+    binding = FakeResidentBinding(speculative_decoding=True)
+    with NativeInferenceModel.load(
+        artifact,
+        binding=binding,
+        load_config=NativeModelLoadConfig(runtime="cpu", speculative_decoding="off"),
+    ) as model:
+        session = model.create_session()
+        session.prefill([1])
+        assert session.decode(
+            GenerationConfig(max_new_tokens=1, temperature=0.0)
+        ).token_ids == (101,)
+    assert not any(call[0] == "load_companion" for call in binding.calls)
+    assert any(call[0] == "decode_one" for call in binding.calls)
+
+    with pytest.raises(NativeInferenceCapabilityError, match="feature ABI"):
+        NativeInferenceModel.load(
+            artifact,
+            binding=FakeResidentBinding(speculative_decoding=False),
+            load_config=NativeModelLoadConfig(
+                runtime="cpu",
+                speculative_decoding="required",
+            ),
+        )
 
 
 def test_exact_prefix_sync_truncates_suffix_and_rebuilds_after_front_trim(

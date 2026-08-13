@@ -103,7 +103,7 @@ The currently execution-ready graph-file adapters are `gpt2`,
 `gpt2_zloss`, canonical `llama`, and its exact compile-runtime alias
 `llama_fast`, exact standard-MoE `moe`, `mixllama`, and `mixllama_fast`, plus
 trusted-planner proof-bound `gpt2_diff` training. That is 13 graph-training
-ready and 53 blocked shipped presets. `gpt2_diff` migration and resident
+ready and 54 blocked shipped presets. `gpt2_diff` migration and resident
 inference remain blocked because its
 graph-bound learned-lambda bundle is not consumed by migration or resident
 inference and exact low-level differential execution is packed-QKV-only. Its

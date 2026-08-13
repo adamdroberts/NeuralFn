@@ -78,8 +78,8 @@ proof identities, and geometry. Each binary is hashed and inspected from its
 own exact-size no-follow descriptor in bounded chunks; the service does not
 retain or slice the full multi-gigabyte bundle in Python memory. Migration and
 resident inference still do not
-validate or execute that state. Graph training is 13 ready/53 blocked;
-persistence and resident inference remain 12 ready/54 blocked.
+validate or execute that state. Graph training is 13 ready/54 blocked;
+persistence and resident inference remain 12 ready/55 blocked.
 
 Standard-MoE preparation independently re-plans the complete graph-owned
 geometry, including floating multiplier, `multiple_of=None` as native `0`,
@@ -94,6 +94,15 @@ There is no Torch or scalar fallback. The existing dense trainer currently
 consumes the immutable validated graph snapshot plus canonical selector rather
 than parsing Native IR itself, so metadata remains honest with
 `trainer_consumes_native_ir: false`.
+
+Muse Glimmer has a separately reviewed `nfn_muse_glimmer_native_train` direct
+trainer and exact graph planner for AR, structured SFT, LoRA, and QLoRA. It is
+not yet admitted by this editor/server run service: the REST request and
+dataset-alias workflow do not carry the required authenticated BF16 source
+checkpoint/SHA, ATEM lineage, or structured-SFT record contract. Server
+preflight/start must fail closed until those fields and artifact ownership
+rules are added; callers can use the direct CLI/SDK native training route
+meanwhile.
 
 ## Persistence
 

@@ -166,6 +166,7 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "nanogpt": "nfn_gpt_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
+    "muse-glimmer": "nfn_muse_glimmer_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
     "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
@@ -183,6 +184,7 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
 }
 NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "llama": "llama",
+    "muse-glimmer": "muse-glimmer",
     "llama-fast": "llama",
     "llama-fast-megakernel": "llama",
     "llama-megakernel": "llama",
@@ -326,6 +328,22 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
             "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop "
             "with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; "
             "architecture-specific forward inference from persistent family parameter state remains before production inference."
+        ),
+    },
+    {
+        "name": "muse-glimmer",
+        "status": "implemented-exact-native-trainer-v1",
+        "native_target": "nfn_muse_glimmer_native_train",
+        "transformer_lm_status": "native-glimmer-transformer-lm-v1",
+        "token_lm_status": "uint32-token-shards-v2",
+        "geometry_status": "exact-nonsquare-gqa-sandwich-norm",
+        "kernel_status": "glimmer-training-abi-v1",
+        "trainer_loop_status": "native-bf16-train-save-resume-v1",
+        "notes": (
+            "Muse Glimmer has a dedicated no-Python C++/CUDA target with exact "
+            "local/global asymmetric GQA, four centered sandwich norms, attention "
+            "gating, wide masked CE, uint32 shards, BF16 AdamW, activation "
+            "recomputation, authenticated full-state checkpoints, and strict resume."
         ),
     },
     {
@@ -522,7 +540,7 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
 _NATIVE_FULL_FAMILY_REGISTRY_NAMES = {
     entry["name"]
     for entry in _NATIVE_TRAIN_MODEL_REGISTRY
-    if entry["name"] not in {"gpt", "gpt2", "gpt3", "gpt2-evo", "nanogpt"}
+    if entry["name"] not in {"gpt", "gpt2", "gpt3", "gpt2-evo", "nanogpt", "muse-glimmer"}
 }
 
 

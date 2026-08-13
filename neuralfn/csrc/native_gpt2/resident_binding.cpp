@@ -1,6 +1,8 @@
 #include <Python.h>
 
 #include "resident_dense.h"
+#include "resident_glimmer.h"
+#include "resident_glimmer_assistant.h"
 #include "resident_llama.h"
 #include "resident_moe.h"
 
@@ -38,6 +40,12 @@ using neuralfn::resident_dense::TileTurboQuantModelStats;
 using neuralfn::resident_llama::LlamaInferenceConfig;
 using neuralfn::resident_llama::LlamaModel;
 using neuralfn::resident_llama::LlamaSession;
+using neuralfn::resident_glimmer::GlimmerInferenceConfig;
+using neuralfn::resident_glimmer::GlimmerModel;
+using neuralfn::resident_glimmer::GlimmerSession;
+using neuralfn::resident_glimmer::WeightContainer;
+using GlimmerAssistantConfig = neuralfn::resident_glimmer_assistant::Config;
+using GlimmerAssistantModel = neuralfn::resident_glimmer_assistant::Model;
 using neuralfn::resident_moe::MoeInferenceConfig;
 using neuralfn::resident_moe::MoeModel;
 using neuralfn::resident_moe::MoeSession;
@@ -50,6 +58,7 @@ struct ModelHandle {
     enum class Kind {
         Dense,
         Llama,
+        Glimmer,
         Moe,
     };
 
@@ -57,13 +66,18 @@ struct ModelHandle {
     std::uint64_t identity = 0;
     std::shared_ptr<DenseModel> dense;
     std::shared_ptr<LlamaModel> llama;
+    std::shared_ptr<GlimmerModel> glimmer;
+    std::shared_ptr<GlimmerAssistantModel> glimmer_assistant;
     std::shared_ptr<MoeModel> moe;
 
     bool has_value() const noexcept {
         if (kind == Kind::Dense) {
             return static_cast<bool>(dense);
         }
-        return kind == Kind::Llama ? static_cast<bool>(llama) : static_cast<bool>(moe);
+        if (kind == Kind::Llama) {
+            return static_cast<bool>(llama);
+        }
+        return kind == Kind::Glimmer ? static_cast<bool>(glimmer) : static_cast<bool>(moe);
     }
 
     void close() noexcept {
@@ -74,6 +88,14 @@ struct ModelHandle {
         if (llama) {
             llama->close();
             llama.reset();
+        }
+        if (glimmer) {
+            if (glimmer_assistant) {
+                glimmer_assistant->close();
+                glimmer_assistant.reset();
+            }
+            glimmer->close();
+            glimmer.reset();
         }
         if (moe) {
             moe->close();
@@ -87,14 +109,18 @@ struct SessionHandle {
     std::uint64_t model_identity = 0;
     std::shared_ptr<DenseSession> dense;
     std::shared_ptr<LlamaSession> llama;
+    std::shared_ptr<GlimmerSession> glimmer;
     std::shared_ptr<MoeSession> moe;
 
     bool has_value() const noexcept {
         if (kind == ModelHandle::Kind::Dense) {
             return static_cast<bool>(dense);
         }
-        return kind == ModelHandle::Kind::Llama
-            ? static_cast<bool>(llama)
+        if (kind == ModelHandle::Kind::Llama) {
+            return static_cast<bool>(llama);
+        }
+        return kind == ModelHandle::Kind::Glimmer
+            ? static_cast<bool>(glimmer)
             : static_cast<bool>(moe);
     }
 
@@ -106,6 +132,10 @@ struct SessionHandle {
         if (llama) {
             llama->close();
             llama.reset();
+        }
+        if (glimmer) {
+            glimmer->close();
+            glimmer.reset();
         }
         if (moe) {
             moe->close();
@@ -469,8 +499,11 @@ bool owned_session(PyObject* model_capsule, PyObject* session_capsule, ModelHand
             : ((*model)->kind == ModelHandle::Kind::Llama
                 ? (*model)->llama && (*session)->llama &&
                     (*session)->llama->model().get() == (*model)->llama.get()
-                : (*model)->moe && (*session)->moe &&
-                    (*session)->moe->model().get() == (*model)->moe.get()));
+                : ((*model)->kind == ModelHandle::Kind::Glimmer
+                    ? (*model)->glimmer && (*session)->glimmer &&
+                        (*session)->glimmer->model().get() == (*model)->glimmer.get()
+                    : (*model)->moe && (*session)->moe &&
+                        (*session)->moe->model().get() == (*model)->moe.get())));
     if (!owned) {
         PyErr_SetString(PyExc_ValueError, "resident inference session does not belong to this model");
         return false;
@@ -1698,6 +1731,612 @@ std::filesystem::path llama_checkpoint_from_manifest(
     return candidate;
 }
 
+std::filesystem::path glimmer_checkpoint_from_manifest(
+    const std::string& artifact_root,
+    PyObject* manifest,
+    GlimmerInferenceConfig* output_config) {
+    if (output_config == nullptr) {
+        throw std::runtime_error("resident Glimmer inference config output is null");
+    }
+    std::string schema;
+    std::int64_t version = 0;
+    if (!mapping_string(manifest, "schema", true, &schema) ||
+        !mapping_int64(manifest, "version", true, 0, &version) ||
+        schema != "neuralfn.native_execution_manifest" || version != 1) {
+        throw std::runtime_error(
+            "resident Glimmer binding requires Native Execution Manifest version 1");
+    }
+
+    OwnedPyObject capabilities(optional_item(manifest, "capabilities"));
+    bool native_inference = false;
+    bool resident_inference = false;
+    bool lossless_cache = false;
+    bool turboquant_cache = true;
+    if (!capabilities || !PyMapping_Check(capabilities.get()) ||
+        !mapping_bool(capabilities.get(), "native_inference", true, false, &native_inference) ||
+        !mapping_bool(capabilities.get(), "resident_inference", true, false, &resident_inference) ||
+        !mapping_bool(capabilities.get(), "lossless_kv_cache", true, false, &lossless_cache) ||
+        !mapping_bool(capabilities.get(), "turboquant_kv_cache", true, false, &turboquant_cache) ||
+        !native_inference || !resident_inference || !lossless_cache || turboquant_cache) {
+        throw std::runtime_error(
+            "Muse Glimmer manifest must prove native resident hybrid-cache inference and disable TurboQuant");
+    }
+
+    OwnedPyObject kernel_abi(optional_item(manifest, "kernel_abi"));
+    OwnedPyObject resident_abi(
+        kernel_abi && PyMapping_Check(kernel_abi.get())
+            ? optional_item(kernel_abi.get(), "resident_inference")
+            : nullptr);
+    std::int64_t resident_version = 0;
+    std::string resident_status;
+    if (!resident_abi || !PyMapping_Check(resident_abi.get()) ||
+        !mapping_int64(resident_abi.get(), "version", true, 0, &resident_version) ||
+        !mapping_string(resident_abi.get(), "status", true, &resident_status) ||
+        resident_version != neuralfn::resident_dense::kResidentInferenceAbiVersion ||
+        resident_status != "ready") {
+        throw std::runtime_error("resident Glimmer manifest ABI is not ready at version 1");
+    }
+
+    OwnedPyObject model(optional_item(manifest, "model"));
+    std::string family;
+    std::string family_class;
+    if (!model || !PyMapping_Check(model.get()) ||
+        !mapping_string(model.get(), "family", true, &family) ||
+        !mapping_string(model.get(), "family_class", true, &family_class) ||
+        family != "muse_glimmer" || family_class != "autoregressive_transformer") {
+        throw std::runtime_error(
+            "resident Glimmer binding requires the muse_glimmer autoregressive family");
+    }
+    OwnedPyObject spec(optional_item(model.get(), "template_spec"));
+    OwnedPyObject block(
+        spec && PyMapping_Check(spec.get()) ? optional_item(spec.get(), "block_spec") : nullptr);
+    OwnedPyObject templ(
+        spec && PyMapping_Check(spec.get()) ? optional_item(spec.get(), "template") : nullptr);
+    if (!spec || !block || !templ || !PyMapping_Check(spec.get()) ||
+        !PyMapping_Check(block.get()) || !PyMapping_Check(templ.get())) {
+        throw std::runtime_error(
+            "resident Glimmer manifest requires template_spec, block_spec, and template objects");
+    }
+    require_mapping_string_value(block.get(), "family", "muse_glimmer", "resident Glimmer");
+    require_mapping_string_value(block.get(), "norm_type", "rmsnorm", "resident Glimmer");
+    require_mapping_string_value(block.get(), "mlp_type", "swiglu", "resident Glimmer");
+    require_mapping_string_value(block.get(), "norm_layout", "sandwich", "resident Glimmer");
+    require_mapping_string_value(
+        block.get(), "qk_norm_kind", "weightless_rms", "resident Glimmer");
+    require_mapping_string_value(block.get(), "attention_gate", "sigmoid", "resident Glimmer");
+    require_mapping_string_value(templ.get(), "backbone", "muse_glimmer", "resident Glimmer");
+    require_mapping_string_value(templ.get(), "objective", "ar", "resident Glimmer");
+    require_mapping_string_value(templ.get(), "adapter", "none", "resident Glimmer");
+
+    GlimmerInferenceConfig config;
+    std::int64_t attention_inner_dim = 0;
+    std::int64_t attention_gate_dim = 0;
+    std::int64_t spec_context = 0;
+    bool tied = true;
+    bool causal = false;
+    bool linear_bias = true;
+    bool qk_norm = false;
+    bool centered_norm = false;
+    double dropout = -1.0;
+    if (!mapping_int64(spec.get(), "model_dim", true, 0, &config.model_dim) ||
+        !mapping_int64(spec.get(), "num_layers", true, 0, &config.num_layers) ||
+        !mapping_int64(spec.get(), "vocab_size", true, 0, &config.vocab_size) ||
+        !mapping_int64(spec.get(), "max_position_embeddings", true, 0, &spec_context) ||
+        !mapping_bool(spec.get(), "tie_embeddings", true, true, &tied) || tied ||
+        !mapping_double(spec.get(), "output_multiplier", true, 0.0, &config.output_multiplier) ||
+        !mapping_double(spec.get(), "logit_softcap", true, 0.0, &config.logit_softcap) ||
+        !mapping_int64(block.get(), "num_heads", true, 0, &config.num_heads) ||
+        !mapping_int64(block.get(), "num_kv_heads", true, 0, &config.num_kv_heads) ||
+        !mapping_int64(block.get(), "head_dim", true, 0, &config.head_dim) ||
+        !mapping_int64(block.get(), "attention_inner_dim", true, 0, &attention_inner_dim) ||
+        !mapping_int64(block.get(), "intermediate_size", true, 0, &config.intermediate_dim) ||
+        !mapping_int64(block.get(), "attention_gate_dim", true, 0, &attention_gate_dim) ||
+        !mapping_int64(block.get(), "window_size", true, 0, &config.sliding_window) ||
+        !mapping_double(block.get(), "rope_theta", true, 0.0, &config.rope_theta) ||
+        !mapping_double(block.get(), "norm_eps", true, 0.0, &config.norm_eps) ||
+        !mapping_double(block.get(), "post_norm_eps", true, 0.0, &config.post_norm_eps) ||
+        !mapping_double(block.get(), "q_scale_factor", true, 0.0, &config.q_scale_factor) ||
+        !mapping_bool(block.get(), "is_causal", true, false, &causal) || !causal ||
+        !mapping_bool(block.get(), "linear_bias", true, true, &linear_bias) || linear_bias ||
+        !mapping_bool(block.get(), "use_qk_norm", true, false, &qk_norm) || !qk_norm ||
+        !mapping_bool(block.get(), "centered_rms_norm", true, false, &centered_norm) ||
+        !centered_norm ||
+        !mapping_double(block.get(), "dropout_p", true, -1.0, &dropout) || dropout != 0.0 ||
+        spec_context != 131072 || config.model_dim != 6656 || config.num_layers != 52 ||
+        config.vocab_size != 202048 || config.num_heads != 32 || config.num_kv_heads != 2 ||
+        config.head_dim != 128 || attention_inner_dim != 4096 ||
+        attention_gate_dim != 4096 || config.intermediate_dim != 19968 ||
+        config.sliding_window != 2048 || config.rope_theta != 500000.0 ||
+        config.norm_eps != 1.0e-5 || config.post_norm_eps != 1.0e-8 ||
+        config.q_scale_factor != 3.87 || config.output_multiplier != 0.19611613513818404 ||
+        config.logit_softcap != 20.0) {
+        throw std::runtime_error("resident Glimmer template geometry/semantics are not canonical");
+    }
+    config.max_seq_len = spec_context;
+
+    OwnedPyObject raw_pattern(optional_item(block.get(), "layer_attention_pattern"));
+    OwnedPyObject pattern(
+        raw_pattern ? PySequence_Fast(
+            raw_pattern.get(), "resident Glimmer layer_attention_pattern must be an array") : nullptr);
+    if (!pattern || PySequence_Fast_GET_SIZE(pattern.get()) != 4) {
+        throw std::runtime_error("resident Glimmer requires the exact three-local/one-global schedule");
+    }
+    PyObject** pattern_rows = PySequence_Fast_ITEMS(pattern.get());
+    for (int index = 0; index < 4; ++index) {
+        PyObject* row = pattern_rows[index];
+        std::string kind;
+        std::string pos_encoding;
+        double theta = 0.0;
+        if (!PyMapping_Check(row) || !mapping_string(row, "kind", true, &kind) ||
+            !mapping_string(row, "pos_encoding", true, &pos_encoding) ||
+            !mapping_double(row, "rope_theta", true, 0.0, &theta) ||
+            theta != 500000.0 ||
+            (index < 3 && (kind != "local" || pos_encoding != "rope")) ||
+            (index == 3 && (kind != "full" || pos_encoding != "none"))) {
+            throw std::runtime_error("resident Glimmer layer attention schedule is not canonical");
+        }
+        OwnedPyObject window(optional_item(row, "window_size"));
+        if (index < 3) {
+            std::int64_t parsed_window = 0;
+            if (!window || !py_int64(window.get(), "window_size", &parsed_window) ||
+                parsed_window != 2048) {
+                throw std::runtime_error("resident Glimmer local layer window must be 2048");
+            }
+        } else if (!window || window.get() != Py_None) {
+            throw std::runtime_error("resident Glimmer global layer must not declare a window");
+        }
+    }
+
+    OwnedPyObject context(optional_item(manifest, "context_limits"));
+    std::int64_t max_context_tokens = 0;
+    if (!context || !PyMapping_Check(context.get()) ||
+        !mapping_int64(context.get(), "max_context_tokens", true, 0, &max_context_tokens) ||
+        max_context_tokens != config.max_seq_len) {
+        throw std::runtime_error("resident Glimmer context limit is not 131072 tokens");
+    }
+    OwnedPyObject stop_tokens_raw(optional_item(manifest, "stop_tokens"));
+    OwnedPyObject stop_tokens(
+        stop_tokens_raw ? PySequence_Fast(
+            stop_tokens_raw.get(), "resident Glimmer stop_tokens must be an array") : nullptr);
+    if (!stop_tokens || PySequence_Fast_GET_SIZE(stop_tokens.get()) != 2) {
+        throw std::runtime_error("resident Glimmer requires EOS/EOT stop tokens");
+    }
+    std::int64_t first_stop = 0;
+    std::int64_t second_stop = 0;
+    PyObject** stop_rows = PySequence_Fast_ITEMS(stop_tokens.get());
+    if (!py_int64(stop_rows[0], "stop_tokens", &first_stop) ||
+        !py_int64(stop_rows[1], "stop_tokens", &second_stop) ||
+        first_stop != 200001 || second_stop != 200008) {
+        throw std::runtime_error("resident Glimmer stop tokens must be [200001, 200008]");
+    }
+
+    OwnedPyObject checkpoint(optional_item(manifest, "checkpoint"));
+    std::string format;
+    std::string relative_path;
+    std::string target_sha256;
+    std::int64_t target_nbytes = -1;
+    if (!checkpoint || !PyMapping_Check(checkpoint.get()) ||
+        !mapping_string(checkpoint.get(), "format", true, &format) ||
+        !mapping_string(checkpoint.get(), "artifact_path", true, &relative_path) ||
+        !mapping_string(checkpoint.get(), "target_sha256", true, &target_sha256) ||
+        !mapping_int64(checkpoint.get(), "target_nbytes", true, -1, &target_nbytes) ||
+        relative_path.empty() || !is_sha256_hex(target_sha256)) {
+        throw std::runtime_error("resident Glimmer checkpoint fingerprint is invalid");
+    }
+    std::transform(target_sha256.begin(), target_sha256.end(), target_sha256.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (format == "neuralfn.native_family_muse_glimmer.bf16.v1") {
+        config.container = WeightContainer::NativeBf16;
+        if (target_nbytes != 55'709'561'856LL && target_nbytes != 59'553'253'376LL) {
+            throw std::runtime_error("resident Glimmer BF16 checkpoint has a noncanonical byte extent");
+        }
+    } else if (format == "neuralfn.native_family_muse_glimmer.gguf.kquant.v1") {
+        config.container = WeightContainer::GgufKQuant;
+        const bool compact = target_nbytes == 16'756'683'904LL &&
+            target_sha256 == "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e" &&
+            relative_path == "Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf";
+        const bool dynamic = target_nbytes == 19'653'960'832LL &&
+            target_sha256 == "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38" &&
+            relative_path == "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf";
+        if (!compact && !dynamic) {
+            throw std::runtime_error("resident Glimmer K-Quant checkpoint is not a canonical official profile");
+        }
+    } else {
+        throw std::runtime_error("resident Glimmer binding does not implement checkpoint format " + format);
+    }
+
+    const std::filesystem::path requested(relative_path);
+    if (requested.is_absolute()) {
+        throw std::runtime_error("resident Glimmer checkpoint artifact_path must be relative");
+    }
+    std::error_code filesystem_error;
+    const std::filesystem::path root =
+        std::filesystem::weakly_canonical(artifact_root, filesystem_error);
+    if (filesystem_error || !std::filesystem::is_directory(root, filesystem_error)) {
+        throw std::runtime_error("resident Glimmer artifact root is not a directory");
+    }
+    const std::filesystem::path candidate =
+        std::filesystem::weakly_canonical(root / requested, filesystem_error);
+    if (filesystem_error || !path_is_within(root, candidate) ||
+        !std::filesystem::is_regular_file(candidate, filesystem_error)) {
+        throw std::runtime_error(
+            "resident Glimmer checkpoint artifact_path is invalid or escapes the artifact root");
+    }
+    const std::uintmax_t actual_size = std::filesystem::file_size(candidate, filesystem_error);
+    if (filesystem_error || actual_size != static_cast<std::uintmax_t>(target_nbytes)) {
+        throw std::runtime_error("resident Glimmer checkpoint length does not match its fingerprint");
+    }
+    require_checkpoint_sha256(candidate, target_sha256, "resident Glimmer");
+    config.checkpoint_sha256 = target_sha256;
+    config.checkpoint_sha256_preverified = true;
+    *output_config = config;
+    return candidate;
+}
+
+std::filesystem::path glimmer_assistant_checkpoint_from_descriptor(
+    const std::string& artifact_root,
+    PyObject* descriptor,
+    const GlimmerModel& target,
+    GlimmerAssistantConfig* output_config) {
+    if (output_config == nullptr || descriptor == nullptr || !PyMapping_Check(descriptor)) {
+        throw std::runtime_error("DFlash companion descriptor/config is invalid");
+    }
+    std::string format;
+    std::string relative_path;
+    std::string target_sha256;
+    std::int64_t target_nbytes = 0;
+    if (!mapping_string(descriptor, "format", true, &format) ||
+        !mapping_string(descriptor, "artifact_path", true, &relative_path) ||
+        !mapping_string(descriptor, "target_sha256", true, &target_sha256) ||
+        !mapping_int64(descriptor, "target_nbytes", true, 0, &target_nbytes) ||
+        !is_sha256_hex(target_sha256)) {
+        throw std::runtime_error("DFlash companion executable checkpoint fields are not canonical");
+    }
+    const bool bf16 =
+        format == "neuralfn.native_family_muse_glimmer_dflash.bf16.v1" &&
+        target_nbytes == 5'111'970'304LL && relative_path == "muse-glimmer-dflash.bf16";
+    const bool kquant =
+        format == "neuralfn.native_family_muse_glimmer_dflash.gguf.kquant.v1" &&
+        target_nbytes == 1'631'208'128LL &&
+        relative_path == "dflash-Muse-Glimmer-30B-Q4_K_M.gguf";
+    if (!bf16 && !kquant) {
+        throw std::runtime_error("DFlash companion format/path/extent is not canonical");
+    }
+    std::transform(target_sha256.begin(), target_sha256.end(), target_sha256.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    OwnedPyObject compatibility(optional_item(descriptor, "target_compatibility"));
+    OwnedPyObject allowed(
+        compatibility && PyMapping_Check(compatibility.get())
+            ? optional_item(compatibility.get(), "allowed_target_checkpoint_sha256")
+            : nullptr);
+    OwnedPyObject target_layers(
+        compatibility && PyMapping_Check(compatibility.get())
+            ? optional_item(compatibility.get(), "target_layer_ids_zero_based")
+            : nullptr);
+    std::vector<std::int64_t> parsed_layers;
+    std::int64_t block_size = 0;
+    std::int64_t mask_token_id = 0;
+    bool shared_lm_head = false;
+    if (!compatibility || !PyMapping_Check(compatibility.get()) || !allowed ||
+        !target_layers || !token_vector(target_layers.get(), "target_layer_ids_zero_based", &parsed_layers) ||
+        parsed_layers != std::vector<std::int64_t>({1, 13, 25, 37, 49}) ||
+        !mapping_int64(compatibility.get(), "block_size", true, 0, &block_size) ||
+        block_size != 16 ||
+        !mapping_int64(compatibility.get(), "mask_token_id", true, 0, &mask_token_id) ||
+        mask_token_id != 201818 ||
+        !mapping_bool(compatibility.get(), "shared_lm_head", true, false, &shared_lm_head) ||
+        !shared_lm_head) {
+        throw std::runtime_error("DFlash target compatibility contract is not canonical");
+    }
+    OwnedPyObject allowed_sequence(PySequence_Fast(
+        allowed.get(), "allowed_target_checkpoint_sha256 must be an array"));
+    if (!allowed_sequence || PySequence_Fast_GET_SIZE(allowed_sequence.get()) < 1) {
+        throw std::runtime_error("DFlash companion has no compatible target digest");
+    }
+    bool target_allowed = false;
+    PyObject** allowed_rows = PySequence_Fast_ITEMS(allowed_sequence.get());
+    for (Py_ssize_t index = 0; index < PySequence_Fast_GET_SIZE(allowed_sequence.get()); ++index) {
+        std::string digest;
+        if (!unicode_value(allowed_rows[index], "allowed target digest", &digest) ||
+            !is_sha256_hex(digest)) {
+            throw std::runtime_error("DFlash compatible target digest is invalid");
+        }
+        std::transform(digest.begin(), digest.end(), digest.begin(),
+            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        target_allowed = target_allowed || digest == target.checkpoint_sha256();
+    }
+    if (!target_allowed) {
+        throw std::runtime_error("DFlash companion is not bound to the loaded target checkpoint digest");
+    }
+
+    const std::filesystem::path requested(relative_path);
+    if (requested.is_absolute()) {
+        throw std::runtime_error("DFlash artifact_path must be relative");
+    }
+    std::error_code filesystem_error;
+    const std::filesystem::path root =
+        std::filesystem::weakly_canonical(artifact_root, filesystem_error);
+    const std::filesystem::path candidate =
+        std::filesystem::weakly_canonical(root / requested, filesystem_error);
+    if (filesystem_error || !std::filesystem::is_directory(root, filesystem_error) ||
+        !path_is_within(root, candidate) ||
+        !std::filesystem::is_regular_file(candidate, filesystem_error) ||
+        std::filesystem::file_size(candidate, filesystem_error) !=
+            static_cast<std::uintmax_t>(target_nbytes)) {
+        throw std::runtime_error("DFlash companion path/extent is invalid or escapes its artifact root");
+    }
+    require_checkpoint_sha256(candidate, target_sha256, "DFlash companion");
+    GlimmerAssistantConfig config;
+    config.container = kquant
+        ? neuralfn::resident_glimmer_assistant::WeightContainer::GgufKQuant
+        : neuralfn::resident_glimmer_assistant::WeightContainer::NativeBf16;
+    config.checkpoint_sha256 = target_sha256;
+    config.checkpoint_sha256_preverified = true;
+    *output_config = std::move(config);
+    return candidate;
+}
+
+std::filesystem::path glimmer_vision_checkpoint_from_descriptor(
+    const std::string& artifact_root,
+    PyObject* descriptor,
+    const GlimmerModel& target) {
+    if (descriptor == nullptr || !PyMapping_Check(descriptor)) {
+        throw std::runtime_error("mmproj companion descriptor is invalid");
+    }
+    std::string format;
+    std::string relative_path;
+    std::string target_sha256;
+    std::int64_t target_nbytes = 0;
+    if (!mapping_string(descriptor, "format", true, &format) ||
+        !mapping_string(descriptor, "artifact_path", true, &relative_path) ||
+        !mapping_string(descriptor, "target_sha256", true, &target_sha256) ||
+        !mapping_int64(descriptor, "target_nbytes", true, 0, &target_nbytes) ||
+        format != "neuralfn.native_family_muse_glimmer_mmproj.gguf.kquant.v1" ||
+        relative_path != "mmproj-Muse-Glimmer-30B-Q4_K_M.gguf" ||
+        target_nbytes != 1'400'328'928LL ||
+        target_sha256 != "f48b452316f9b213758e8659444029b961a24a07f99a1abb2a9f88b06f7c00c6") {
+        throw std::runtime_error("mmproj companion executable fields are not canonical");
+    }
+    OwnedPyObject compatibility(optional_item(descriptor, "target_compatibility"));
+    OwnedPyObject allowed(
+        compatibility && PyMapping_Check(compatibility.get())
+            ? optional_item(compatibility.get(), "allowed_target_checkpoint_sha256")
+            : nullptr);
+    OwnedPyObject media_ids(
+        compatibility && PyMapping_Check(compatibility.get())
+            ? optional_item(compatibility.get(), "media_token_ids")
+            : nullptr);
+    std::string target_config_sha;
+    std::string processor_sha;
+    std::string tokenizer_sha;
+    std::string template_sha;
+    std::string temporal_reduction;
+    std::int64_t projection_width = 0;
+    std::int64_t patch_size = 0;
+    std::int64_t temporal_patch_size = 0;
+    std::int64_t merge_size = 0;
+    std::int64_t packed_patch_width = 0;
+    std::int64_t image_token = 0;
+    std::int64_t video_token = 0;
+    std::int64_t patch_token = 0;
+    if (!compatibility || !PyMapping_Check(compatibility.get()) || !allowed ||
+        !media_ids || !PyMapping_Check(media_ids.get()) ||
+        !mapping_string(compatibility.get(), "target_config_sha256", true, &target_config_sha) ||
+        target_config_sha != "5a9df2d8a385b3d361ab6ae68d73586f4e775033933bd0cd863fb7f3820e6a14" ||
+        !mapping_string(compatibility.get(), "processor_config_sha256", true, &processor_sha) ||
+        processor_sha != "97e2a486dd9866b81f40cf4b8bc0c9ced9a7cd8a5bc65aa4cc2f4de0712dae77" ||
+        !mapping_string(compatibility.get(), "tokenizer_sha256", true, &tokenizer_sha) ||
+        tokenizer_sha != "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d" ||
+        !mapping_string(compatibility.get(), "chat_template_sha256", true, &template_sha) ||
+        template_sha != "cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678" ||
+        !mapping_string(compatibility.get(), "temporal_patch_reduction", true, &temporal_reduction) ||
+        temporal_reduction != "sum" ||
+        !mapping_int64(compatibility.get(), "projection_width", true, 0, &projection_width) ||
+        projection_width != 6656 ||
+        !mapping_int64(compatibility.get(), "patch_size", true, 0, &patch_size) ||
+        patch_size != 14 ||
+        !mapping_int64(compatibility.get(), "temporal_patch_size", true, 0, &temporal_patch_size) ||
+        temporal_patch_size != 2 ||
+        !mapping_int64(compatibility.get(), "merge_size", true, 0, &merge_size) ||
+        merge_size != 2 ||
+        !mapping_int64(compatibility.get(), "packed_patch_width", true, 0, &packed_patch_width) ||
+        packed_patch_width != 588 ||
+        !mapping_int64(media_ids.get(), "image", true, 0, &image_token) ||
+        image_token != 200090 ||
+        !mapping_int64(media_ids.get(), "video", true, 0, &video_token) ||
+        video_token != 200091 ||
+        !mapping_int64(media_ids.get(), "patch", true, 0, &patch_token) ||
+        patch_token != 200092) {
+        throw std::runtime_error("mmproj target/processor compatibility contract is not canonical");
+    }
+    OwnedPyObject allowed_sequence(PySequence_Fast(
+        allowed.get(), "allowed_target_checkpoint_sha256 must be an array"));
+    if (!allowed_sequence || PySequence_Fast_GET_SIZE(allowed_sequence.get()) < 1) {
+        throw std::runtime_error("mmproj companion has no compatible target digest");
+    }
+    bool target_allowed = false;
+    PyObject** allowed_rows = PySequence_Fast_ITEMS(allowed_sequence.get());
+    for (Py_ssize_t index = 0; index < PySequence_Fast_GET_SIZE(allowed_sequence.get()); ++index) {
+        std::string digest;
+        if (!unicode_value(allowed_rows[index], "allowed target digest", &digest) ||
+            !is_sha256_hex(digest)) {
+            throw std::runtime_error("mmproj compatible target digest is invalid");
+        }
+        std::transform(digest.begin(), digest.end(), digest.begin(),
+            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        target_allowed = target_allowed || digest == target.checkpoint_sha256();
+    }
+    if (!target_allowed) {
+        throw std::runtime_error("mmproj companion is not bound to the loaded target digest");
+    }
+
+    const std::filesystem::path requested(relative_path);
+    if (requested.is_absolute()) {
+        throw std::runtime_error("mmproj artifact_path must be relative");
+    }
+    std::error_code filesystem_error;
+    const std::filesystem::path root =
+        std::filesystem::weakly_canonical(artifact_root, filesystem_error);
+    const std::filesystem::path candidate =
+        std::filesystem::weakly_canonical(root / requested, filesystem_error);
+    if (filesystem_error || !std::filesystem::is_directory(root, filesystem_error) ||
+        !path_is_within(root, candidate) ||
+        !std::filesystem::is_regular_file(candidate, filesystem_error) ||
+        std::filesystem::file_size(candidate, filesystem_error) !=
+            static_cast<std::uintmax_t>(target_nbytes)) {
+        throw std::runtime_error("mmproj path/extent is invalid or escapes its artifact root");
+    }
+    require_checkpoint_sha256(candidate, target_sha256, "mmproj companion");
+    return candidate;
+}
+
+std::filesystem::path glimmer_lora_checkpoint_from_descriptor(
+    const std::string& artifact_root,
+    PyObject* descriptor,
+    const GlimmerModel& target,
+    std::int64_t* output_rank,
+    double* output_alpha,
+    std::uint32_t* output_target_mask) {
+    if (descriptor == nullptr || !PyMapping_Check(descriptor) || output_rank == nullptr ||
+        output_alpha == nullptr || output_target_mask == nullptr) {
+        throw std::runtime_error("Muse Glimmer LoRA companion descriptor is invalid");
+    }
+    std::string format;
+    std::string relative_path;
+    std::string target_sha256;
+    std::int64_t target_nbytes = 0;
+    std::int64_t resident_weight_bytes = 0;
+    std::int64_t rank = 0;
+    double alpha = 0.0;
+    double scaling = 0.0;
+    double dropout = -1.0;
+    if (!mapping_string(descriptor, "format", true, &format) ||
+        format != "neuralfn.native_muse_glimmer_lora.bf16.v1" ||
+        !mapping_string(descriptor, "artifact_path", true, &relative_path) ||
+        relative_path != "muse-glimmer-lora.bf16" ||
+        !mapping_string(descriptor, "target_sha256", true, &target_sha256) ||
+        !is_sha256_hex(target_sha256) ||
+        !mapping_int64(descriptor, "target_nbytes", true, 0, &target_nbytes) ||
+        !mapping_int64(descriptor, "resident_weight_bytes", true, 0, &resident_weight_bytes) ||
+        target_nbytes <= 0 || resident_weight_bytes != target_nbytes ||
+        !mapping_int64(descriptor, "rank", true, 0, &rank) || rank <= 0 ||
+        rank > target.model_dim() ||
+        !mapping_double(descriptor, "alpha", true, 0.0, &alpha) || !(alpha > 0.0) ||
+        !mapping_double(descriptor, "scaling", true, 0.0, &scaling) ||
+        scaling != alpha / static_cast<double>(rank) ||
+        !mapping_double(descriptor, "dropout", true, -1.0, &dropout) ||
+        dropout < 0.0 || dropout >= 1.0) {
+        throw std::runtime_error("Muse Glimmer LoRA executable fields are not canonical");
+    }
+    OwnedPyObject compatibility(optional_item(descriptor, "target_compatibility"));
+    OwnedPyObject allowed(
+        compatibility && PyMapping_Check(compatibility.get())
+            ? optional_item(compatibility.get(), "allowed_target_checkpoint_sha256")
+            : nullptr);
+    OwnedPyObject targets(optional_item(descriptor, "targets"));
+    std::string base_precision;
+    std::string topology_sha;
+    std::string graph_sha;
+    std::string tokenizer_sha;
+    std::string template_sha;
+    if (!compatibility || !PyMapping_Check(compatibility.get()) || !allowed || !targets ||
+        !mapping_string(compatibility.get(), "base_weight_precision", true, &base_precision) ||
+        base_precision != "bf16" ||
+        !mapping_string(descriptor, "graph_topology_sha256", true, &topology_sha) ||
+        topology_sha != "4e3c741890fefc43e1027c61ffcfe9ec09c8f6448ee27dd548ab3fad3c172a56" ||
+        !mapping_string(descriptor, "graph_fingerprint", true, &graph_sha) ||
+        !is_sha256_hex(graph_sha) ||
+        !mapping_string(compatibility.get(), "tokenizer_sha256", true, &tokenizer_sha) ||
+        tokenizer_sha != "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d" ||
+        !mapping_string(compatibility.get(), "chat_template_sha256", true, &template_sha) ||
+        template_sha != "cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678") {
+        throw std::runtime_error("Muse Glimmer LoRA target compatibility contract is invalid");
+    }
+    OwnedPyObject allowed_sequence(PySequence_Fast(
+        allowed.get(), "allowed_target_checkpoint_sha256 must be an array"));
+    if (!allowed_sequence || PySequence_Fast_GET_SIZE(allowed_sequence.get()) != 1) {
+        throw std::runtime_error("Muse Glimmer LoRA must bind exactly one base checkpoint digest");
+    }
+    std::string base_digest;
+    if (!unicode_value(
+            PySequence_Fast_ITEMS(allowed_sequence.get())[0], "LoRA base digest", &base_digest) ||
+        !is_sha256_hex(base_digest)) {
+        throw std::runtime_error("Muse Glimmer LoRA base checkpoint digest is invalid");
+    }
+    std::transform(base_digest.begin(), base_digest.end(), base_digest.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (base_digest != target.checkpoint_sha256()) {
+        throw std::runtime_error("Muse Glimmer LoRA is bound to a different base checkpoint");
+    }
+    OwnedPyObject target_sequence(PySequence_Fast(
+        targets.get(), "Muse Glimmer LoRA targets must be an array"));
+    if (!target_sequence || PySequence_Fast_GET_SIZE(target_sequence.get()) < 1 ||
+        PySequence_Fast_GET_SIZE(target_sequence.get()) > 8) {
+        throw std::runtime_error("Muse Glimmer LoRA target list is invalid");
+    }
+    const std::unordered_map<std::string, std::uint32_t> target_bits{
+        {"q_proj", 1U << 0U}, {"k_proj", 1U << 1U}, {"v_proj", 1U << 2U},
+        {"o_proj", 1U << 3U}, {"attn_gate_proj", 1U << 4U},
+        {"gate_proj", 1U << 5U}, {"up_proj", 1U << 6U},
+        {"down_proj", 1U << 7U},
+    };
+    std::uint32_t target_mask = 0;
+    PyObject** target_rows = PySequence_Fast_ITEMS(target_sequence.get());
+    for (Py_ssize_t index = 0; index < PySequence_Fast_GET_SIZE(target_sequence.get()); ++index) {
+        std::string name;
+        if (!unicode_value(target_rows[index], "Muse Glimmer LoRA target", &name)) {
+            throw std::runtime_error("Muse Glimmer LoRA target is not a string");
+        }
+        const auto bit = target_bits.find(name);
+        if (bit == target_bits.end() || (target_mask & bit->second) != 0) {
+            throw std::runtime_error("Muse Glimmer LoRA target is unsupported or duplicated");
+        }
+        target_mask |= bit->second;
+    }
+    auto site_parameters = [&](std::int64_t rows, std::int64_t cols) {
+        return rank * (rows + cols);
+    };
+    const std::int64_t d = target.model_dim();
+    const std::int64_t q = target.num_heads() * target.head_dim();
+    const std::int64_t kv = target.num_kv_heads() * target.head_dim();
+    const std::int64_t f = target.intermediate_dim();
+    std::int64_t per_layer = 0;
+    if (target_mask & (1U << 0U)) per_layer += site_parameters(q, d);
+    if (target_mask & (1U << 1U)) per_layer += site_parameters(kv, d);
+    if (target_mask & (1U << 2U)) per_layer += site_parameters(kv, d);
+    if (target_mask & (1U << 3U)) per_layer += site_parameters(d, q);
+    if (target_mask & (1U << 4U)) per_layer += site_parameters(q, d);
+    if (target_mask & (1U << 5U)) per_layer += site_parameters(f, d);
+    if (target_mask & (1U << 6U)) per_layer += site_parameters(f, d);
+    if (target_mask & (1U << 7U)) per_layer += site_parameters(d, f);
+    if (per_layer <= 0 || per_layer > std::numeric_limits<std::int64_t>::max() /
+            target.num_layers() ||
+        target_nbytes != per_layer * target.num_layers() * 2) {
+        throw std::runtime_error("Muse Glimmer LoRA artifact byte extent is inconsistent");
+    }
+    const std::filesystem::path requested(relative_path);
+    if (requested.is_absolute()) {
+        throw std::runtime_error("Muse Glimmer LoRA artifact_path must be relative");
+    }
+    std::error_code filesystem_error;
+    const std::filesystem::path root =
+        std::filesystem::weakly_canonical(artifact_root, filesystem_error);
+    const std::filesystem::path candidate =
+        std::filesystem::weakly_canonical(root / requested, filesystem_error);
+    if (filesystem_error || !std::filesystem::is_directory(root, filesystem_error) ||
+        !path_is_within(root, candidate) ||
+        !std::filesystem::is_regular_file(candidate, filesystem_error) ||
+        std::filesystem::file_size(candidate, filesystem_error) !=
+            static_cast<std::uintmax_t>(target_nbytes)) {
+        throw std::runtime_error("Muse Glimmer LoRA path/extent is invalid or escapes its artifact root");
+    }
+    require_checkpoint_sha256(candidate, target_sha256, "Muse Glimmer LoRA companion");
+    *output_rank = rank;
+    *output_alpha = alpha;
+    *output_target_mask = target_mask;
+    return candidate;
+}
+
 struct ExpectedMoeTensor {
     std::string name;
     std::vector<std::int64_t> shape;
@@ -2191,8 +2830,8 @@ PyObject* resident_inference_capabilities(PyObject*, PyObject*) {
     if (!prefix_cow_abi) {
         return nullptr;
     }
-    return Py_BuildValue(
-        "{s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:s,s:s}",
+    OwnedPyObject result(Py_BuildValue(
+        "{s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:O,s:[s,s],s:O,s:s,s:s}",
         "native_inference", Py_True,
         "resident_inference", Py_True,
         "lossless_kv_cache", Py_True,
@@ -2203,9 +2842,60 @@ PyObject* resident_inference_capabilities(PyObject*, PyObject*) {
         "function_tools", Py_False,
         "structured_output", Py_False,
         "current_logits_exact_prefill", Py_True,
+        "whole_model_cuda", Py_True,
+        "weight_kernel_profiles",
+        "muse-glimmer-bf16-mapped-v1",
+        "muse-glimmer-gguf-kquant-mapped-v1",
         "session_prefix_cow_abi", prefix_cow_abi.get(),
-        "backend", "cpu-reference-resident",
-        "cache_policy", "off-full-or-native-turboquant");
+        "backend", "cpu-and-native-cuda-resident",
+        "cache_policy", "off-full-hybrid-or-native-turboquant"));
+    if (!result) return nullptr;
+    OwnedPyObject speculative_abi(Py_BuildValue(
+        "{s:i,s:s,s:s,s:i,s:i}",
+        "version", 1,
+        "load_operation", "load_companion",
+        "decode_operation", "decode_speculative_block",
+        "block_size", 16,
+        "proposal_tokens", 15));
+    if (!speculative_abi ||
+        PyDict_SetItemString(result.get(), "speculative_decoding", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "dflash_cpu", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "dflash_cuda", Py_True) < 0 ||
+        PyDict_SetItemString(
+            result.get(), "speculative_decoding_abi", speculative_abi.get()) < 0) {
+        return nullptr;
+    }
+    OwnedPyObject media_abi(Py_BuildValue(
+        "{s:i,s:s,s:s,s:s,s:i}",
+        "version", 1,
+        "load_operation", "load_companion",
+        "encode_operation", "encode_media",
+        "prefill_operation", "prefill_with_embeddings",
+        "projection_width", 6656));
+    if (!media_abi ||
+        PyDict_SetItemString(result.get(), "vision", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "video", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "vision_cpu", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "vision_cuda", Py_False) < 0 ||
+        PyDict_SetItemString(result.get(), "media_encoder_abi", media_abi.get()) < 0) {
+        return nullptr;
+    }
+    OwnedPyObject adapter_abi(Py_BuildValue(
+        "{s:i,s:s,s:s,s:[s,s,s,s,s,s,s,s]}",
+        "version", 1,
+        "load_operation", "load_companion",
+        "format", "neuralfn.native_muse_glimmer_lora.bf16.v1",
+        "targets",
+        "q_proj", "k_proj", "v_proj", "o_proj", "attn_gate_proj",
+        "gate_proj", "up_proj", "down_proj"));
+    if (!adapter_abi ||
+        PyDict_SetItemString(result.get(), "native_lora", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "native_lora_cpu", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "native_lora_cuda", Py_True) < 0 ||
+        PyDict_SetItemString(result.get(), "native_lora_abi", adapter_abi.get()) < 0) {
+        return nullptr;
+    }
+    return result.release();
 }
 
 PyObject* fork_session(PyObject*, PyObject* args) {
@@ -2253,6 +2943,12 @@ PyObject* fork_session(PyObject*, PyObject* args) {
                     "resident LLaMA prefix COW session storage is unavailable");
             }
             handle->llama = source->llama->fork_prefix(token_count, seed);
+        } else if (model->kind == ModelHandle::Kind::Glimmer) {
+            if (!model->glimmer || !source->glimmer) {
+                throw std::runtime_error(
+                    "resident Glimmer prefix session storage is unavailable");
+            }
+            handle->glimmer = source->glimmer->fork_prefix(token_count, seed);
         } else {
             if (!model->moe || !source->moe) {
                 throw std::runtime_error(
@@ -2297,6 +2993,13 @@ PyObject* load_model(PyObject*, PyObject* args) {
                 artifact_root, manifest, &inference_config);
             handle->kind = ModelHandle::Kind::Llama;
             handle->llama = LlamaModel::load(checkpoint.string(), inference_config);
+        } else if (format == "neuralfn.native_family_muse_glimmer.bf16.v1" ||
+                   format == "neuralfn.native_family_muse_glimmer.gguf.kquant.v1") {
+            GlimmerInferenceConfig inference_config;
+            const std::filesystem::path checkpoint = glimmer_checkpoint_from_manifest(
+                artifact_root, manifest, &inference_config);
+            handle->kind = ModelHandle::Kind::Glimmer;
+            handle->glimmer = GlimmerModel::load(checkpoint.string(), inference_config);
         } else if (format == "neuralfn.native_family_standard_moe.f32.v1") {
             MoeInferenceConfig inference_config;
             const std::filesystem::path checkpoint = standard_moe_checkpoint_from_manifest(
@@ -2323,6 +3026,184 @@ PyObject* load_model(PyObject*, PyObject* args) {
         if (PyErr_Occurred()) {
             return nullptr;
         }
+        return return_cpp_error(error);
+    }
+}
+
+PyObject* load_model_with_options(PyObject*, PyObject* args) {
+    const char* artifact_root = nullptr;
+    PyObject* manifest = nullptr;
+    PyObject* options = nullptr;
+    if (!PyArg_ParseTuple(
+            args,
+            "sO!O!:load_model_with_options",
+            &artifact_root,
+            &PyDict_Type,
+            &manifest,
+            &PyDict_Type,
+            &options)) {
+        return nullptr;
+    }
+    try {
+        const std::string format = checkpoint_format_from_manifest(manifest);
+        if (format != "neuralfn.native_family_muse_glimmer.bf16.v1" &&
+            format != "neuralfn.native_family_muse_glimmer.gguf.kquant.v1") {
+            throw std::runtime_error(
+                "load_model_with_options whole-model CUDA currently accepts only Muse Glimmer");
+        }
+        std::int64_t cuda_device = -1;
+        std::string tile_ops_lib;
+        std::string cuda_runtime_lib;
+        std::string requested_precision;
+        std::string selected_precision;
+        if (!mapping_int64(options, "cuda_device", true, -1, &cuda_device) ||
+            cuda_device < 0 || cuda_device > std::numeric_limits<int>::max() ||
+            !mapping_string(options, "tile_ops_lib", true, &tile_ops_lib) ||
+            tile_ops_lib.empty() ||
+            !mapping_string(options, "cuda_runtime_lib", false, &cuda_runtime_lib) ||
+            !mapping_string(options, "weight_precision", true, &requested_precision) ||
+            !mapping_string(manifest, "selected_weight_precision", true, &selected_precision) ||
+            requested_precision != selected_precision) {
+            throw std::runtime_error(
+                "Muse Glimmer CUDA load options/selected precision proof are invalid");
+        }
+        OwnedPyObject selection_proof(optional_item(options, "selection_proof"));
+        if (!selection_proof || !PyMapping_Check(selection_proof.get())) {
+            throw std::runtime_error("Muse Glimmer CUDA requires a VRAM selection proof");
+        }
+        std::string proof_runtime;
+        std::string proof_precision;
+        if (!mapping_string(selection_proof.get(), "runtime", true, &proof_runtime) ||
+            !mapping_string(
+                selection_proof.get(), "effective_weight_precision", true, &proof_precision) ||
+            proof_runtime != "native-cuda" || proof_precision != selected_precision) {
+            throw std::runtime_error("Muse Glimmer CUDA selection proof is inconsistent");
+        }
+
+        GlimmerInferenceConfig inference_config;
+        const std::filesystem::path checkpoint = glimmer_checkpoint_from_manifest(
+            artifact_root, manifest, &inference_config);
+        inference_config.whole_model_cuda = true;
+        inference_config.cuda_device = static_cast<int>(cuda_device);
+        inference_config.tile_ops_lib = tile_ops_lib;
+        inference_config.cuda_runtime_lib = cuda_runtime_lib;
+        auto handle = std::make_unique<ModelHandle>();
+        handle->kind = ModelHandle::Kind::Glimmer;
+        handle->glimmer = GlimmerModel::load(checkpoint.string(), inference_config);
+        handle->identity = next_model_identity.fetch_add(1);
+        if (handle->identity == 0) {
+            throw std::runtime_error("resident inference model identity space is exhausted");
+        }
+        PyObject* capsule = PyCapsule_New(
+            handle.get(), kModelCapsuleName, destroy_model_capsule);
+        if (capsule == nullptr) {
+            handle->close();
+            return nullptr;
+        }
+        handle.release();
+        return capsule;
+    } catch (const std::exception& error) {
+        if (PyErr_Occurred()) return nullptr;
+        return return_cpp_error(error);
+    }
+}
+
+PyObject* load_companion(PyObject*, PyObject* args) {
+    PyObject* model_capsule = nullptr;
+    const char* artifact_root = nullptr;
+    PyObject* descriptor = nullptr;
+    if (!PyArg_ParseTuple(
+            args,
+            "OsO!:load_companion",
+            &model_capsule,
+            &artifact_root,
+            &PyDict_Type,
+            &descriptor)) {
+        return nullptr;
+    }
+    ModelHandle* handle = model_handle(model_capsule);
+    if (handle == nullptr) return nullptr;
+    try {
+        if (handle->kind != ModelHandle::Kind::Glimmer || !handle->glimmer) {
+            throw std::runtime_error("companion loading requires a Muse Glimmer target");
+        }
+        if (handle->glimmer->stats().open_sessions != 0) {
+            throw std::runtime_error("companions must be loaded before creating target sessions");
+        }
+        std::string format;
+        if (!mapping_string(descriptor, "format", true, &format)) {
+            throw std::runtime_error("Muse Glimmer companion format is missing");
+        }
+        if (format == "neuralfn.native_muse_glimmer_lora.bf16.v1") {
+            if (handle->glimmer_assistant) {
+                throw std::runtime_error(
+                    "Muse Glimmer LoRA cannot be combined with the stock DFlash assistant");
+            }
+            std::int64_t rank = 0;
+            std::int64_t adapter_nbytes = 0;
+            double alpha = 0.0;
+            std::uint32_t target_mask = 0;
+            const std::filesystem::path checkpoint = glimmer_lora_checkpoint_from_descriptor(
+                artifact_root, descriptor, *handle->glimmer, &rank, &alpha, &target_mask);
+            std::string adapter_digest;
+            if (!mapping_string(descriptor, "target_sha256", true, &adapter_digest) ||
+                !mapping_int64(descriptor, "target_nbytes", true, 0, &adapter_nbytes)) {
+                throw std::runtime_error("Muse Glimmer LoRA digest/extent is missing");
+            }
+            handle->glimmer->load_lora_adapter(
+                checkpoint.string(), adapter_digest, rank, alpha, target_mask);
+            return Py_BuildValue(
+                "{s:O,s:s,s:i,s:L,s:L,s:O}",
+                "loaded", Py_True,
+                "component", "lora",
+                "feature_abi_version", 1,
+                "rank", static_cast<long long>(rank),
+                "resident_weight_bytes", static_cast<long long>(adapter_nbytes),
+                "whole_model_cuda", handle->glimmer->whole_model_cuda() ? Py_True : Py_False);
+        }
+        if (format == "neuralfn.native_family_muse_glimmer_mmproj.gguf.kquant.v1") {
+            if (handle->glimmer->has_vision()) {
+                throw std::runtime_error("Muse Glimmer vision weights are already loaded");
+            }
+            const std::filesystem::path checkpoint = glimmer_vision_checkpoint_from_descriptor(
+                artifact_root, descriptor, *handle->glimmer);
+            handle->glimmer->load_vision_companion(checkpoint.string());
+            return Py_BuildValue(
+                "{s:O,s:s,s:i,s:i,s:i,s:L,s:O}",
+                "loaded", Py_True,
+                "component", "mmproj",
+                "feature_abi_version", 1,
+                "packed_patch_width", 588,
+                "output_width", 6656,
+                "resident_weight_bytes",
+                static_cast<long long>(handle->glimmer->vision_weight_bytes()),
+                "whole_model_cuda", Py_False);
+        }
+        if (handle->glimmer_assistant) {
+            throw std::runtime_error("DFlash companion is already loaded for this target");
+        }
+        if (handle->glimmer->has_lora_adapter()) {
+            throw std::runtime_error(
+                "stock DFlash is disabled for a Muse Glimmer target with a native LoRA adapter");
+        }
+        GlimmerAssistantConfig config;
+        const std::filesystem::path checkpoint = glimmer_assistant_checkpoint_from_descriptor(
+            artifact_root, descriptor, *handle->glimmer, &config);
+        handle->glimmer_assistant = GlimmerAssistantModel::load(
+            checkpoint.string(), std::move(config), handle->glimmer);
+        return Py_BuildValue(
+            "{s:O,s:s,s:i,s:i,s:L,s:L,s:O}",
+            "loaded", Py_True,
+            "component", "dflash",
+            "feature_abi_version", 1,
+            "block_size", 16,
+            "proposal_tokens", static_cast<long long>(15),
+            "resident_weight_bytes",
+            static_cast<long long>(handle->glimmer_assistant->weight_bytes()),
+            "whole_model_cuda",
+            handle->glimmer_assistant->whole_model_cuda() ? Py_True : Py_False);
+    } catch (const std::exception& error) {
+        if (PyErr_Occurred()) return nullptr;
         return return_cpp_error(error);
     }
 }
@@ -2435,7 +3316,9 @@ PyObject* create_session(PyObject*, PyObject* args) {
                 PyExc_ValueError,
                 model->kind == ModelHandle::Kind::Llama
                     ? "canonical LLaMA resident inference has not proved TurboQuant GQA storage"
-                    : "canonical standard-MoE resident inference has not proved TurboQuant GQA storage");
+                    : (model->kind == ModelHandle::Kind::Glimmer
+                        ? "Muse Glimmer requires its exact hybrid lossless KV cache"
+                        : "canonical standard-MoE resident inference has not proved TurboQuant GQA storage"));
             return nullptr;
         }
         cache_mode = KVCacheMode::TurboQuant;
@@ -2485,6 +3368,15 @@ PyObject* create_session(PyObject*, PyObject* args) {
                     "canonical LLaMA resident inference does not accept TurboQuant tables");
             }
             handle->llama = model->llama->create_session(seed, cache_mode);
+        } else if (model->kind == ModelHandle::Kind::Glimmer) {
+            if (parsed_turboquant.has_value()) {
+                throw std::runtime_error(
+                    "Muse Glimmer resident inference does not accept TurboQuant tables");
+            }
+            handle->glimmer = model->glimmer_assistant
+                ? model->glimmer->create_speculative_session(
+                      seed, cache_mode, model->glimmer_assistant)
+                : model->glimmer->create_session(seed, cache_mode);
         } else {
             if (parsed_turboquant.has_value()) {
                 throw std::runtime_error(
@@ -2550,6 +3442,7 @@ PyObject* prefill(PyObject*, PyObject* args) {
     bool cancelled = false;
     const std::shared_ptr<DenseSession> dense_session = session->dense;
     const std::shared_ptr<LlamaSession> llama_session = session->llama;
+    const std::shared_ptr<GlimmerSession> glimmer_session = session->glimmer;
     const std::shared_ptr<MoeSession> moe_session = session->moe;
     const ModelHandle::Kind kind = session->kind;
     Py_BEGIN_ALLOW_THREADS
@@ -2558,6 +3451,8 @@ PyObject* prefill(PyObject*, PyObject* args) {
             dense_session->prefill(tokens, static_cast<std::int64_t>(start_position));
         } else if (kind == ModelHandle::Kind::Llama) {
             llama_session->prefill(tokens, static_cast<std::int64_t>(start_position));
+        } else if (kind == ModelHandle::Kind::Glimmer) {
+            glimmer_session->prefill(tokens, static_cast<std::int64_t>(start_position));
         } else {
             moe_session->prefill(tokens, static_cast<std::int64_t>(start_position));
         }
@@ -2578,6 +3473,131 @@ PyObject* prefill(PyObject*, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+PyObject* prefill_with_embeddings(PyObject*, PyObject* args) {
+    PyObject* model_capsule = nullptr;
+    PyObject* session_capsule = nullptr;
+    PyObject* token_ids = nullptr;
+    PyObject* replacement_positions = nullptr;
+    PyObject* replacement_embeddings = nullptr;
+    long long start_position = 0;
+    if (!PyArg_ParseTuple(
+            args, "OOOLOO:prefill_with_embeddings", &model_capsule,
+            &session_capsule, &token_ids, &start_position,
+            &replacement_positions, &replacement_embeddings)) {
+        return nullptr;
+    }
+    ModelHandle* model = nullptr;
+    SessionHandle* session = nullptr;
+    if (!owned_session(model_capsule, session_capsule, &model, &session)) return nullptr;
+    if (model->kind != ModelHandle::Kind::Glimmer || !session->glimmer) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "prefill_with_embeddings is supported only by resident Muse Glimmer");
+        return nullptr;
+    }
+    std::vector<std::int64_t> tokens;
+    std::vector<std::int64_t> positions;
+    std::vector<float> embeddings;
+    if (!token_vector(token_ids, "token_ids", &tokens) ||
+        !token_vector(replacement_positions, "replacement_positions", &positions) ||
+        !float_vector(replacement_embeddings, "replacement_embeddings", &embeddings)) {
+        return nullptr;
+    }
+    std::string error_message;
+    bool cancelled = false;
+    const std::shared_ptr<GlimmerSession> glimmer_session = session->glimmer;
+    Py_BEGIN_ALLOW_THREADS
+    try {
+        glimmer_session->prefill_with_embeddings(
+            tokens, static_cast<std::int64_t>(start_position), positions, embeddings);
+    } catch (const ResidentCancellationError&) {
+        cancelled = true;
+    } catch (const std::exception& error) {
+        error_message = error.what();
+    }
+    Py_END_ALLOW_THREADS
+    if (cancelled) {
+        PyErr_SetString(PyExc_InterruptedError, "resident multimodal prefill was cancelled");
+        return nullptr;
+    }
+    if (!error_message.empty()) {
+        PyErr_SetString(PyExc_RuntimeError, error_message.c_str());
+        return nullptr;
+    }
+    Py_RETURN_NONE;
+}
+
+PyObject* encode_media(PyObject*, PyObject* args) {
+    PyObject* model_capsule = nullptr;
+    PyObject* packed_patches_object = nullptr;
+    PyObject* grid_thw_object = nullptr;
+    if (!PyArg_ParseTuple(
+            args, "OOO:encode_media", &model_capsule,
+            &packed_patches_object, &grid_thw_object)) {
+        return nullptr;
+    }
+    ModelHandle* model = model_handle(model_capsule);
+    if (model == nullptr) {
+        return nullptr;
+    }
+    if (model->kind != ModelHandle::Kind::Glimmer || !model->glimmer) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "encode_media is supported only by resident Muse Glimmer");
+        return nullptr;
+    }
+    std::vector<float> packed_patches;
+    std::vector<std::int64_t> grid_thw;
+    if (!float_vector(packed_patches_object, "packed_patches", &packed_patches) ||
+        !token_vector(grid_thw_object, "grid_thw", &grid_thw)) {
+        return nullptr;
+    }
+    std::vector<float> encoded;
+    std::string error_message;
+    bool cancelled = false;
+    const std::shared_ptr<GlimmerModel> glimmer_model = model->glimmer;
+    std::atomic<bool> cancellation{false};
+    Py_BEGIN_ALLOW_THREADS
+    try {
+        encoded = glimmer_model->encode_media(packed_patches, grid_thw, cancellation);
+    } catch (const ResidentCancellationError&) {
+        cancelled = true;
+    } catch (const std::exception& error) {
+        error_message = error.what();
+    }
+    Py_END_ALLOW_THREADS
+    if (cancelled) {
+        PyErr_SetString(PyExc_InterruptedError, "resident media encoding was cancelled");
+        return nullptr;
+    }
+    if (!error_message.empty()) {
+        PyErr_SetString(PyExc_RuntimeError, error_message.c_str());
+        return nullptr;
+    }
+    const std::int64_t width = glimmer_model->vision_output_size();
+    if (width <= 0 || encoded.size() % static_cast<std::size_t>(width) != 0 ||
+        encoded.size() > static_cast<std::size_t>(PY_SSIZE_T_MAX)) {
+        PyErr_SetString(PyExc_RuntimeError, "resident media encoder returned malformed rows");
+        return nullptr;
+    }
+    OwnedPyObject values(PyList_New(static_cast<Py_ssize_t>(encoded.size())));
+    if (!values) {
+        return nullptr;
+    }
+    for (std::size_t index = 0; index < encoded.size(); ++index) {
+        PyObject* value = PyFloat_FromDouble(encoded[index]);
+        if (value == nullptr) {
+            return nullptr;
+        }
+        PyList_SET_ITEM(values.get(), static_cast<Py_ssize_t>(index), value);
+    }
+    return Py_BuildValue(
+        "{s:L,s:L,s:O}",
+        "rows", static_cast<long long>(encoded.size() / static_cast<std::size_t>(width)),
+        "width", static_cast<long long>(width),
+        "values", values.get());
+}
+
 PyObject* current_logits(PyObject*, PyObject* args) {
     PyObject* model_capsule = nullptr;
     PyObject* session_capsule = nullptr;
@@ -2594,6 +3614,7 @@ PyObject* current_logits(PyObject*, PyObject* args) {
     bool cancelled = false;
     const std::shared_ptr<DenseSession> dense_session = session->dense;
     const std::shared_ptr<LlamaSession> llama_session = session->llama;
+    const std::shared_ptr<GlimmerSession> glimmer_session = session->glimmer;
     const std::shared_ptr<MoeSession> moe_session = session->moe;
     const ModelHandle::Kind kind = session->kind;
     Py_BEGIN_ALLOW_THREADS
@@ -2602,6 +3623,8 @@ PyObject* current_logits(PyObject*, PyObject* args) {
             logits = dense_session->current_logits();
         } else if (kind == ModelHandle::Kind::Llama) {
             logits = llama_session->current_logits();
+        } else if (kind == ModelHandle::Kind::Glimmer) {
+            logits = glimmer_session->current_logits();
         } else {
             logits = moe_session->current_logits();
         }
@@ -2717,6 +3740,7 @@ PyObject* decode_one(PyObject*, PyObject* args) {
     bool cancelled = false;
     const std::shared_ptr<DenseSession> dense_session = session->dense;
     const std::shared_ptr<LlamaSession> llama_session = session->llama;
+    const std::shared_ptr<GlimmerSession> glimmer_session = session->glimmer;
     const std::shared_ptr<MoeSession> moe_session = session->moe;
     const ModelHandle::Kind kind = session->kind;
     Py_BEGIN_ALLOW_THREADS
@@ -2725,6 +3749,8 @@ PyObject* decode_one(PyObject*, PyObject* args) {
             result = dense_session->decode_one(config);
         } else if (kind == ModelHandle::Kind::Llama) {
             result = llama_session->decode_one(config);
+        } else if (kind == ModelHandle::Kind::Glimmer) {
+            result = glimmer_session->decode_one(config);
         } else {
             result = moe_session->decode_one(config);
         }
@@ -2758,6 +3784,88 @@ PyObject* decode_one(PyObject*, PyObject* args) {
     return payload;
 }
 
+PyObject* decode_speculative_block(PyObject*, PyObject* args) {
+    PyObject* model_capsule = nullptr;
+    PyObject* session_capsule = nullptr;
+    PyObject* config_mapping = nullptr;
+    if (!PyArg_ParseTuple(
+            args,
+            "OOO!:decode_speculative_block",
+            &model_capsule,
+            &session_capsule,
+            &PyDict_Type,
+            &config_mapping)) {
+        return nullptr;
+    }
+    ModelHandle* model = nullptr;
+    SessionHandle* session = nullptr;
+    if (!owned_session(model_capsule, session_capsule, &model, &session)) return nullptr;
+    if (model->kind != ModelHandle::Kind::Glimmer || !model->glimmer_assistant ||
+        !session->glimmer) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "decode_speculative_block requires a Glimmer model/session with DFlash loaded");
+        return nullptr;
+    }
+    GenerationConfig config;
+    std::int64_t max_tokens_remaining = 0;
+    if (!generation_config(config_mapping, &config) ||
+        !mapping_int64(
+            config_mapping,
+            "max_tokens_remaining",
+            true,
+            0,
+            &max_tokens_remaining)) {
+        return nullptr;
+    }
+    neuralfn::resident_glimmer::SpeculativeStepResult result;
+    std::string error_message;
+    bool cancelled = false;
+    const std::shared_ptr<GlimmerSession> glimmer_session = session->glimmer;
+    Py_BEGIN_ALLOW_THREADS
+    try {
+        result = glimmer_session->decode_speculative_block(config, max_tokens_remaining);
+    } catch (const ResidentCancellationError&) {
+        cancelled = true;
+    } catch (const std::exception& error) {
+        error_message = error.what();
+    }
+    Py_END_ALLOW_THREADS
+    if (cancelled) {
+        PyErr_SetString(PyExc_InterruptedError, "resident DFlash block was cancelled");
+        return nullptr;
+    }
+    if (!error_message.empty()) {
+        PyErr_SetString(PyExc_RuntimeError, error_message.c_str());
+        return nullptr;
+    }
+    OwnedPyObject tokens(PyList_New(static_cast<Py_ssize_t>(result.tokens.size())));
+    if (!tokens) return nullptr;
+    for (std::size_t index = 0; index < result.tokens.size(); ++index) {
+        const DecodeResult& decoded = result.tokens[index];
+        OwnedPyObject finish(decoded.finish_reason.empty()
+            ? Py_NewRef(Py_None)
+            : PyUnicode_FromString(decoded.finish_reason.c_str()));
+        OwnedPyObject row(finish ? Py_BuildValue(
+            "{s:L,s:s,s:O,s:f}",
+            "token_id", static_cast<long long>(decoded.token_id),
+            "text", "",
+            "finish_reason", finish.get(),
+            "selected_logit", decoded.selected_logit) : nullptr);
+        if (!row) return nullptr;
+        PyList_SET_ITEM(tokens.get(), static_cast<Py_ssize_t>(index), row.release());
+    }
+    return Py_BuildValue(
+        "{s:O,s:L,s:L,s:L,s:L,s:L,s:O}",
+        "tokens", tokens.get(),
+        "proposed_tokens", static_cast<long long>(result.proposed_tokens),
+        "accepted_tokens", static_cast<long long>(result.accepted_tokens),
+        "rejected_tokens", static_cast<long long>(result.rejected_tokens),
+        "target_rows", static_cast<long long>(result.target_rows),
+        "assistant_blocks", static_cast<long long>(result.assistant_blocks),
+        "target_only_warmup", result.target_only_warmup ? Py_True : Py_False);
+}
+
 PyObject* truncate_session(PyObject*, PyObject* args) {
     PyObject* model_capsule = nullptr;
     PyObject* session_capsule = nullptr;
@@ -2775,6 +3883,8 @@ PyObject* truncate_session(PyObject*, PyObject* args) {
             session->dense->truncate(static_cast<std::int64_t>(token_count));
         } else if (session->kind == ModelHandle::Kind::Llama) {
             session->llama->truncate(static_cast<std::int64_t>(token_count));
+        } else if (session->kind == ModelHandle::Kind::Glimmer) {
+            session->glimmer->truncate(static_cast<std::int64_t>(token_count));
         } else {
             session->moe->truncate(static_cast<std::int64_t>(token_count));
         }
@@ -2800,6 +3910,8 @@ PyObject* reset_session(PyObject*, PyObject* args) {
             session->dense->reset();
         } else if (session->kind == ModelHandle::Kind::Llama) {
             session->llama->reset();
+        } else if (session->kind == ModelHandle::Kind::Glimmer) {
+            session->glimmer->reset();
         } else {
             session->moe->reset();
         }
@@ -2824,6 +3936,8 @@ PyObject* cancel_session(PyObject*, PyObject* args) {
         session->dense->cancel();
     } else if (session->kind == ModelHandle::Kind::Llama) {
         session->llama->cancel();
+    } else if (session->kind == ModelHandle::Kind::Glimmer) {
+        session->glimmer->cancel();
     } else {
         session->moe->cancel();
     }
@@ -2843,16 +3957,20 @@ PyObject* model_stats(PyObject*, PyObject* args) {
         ? handle->dense->stats()
         : (handle->kind == ModelHandle::Kind::Llama
             ? handle->llama->stats()
-            : handle->moe->stats());
+            : (handle->kind == ModelHandle::Kind::Glimmer
+                ? handle->glimmer->stats()
+                : handle->moe->stats()));
     const bool turboquant_supported =
         handle->kind == ModelHandle::Kind::Dense &&
         stats.num_heads > 0 && stats.channels > 0 &&
         stats.channels % stats.num_heads == 0 &&
         stats.channels / stats.num_heads >= 2 &&
         stats.channels / stats.num_heads % 2 == 0;
+    const bool whole_model_cuda =
+        handle->kind == ModelHandle::Kind::Glimmer && handle->glimmer->whole_model_cuda();
     PyObject* result = Py_BuildValue(
         "{s:s,s:s,s:O,s:O,s:O,s:O,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L}",
-        "backend", "cpu-reference-resident",
+        "backend", whole_model_cuda ? "native-cuda-resident" : "cpu-reference-resident",
         "checkpoint_path", stats.checkpoint_path.c_str(),
         "resident_inference", Py_True,
         "lossless_kv_cache", Py_True,
@@ -2876,17 +3994,21 @@ PyObject* model_stats(PyObject*, PyObject* args) {
     }
     const char* family_name = handle->kind == ModelHandle::Kind::Dense
         ? "dense-gpt"
-        : (handle->kind == ModelHandle::Kind::Llama ? "llama" : "mixllama");
+        : (handle->kind == ModelHandle::Kind::Llama
+            ? "llama"
+            : (handle->kind == ModelHandle::Kind::Glimmer ? "muse_glimmer" : "mixllama"));
     OwnedPyObject model_family(PyUnicode_FromString(family_name));
-    const std::int64_t head_dim = stats.num_heads > 0
-        ? stats.channels / stats.num_heads
-        : 0;
+    const std::int64_t head_dim = handle->kind == ModelHandle::Kind::Glimmer
+        ? handle->glimmer->head_dim()
+        : (stats.num_heads > 0 ? stats.channels / stats.num_heads : 0);
     OwnedPyObject num_kv_heads(PyLong_FromLongLong(static_cast<long long>(
         handle->kind == ModelHandle::Kind::Dense
             ? stats.num_heads
             : (handle->kind == ModelHandle::Kind::Llama
                 ? handle->llama->num_kv_heads()
-                : handle->moe->num_kv_heads()))));
+                : (handle->kind == ModelHandle::Kind::Glimmer
+                    ? handle->glimmer->num_kv_heads()
+                    : handle->moe->num_kv_heads())))));
     OwnedPyObject head_dimension(PyLong_FromLongLong(static_cast<long long>(head_dim)));
     OwnedPyObject qk_norm_eps(PyFloat_FromDouble(stats.qk_norm_eps));
     OwnedPyObject logit_softcap(PyFloat_FromDouble(stats.logit_softcap));
@@ -2941,13 +4063,19 @@ PyObject* model_stats(PyObject*, PyObject* args) {
     if (handle->kind != ModelHandle::Kind::Dense) {
         const std::int64_t hidden = handle->kind == ModelHandle::Kind::Llama
             ? handle->llama->hidden_dim()
-            : handle->moe->hidden_dim();
+            : (handle->kind == ModelHandle::Kind::Glimmer
+                ? handle->glimmer->intermediate_dim()
+                : handle->moe->hidden_dim());
         const double theta = handle->kind == ModelHandle::Kind::Llama
             ? handle->llama->rope_theta()
-            : handle->moe->rope_theta();
+            : (handle->kind == ModelHandle::Kind::Glimmer
+                ? handle->glimmer->rope_theta()
+                : handle->moe->rope_theta());
         const double epsilon = handle->kind == ModelHandle::Kind::Llama
             ? handle->llama->rms_norm_eps()
-            : handle->moe->rms_norm_eps();
+            : (handle->kind == ModelHandle::Kind::Glimmer
+                ? handle->glimmer->norm_eps()
+                : handle->moe->rms_norm_eps());
         OwnedPyObject hidden_dim(PyLong_FromLongLong(static_cast<long long>(
             hidden)));
         OwnedPyObject rope_theta(PyFloat_FromDouble(theta));
@@ -2969,6 +4097,80 @@ PyObject* model_stats(PyObject*, PyObject* args) {
             PyDict_SetItemString(result, "activation_mode", activation_mode.get()) < 0 ||
             PyDict_SetItemString(result, "mlp_activation", mlp_activation.get()) < 0 ||
             PyDict_SetItemString(result, "moa_interval", moa_interval.get()) < 0) {
+            Py_DECREF(result);
+            return nullptr;
+        }
+    }
+    if (handle->kind == ModelHandle::Kind::Glimmer) {
+        const bool dflash_cuda = handle->glimmer_assistant &&
+            handle->glimmer_assistant->whole_model_cuda();
+        OwnedPyObject cuda_weight_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_resident_weight_bytes())));
+        OwnedPyObject cuda_workspace_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_workspace_bytes())));
+        OwnedPyObject cuda_launches(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_kernel_launches())));
+        OwnedPyObject cuda_device_value(
+            whole_model_cuda
+                ? PyLong_FromLong(handle->glimmer->cuda_device())
+                : Py_NewRef(Py_None));
+        OwnedPyObject cuda_tile_library(
+            whole_model_cuda
+                ? PyUnicode_FromString(handle->glimmer->cuda_tile_ops_library().c_str())
+                : Py_NewRef(Py_None));
+        OwnedPyObject cuda_runtime_library(
+            whole_model_cuda
+                ? PyUnicode_FromString(handle->glimmer->cuda_runtime_library().c_str())
+                : Py_NewRef(Py_None));
+        OwnedPyObject cpu_compute_rows(PyLong_FromLongLong(static_cast<long long>(
+            whole_model_cuda ? 0 : stats.forward_calls)));
+        OwnedPyObject assistant_weight_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer_assistant ? handle->glimmer_assistant->weight_bytes() : 0)));
+        OwnedPyObject assistant_cuda_weight_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer_assistant
+                ? handle->glimmer_assistant->cuda_resident_weight_bytes() : 0)));
+        OwnedPyObject assistant_cuda_workspace_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer_assistant
+                ? handle->glimmer_assistant->cuda_workspace_bytes() : 0)));
+        OwnedPyObject assistant_cuda_launches(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer_assistant
+                ? handle->glimmer_assistant->cuda_kernel_launches() : 0)));
+        OwnedPyObject vision_weight_bytes(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->vision_weight_bytes())));
+        if (!cuda_weight_bytes || !cuda_workspace_bytes || !cuda_launches ||
+            !cuda_device_value || !cuda_tile_library || !cuda_runtime_library ||
+            !cpu_compute_rows || !assistant_weight_bytes || !assistant_cuda_weight_bytes ||
+            !assistant_cuda_workspace_bytes || !assistant_cuda_launches ||
+            !vision_weight_bytes ||
+            PyDict_SetItemString(
+                result, "whole_model_cuda", whole_model_cuda ? Py_True : Py_False) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_model_compute_only", whole_model_cuda ? Py_True : Py_False) < 0 ||
+            PyDict_SetItemString(result, "cuda_resident_weight_bytes", cuda_weight_bytes.get()) < 0 ||
+            PyDict_SetItemString(result, "cuda_workspace_bytes", cuda_workspace_bytes.get()) < 0 ||
+            PyDict_SetItemString(result, "cuda_kernel_launches", cuda_launches.get()) < 0 ||
+            PyDict_SetItemString(result, "cuda_device", cuda_device_value.get()) < 0 ||
+            PyDict_SetItemString(result, "cuda_tile_ops_lib", cuda_tile_library.get()) < 0 ||
+            PyDict_SetItemString(result, "cuda_runtime_lib", cuda_runtime_library.get()) < 0 ||
+            PyDict_SetItemString(result, "cpu_model_compute_rows", cpu_compute_rows.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_loaded", handle->glimmer_assistant ? Py_True : Py_False) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_resident_weight_bytes", assistant_weight_bytes.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_cuda_resident_weight_bytes",
+                assistant_cuda_weight_bytes.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_cuda_workspace_bytes",
+                assistant_cuda_workspace_bytes.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_cuda_kernel_launches", assistant_cuda_launches.get()) < 0 ||
+            PyDict_SetItemString(result, "dflash_cuda", dflash_cuda ? Py_True : Py_False) < 0 ||
+            PyDict_SetItemString(
+                result, "vision_loaded", handle->glimmer->has_vision() ? Py_True : Py_False) < 0 ||
+            PyDict_SetItemString(
+                result, "vision_resident_weight_bytes", vision_weight_bytes.get()) < 0 ||
+            PyDict_SetItemString(result, "vision_cuda", Py_False) < 0) {
             Py_DECREF(result);
             return nullptr;
         }
@@ -3014,7 +4216,9 @@ PyObject* session_stats(PyObject*, PyObject* args) {
         ? session->dense->stats()
         : (session->kind == ModelHandle::Kind::Llama
             ? session->llama->stats()
-            : session->moe->stats());
+            : (session->kind == ModelHandle::Kind::Glimmer
+                ? session->glimmer->stats()
+                : session->moe->stats()));
     const bool full_cache = stats.cache_mode == KVCacheMode::Full;
     const bool turboquant_cache = stats.cache_mode == KVCacheMode::TurboQuant;
     const double compression_ratio = stats.cache_bytes == 0
@@ -3043,6 +4247,28 @@ PyObject* session_stats(PyObject*, PyObject* args) {
         "fallback_reason", Py_None,
         "decode_rows_processed", static_cast<long long>(stats.decode_rows_processed));
     if (result == nullptr) {
+        return nullptr;
+    }
+    OwnedPyObject speculative_blocks(PyLong_FromLongLong(
+        static_cast<long long>(stats.speculative_blocks)));
+    OwnedPyObject speculative_proposed(PyLong_FromLongLong(
+        static_cast<long long>(stats.speculative_proposed_tokens)));
+    OwnedPyObject speculative_accepted(PyLong_FromLongLong(
+        static_cast<long long>(stats.speculative_accepted_tokens)));
+    OwnedPyObject speculative_rejected(PyLong_FromLongLong(
+        static_cast<long long>(stats.speculative_rejected_tokens)));
+    OwnedPyObject assistant_cache_bytes(PyLong_FromLongLong(
+        static_cast<long long>(stats.assistant_cache_bytes)));
+    if (!speculative_blocks || !speculative_proposed || !speculative_accepted ||
+        !speculative_rejected || !assistant_cache_bytes ||
+        PyDict_SetItemString(
+            result, "speculative_decoding", stats.speculative_decoding ? Py_True : Py_False) < 0 ||
+        PyDict_SetItemString(result, "speculative_blocks", speculative_blocks.get()) < 0 ||
+        PyDict_SetItemString(result, "speculative_proposed_tokens", speculative_proposed.get()) < 0 ||
+        PyDict_SetItemString(result, "speculative_accepted_tokens", speculative_accepted.get()) < 0 ||
+        PyDict_SetItemString(result, "speculative_rejected_tokens", speculative_rejected.get()) < 0 ||
+        PyDict_SetItemString(result, "assistant_cache_bytes", assistant_cache_bytes.get()) < 0) {
+        Py_DECREF(result);
         return nullptr;
     }
     const bool tile_attention =
@@ -3265,14 +4491,19 @@ PyMethodDef methods[] = {
     {"resident_inference_abi_version", resident_inference_abi_version, METH_NOARGS, "Return resident inference ABI version 1."},
     {"resident_inference_capabilities", resident_inference_capabilities, METH_NOARGS, "Return fail-closed resident inference capabilities."},
     {"load_model", load_model, METH_VARARGS, "Load immutable validated native weights once."},
+    {"load_model_with_options", load_model_with_options, METH_VARARGS, "Load a proved whole-model CUDA model after VRAM selection."},
+    {"load_companion", load_companion, METH_VARARGS, "Load and bind a strict Glimmer DFlash companion before sessions exist."},
     {"close_model", close_model, METH_VARARGS, "Close a resident inference model."},
     {"configure_model_turboquant_attention", configure_model_turboquant_attention, METH_VARARGS, "Configure explicit strict Tile-CUDA TurboQuant attention for a dense model."},
     {"create_session", create_session, METH_VARARGS, "Create isolated resident inference session state."},
     {"fork_session", fork_session, METH_VARARGS, "Fork one supported full-cache or dense CPU TurboQuant session prefix with copy-on-write storage."},
     {"close_session", close_session, METH_VARARGS, "Close a resident inference session."},
     {"prefill", prefill, METH_VARARGS, "Append a validated token suffix to resident session state."},
+    {"prefill_with_embeddings", prefill_with_embeddings, METH_VARARGS, "Append Glimmer tokens with exact image/video embedding replacements."},
+    {"encode_media", encode_media, METH_VARARGS, "Encode packed Glimmer image/video patches into decoder replacement rows."},
     {"current_logits", current_logits, METH_VARARGS, "Return current logits for native cache parity diagnostics."},
     {"decode_one", decode_one, METH_VARARGS, "Run one real decode and commit its sampled token."},
+    {"decode_speculative_block", decode_speculative_block, METH_VARARGS, "Atomically propose, verify, and commit one DFlash block."},
     {"truncate_session", truncate_session, METH_VARARGS, "Truncate resident token history."},
     {"reset_session", reset_session, METH_VARARGS, "Reset resident token and cancellation state."},
     {"cancel_session", cancel_session, METH_VARARGS, "Cancel resident work without spawning a process."},

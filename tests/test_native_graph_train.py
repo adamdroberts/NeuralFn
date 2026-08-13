@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
+from neuralfn.config import FineTuneSpec, SHIPPED_GPT_TEMPLATE_PRESETS
 from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
 from neuralfn.native_graph_train import (
     NativeGraphTrainPlan,
@@ -173,6 +173,7 @@ def test_public_graph_training_adapter_registry_is_stable() -> None:
         "moe",
         "mixllama",
         "mixllama_fast",
+        "muse_glimmer",
     )
     assert callable(classify_native_graph_training_selector)
     assert all(adapter.trainer_consumes_native_ir is False for adapter in adapters)
@@ -198,6 +199,162 @@ def test_public_graph_training_adapter_registry_is_stable() -> None:
         for adapter in adapters
         if adapter.selector != "gpt2_diff"
     )
+
+
+def test_production_muse_glimmer_graph_routes_only_to_exact_native_target(
+    tmp_path: Path,
+) -> None:
+    production = build_model_spec_from_config({"preset": "muse_glimmer"})
+    graph = build_gpt_root_graph(name="muse_glimmer_native_train", model_spec=production)
+    path = tmp_path / "muse-glimmer.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.training_selector == "muse_glimmer"
+    assert plan.native_target == "nfn_muse_glimmer_native_train"
+    assert plan.execution_ready is True
+    assert plan.architecture_persistence_proven is True
+
+    preview = _preset_graph("muse_glimmer")
+    preview_path = tmp_path / "muse-glimmer-preview.json"
+    _write_graph(preview_path, preview)
+    preview_plan = plan_native_graph_training(preview_path)
+    assert preview_plan.execution_ready is False
+    assert preview_plan.training_selector == ""
+
+
+def test_production_muse_glimmer_full_sft_routes_with_lineage_arguments(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config({"preset": "muse_glimmer"})
+    spec.template.objective = "sft"
+    spec.finetune = FineTuneSpec(
+        objective="sft",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_native_sft", model_spec=spec)
+    path = tmp_path / "muse-glimmer-sft.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    assert "--objective" in plan.trainer_arguments
+    objective = plan.trainer_arguments.index("--objective")
+    assert plan.trainer_arguments[objective + 1] == "sft"
+    template = plan.trainer_arguments.index("--chat-template-sha256")
+    assert plan.trainer_arguments[template + 1] == "b" * 64
+
+
+def test_production_muse_glimmer_native_lora_routes_exact_adapter_contract(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config(
+        {
+            "preset": "muse_glimmer",
+            "adapter_type": "lora",
+            "lora_rank": 4,
+            "lora_alpha": 8.0,
+            "lora_dropout": 0.1,
+        }
+    )
+    spec.template.objective = "sft"
+    spec.finetune = FineTuneSpec(
+        objective="sft",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        adapter_only_save=True,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_native_lora", model_spec=spec)
+    path = tmp_path / "muse-glimmer-lora.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    assert plan.compatibility_report.compatible is True
+    assert plan.training_issues == ()
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--adapter") + 1] == "lora"
+    assert arguments[arguments.index("--lora-rank") + 1] == "4"
+    assert arguments[arguments.index("--lora-alpha") + 1] == "8"
+    assert float(arguments[arguments.index("--lora-dropout") + 1]) == pytest.approx(0.1)
+    assert arguments[arguments.index("--lora-targets") + 1].split(",") == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "attn_gate_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
+
+    spec.finetune.adapter_only_save = False
+    rejected_path = tmp_path / "muse-glimmer-lora-nonadapter-save.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(name="muse_glimmer_native_lora_rejected", model_spec=spec),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
+
+
+def test_production_muse_glimmer_native_qlora_routes_exact_nf4_contract(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config(
+        {
+            "preset": "muse_glimmer",
+            "adapter_type": "qlora",
+            "lora_targets": ["q_proj", "v_proj", "down_proj"],
+            "lora_rank": 4,
+            "lora_alpha": 8.0,
+            "qlora_group_size": 64,
+            "qlora_compute_dtype": "bf16",
+        }
+    )
+    spec.template.objective = "sft"
+    spec.finetune = FineTuneSpec(
+        objective="sft",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        adapter_only_save=True,
+    )
+    path = tmp_path / "muse-glimmer-qlora.json"
+    _write_graph(
+        path,
+        build_gpt_root_graph(name="muse_glimmer_native_qlora", model_spec=spec),
+    )
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    assert plan.training_issues == ()
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--adapter") + 1] == "qlora"
+    assert arguments[arguments.index("--qlora-group-size") + 1] == "64"
+    assert arguments[arguments.index("--lora-targets") + 1] == (
+        "q_proj,v_proj,down_proj"
+    )
+
+    spec.block_spec.qlora_group_size = 32
+    rejected_path = tmp_path / "muse-glimmer-qlora-invalid.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(
+            name="muse_glimmer_native_qlora_invalid", model_spec=spec
+        ),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
 
 
 def test_gpt2_diff_is_ready_only_in_the_exact_graph_training_planner(
@@ -1079,8 +1236,8 @@ def test_canonical_llama_training_adapter_rejects_unconsumed_payload_state(
     assert plan.training_issues[0].code == expected_code
 
 
-def test_all_66_shipped_presets_have_canonical_registered_routing(tmp_path: Path) -> None:
-    assert len(SHIPPED_GPT_TEMPLATE_PRESETS) == 66
+def test_all_67_shipped_presets_have_canonical_registered_routing(tmp_path: Path) -> None:
+    assert len(SHIPPED_GPT_TEMPLATE_PRESETS) == 67
     registry = {spec.family: spec for spec in native_trainer_specs()}
     execution_ready: list[str] = []
     execution_blocked: list[str] = []
@@ -1126,7 +1283,7 @@ def test_all_66_shipped_presets_have_canonical_registered_routing(tmp_path: Path
         "mixllama",
         "mixllama_fast",
     }
-    assert len(execution_blocked) == 53
+    assert len(execution_blocked) == 54
 
 
 @pytest.mark.parametrize(

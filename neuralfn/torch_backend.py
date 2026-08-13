@@ -86,6 +86,7 @@ def default_rotary_embedding_config() -> dict[str, Any]:
     return {
         "head_dim": cfg["model_dim"] // cfg["num_heads"],
         "rope_base": cfg["rope_base"],
+        "convention": "legacy",
     }
 
 
@@ -320,6 +321,20 @@ def apply_rotary_emb(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return torch.cat((x1 * cos + x2 * sin, x1 * (-sin) + x2 * cos), dim=-1)
 
 
+def apply_rotary_emb_hf(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
+    """Apply the Transformers ``rotate_half`` convention.
+
+    NeuralFn's original primitive rotates by the negative angle.  Keeping a
+    separate function avoids silently changing every shipped preset while
+    allowing exact checkpoints such as Muse Glimmer to select the upstream
+    convention.
+    """
+
+    half = x.size(-1) // 2
+    x1, x2 = x[..., :half], x[..., half:]
+    return torch.cat((x1 * cos - x2 * sin, x2 * cos + x1 * sin), dim=-1)
+
+
 class TokenEmbeddingStage(nn.Module):
     def __init__(self, vocab_size: int, model_dim: int) -> None:
         super().__init__()
@@ -330,16 +345,34 @@ class TokenEmbeddingStage(nn.Module):
 
 
 class RMSNormStage(nn.Module):
-    def __init__(self, eps: float = 1e-6, model_dim: int | None = None) -> None:
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        model_dim: int | None = None,
+        *,
+        centered: bool = False,
+        force_float32: bool = False,
+    ) -> None:
         super().__init__()
         self.eps = eps
+        self.centered = bool(centered)
+        self.force_float32 = bool(force_float32)
         if model_dim is None:
             self.register_parameter("weight", None)
         else:
-            self.weight = nn.Parameter(torch.ones(int(model_dim), dtype=torch.float32))
+            init = torch.zeros if self.centered else torch.ones
+            self.weight = nn.Parameter(init(int(model_dim), dtype=torch.float32))
 
     def forward(self, x: Tensor) -> Tensor:
-        return F.rms_norm(x, (x.size(-1),), weight=self.weight, eps=self.eps)
+        if not self.force_float32 and not self.centered:
+            return F.rms_norm(x, (x.size(-1),), weight=self.weight, eps=self.eps)
+
+        input_dtype = x.dtype
+        normalized = x.float() * torch.rsqrt(x.float().square().mean(dim=-1, keepdim=True) + self.eps)
+        if self.weight is not None:
+            factor = (1.0 + self.weight.float()) if self.centered else self.weight.float()
+            normalized = normalized * factor
+        return normalized.to(dtype=input_dtype)
 
 
 class ResidualMixStage(nn.Module):
@@ -1067,12 +1100,45 @@ class MaskedTokenCrossEntropyStage(nn.Module):
         self.ignore_index = int(ignore_index)
 
     def forward(self, logits: Tensor, target_ids: Tensor, loss_mask: Tensor) -> Tensor:
+        if logits.ndim < 2:
+            raise ValueError("masked token cross entropy expects logits shaped [..., vocab]")
+        if tuple(logits.shape[:-1]) != tuple(target_ids.shape):
+            raise ValueError(
+                "masked token cross entropy target shape must match logits without the vocabulary axis: "
+                f"got logits={tuple(logits.shape)}, targets={tuple(target_ids.shape)}"
+            )
+        if tuple(loss_mask.shape) != tuple(target_ids.shape):
+            raise ValueError(
+                f"loss_mask shape {tuple(loss_mask.shape)} must match targets {tuple(target_ids.shape)}"
+            )
+        if target_ids.dtype not in {
+            torch.uint8,
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+        }:
+            raise TypeError("masked token cross entropy targets must use an integer dtype")
+        if not bool(torch.isfinite(logits).all().item()):
+            raise ValueError("masked token cross entropy logits contain NaN or infinity")
         flat_logits = logits.reshape(-1, logits.size(-1)).float()
-        flat_targets = target_ids.reshape(-1)
+        flat_targets = target_ids.reshape(-1).long()
         flat_mask = loss_mask.reshape(-1).to(flat_logits.dtype)
+        if not bool(torch.isfinite(flat_mask).all().item()):
+            raise ValueError("loss_mask contains NaN or infinity")
+        if bool((flat_mask < 0).any().item()):
+            raise ValueError("loss_mask values must be non-negative")
+        valid_targets = flat_targets != self.ignore_index
+        if bool(((flat_targets < 0) & valid_targets).any().item()) or bool(
+            ((flat_targets >= flat_logits.size(-1)) & valid_targets).any().item()
+        ):
+            raise ValueError("masked token cross entropy target ID is outside the vocabulary")
+        effective_mask = flat_mask * valid_targets.to(flat_mask.dtype)
+        denom = effective_mask.sum()
+        if not bool((denom > 0).item()):
+            raise ValueError("masked token cross entropy requires at least one unmasked valid target")
         per_token = F.cross_entropy(flat_logits, flat_targets, reduction="none", ignore_index=self.ignore_index)
-        denom = flat_mask.sum().clamp(min=1.0)
-        return (per_token * flat_mask).sum() / denom
+        return (per_token * effective_mask).sum() / denom
 
 
 class SFTDatasetSourceStage(nn.Module):
@@ -1128,11 +1194,16 @@ class ReferenceForwardStage(nn.Module):
                 "ReferenceForwardStage requires ref_graph_path and ref_weights_path to be set"
             )
         from .serialization import load_graph
-        from .inference import load_pt_checkpoint
+        from .inference import _graph_topology_sha256, load_pt_checkpoint
         ref_graph = load_graph(self.ref_graph_path)
         compiled = CompiledTorchGraph(ref_graph)
-        state, _meta = load_pt_checkpoint(self.ref_weights_path, map_location=device or "cpu")
-        compiled.load_state_dict(state, strict=False)
+        if compiled._expected_flat_inputs != 1:
+            raise ValueError("Reference graph must expose exactly one token input and logits output")
+        state, metadata = load_pt_checkpoint(self.ref_weights_path, map_location=device or "cpu")
+        topology_digest = str(metadata.get("graph_topology_sha256", ""))
+        if topology_digest and topology_digest != _graph_topology_sha256(ref_graph):
+            raise ValueError("Reference checkpoint topology SHA-256 does not match ref_graph_path")
+        compiled.load_state_dict(state, strict=True)
         for param in compiled.parameters():
             param.requires_grad = False
         compiled.train(False)
@@ -1144,11 +1215,9 @@ class ReferenceForwardStage(nn.Module):
     @torch.no_grad()
     def forward(self, tokens: Tensor) -> Tensor:
         compiled = self._ensure_loaded(device=tokens.device)
-        if len(compiled.graph.input_node_ids) >= 2:
-            dummy_targets = torch.zeros_like(tokens)
-            outputs = compiled(tokens, dummy_targets)
-        else:
-            outputs = compiled(tokens)
+        outputs = compiled(tokens)
+        if len(outputs) != 1 or outputs[0].ndim != 3:
+            raise ValueError("Reference graph must return one [batch, sequence, vocab] logits tensor")
         return outputs[0]
 
 
@@ -1160,13 +1229,50 @@ class SequenceLogpStage(nn.Module):
         self.ignore_index = int(ignore_index)
 
     def forward(self, logits: Tensor, targets: Tensor, loss_mask: Tensor) -> Tensor:
+        if logits.ndim != 3 or targets.shape != logits.shape[:-1] or loss_mask.shape != targets.shape:
+            raise ValueError(
+                "sequence_logp expects logits [batch, sequence, vocab] and matching targets/loss_mask"
+            )
         log_probs = F.log_softmax(logits.float(), dim=-1)
-        target_safe = targets.clamp(min=0)
+        valid = targets != self.ignore_index
+        if bool(((targets < 0) & valid).any().item()) or bool(((targets >= logits.size(-1)) & valid).any().item()):
+            raise ValueError("sequence_logp target ID is outside the vocabulary")
+        if not bool(torch.isfinite(loss_mask).all().item()) or bool((loss_mask < 0).any().item()):
+            raise ValueError("sequence_logp loss_mask must be finite and non-negative")
+        effective = loss_mask.to(log_probs.dtype) * valid.to(log_probs.dtype)
+        if bool((effective.sum(dim=-1) <= 0).any().item()):
+            raise ValueError("sequence_logp requires at least one valid selected token per example")
+        target_safe = targets.masked_fill(~valid, 0).long()
         gathered = log_probs.gather(-1, target_safe.unsqueeze(-1)).squeeze(-1)
-        mask = loss_mask.to(gathered.dtype)
-        valid = (targets != self.ignore_index).to(gathered.dtype)
-        effective = mask * valid
         return (gathered * effective).sum(dim=-1)
+
+
+class TokenLogpEntropyStage(nn.Module):
+    """Selected per-token log-probability and categorical entropy."""
+
+    def __init__(self, ignore_index: int = -100) -> None:
+        super().__init__()
+        self.ignore_index = int(ignore_index)
+
+    def forward(self, logits: Tensor, targets: Tensor, loss_mask: Tensor) -> tuple[Tensor, Tensor]:
+        if logits.ndim != 3 or targets.shape != logits.shape[:-1] or loss_mask.shape != targets.shape:
+            raise ValueError(
+                "token_logp_entropy expects logits [batch, sequence, vocab] and matching targets/loss_mask"
+            )
+        log_probs = F.log_softmax(logits.float(), dim=-1)
+        valid = targets != self.ignore_index
+        if bool(((targets < 0) & valid).any().item()) or bool(((targets >= logits.size(-1)) & valid).any().item()):
+            raise ValueError("token_logp_entropy target ID is outside the vocabulary")
+        mask = loss_mask.to(log_probs.dtype)
+        if not bool(torch.isfinite(mask).all().item()) or bool((mask < 0).any().item()):
+            raise ValueError("token_logp_entropy mask must be finite and non-negative")
+        effective = mask * valid.to(mask.dtype)
+        if bool((effective.sum(dim=-1) <= 0).any().item()):
+            raise ValueError("token_logp_entropy requires at least one selected token per example")
+        target_safe = targets.masked_fill(~valid, 0).long()
+        selected_logp = log_probs.gather(-1, target_safe.unsqueeze(-1)).squeeze(-1)
+        entropy = -(log_probs.exp() * log_probs).sum(dim=-1)
+        return selected_logp * effective, entropy * effective
 
 
 class DPOPairwiseLossStage(nn.Module):
@@ -1228,6 +1334,32 @@ class DPODatasetSourceStage(nn.Module):
         return tuple(args)
 
 
+class PairBatchConcatStage(nn.Module):
+    """Concatenate equal-shape chosen/rejected batches for one shared forward."""
+
+    def forward(self, chosen: Tensor, rejected: Tensor) -> Tensor:
+        if chosen.ndim < 1 or rejected.ndim < 1:
+            raise ValueError("pair_batch_concat expects tensors with a batch axis")
+        if chosen.shape != rejected.shape:
+            raise ValueError(
+                f"chosen/rejected batch shapes must match, got {tuple(chosen.shape)} and {tuple(rejected.shape)}"
+            )
+        if chosen.dtype != rejected.dtype or chosen.device != rejected.device:
+            raise ValueError("chosen/rejected batches must have the same dtype and device")
+        if chosen.size(0) <= 0:
+            raise ValueError("pair_batch_concat requires a non-empty batch")
+        return torch.cat((chosen, rejected), dim=0)
+
+
+class PairBatchSplitStage(nn.Module):
+    """Undo ``PairBatchConcatStage`` while preserving gradients and views."""
+
+    def forward(self, paired: Tensor) -> tuple[Tensor, Tensor]:
+        if paired.ndim < 1 or paired.size(0) <= 0 or paired.size(0) % 2 != 0:
+            raise ValueError("pair_batch_split expects a non-empty even batch")
+        return paired.chunk(2, dim=0)
+
+
 class RewardHeadStage(nn.Module):
     """Linear-to-1 scalar head for reward-model training."""
 
@@ -1244,11 +1376,60 @@ class RewardHeadStage(nn.Module):
         return self.proj(pooled).squeeze(-1)
 
 
-class PreferenceBCELossStage(nn.Module):
-    """Bradley-Terry preference loss for reward-model training."""
+class MaskedRewardHeadStage(nn.Module):
+    """Shared scalar head evaluated at each example's last selected token."""
 
-    def forward(self, reward_chosen: Tensor, reward_rejected: Tensor) -> Tensor:
-        return -F.logsigmoid(reward_chosen - reward_rejected).mean()
+    def __init__(self, model_dim: int) -> None:
+        super().__init__()
+        self.model_dim = int(model_dim)
+        self.proj = nn.Linear(self.model_dim, 1, bias=False)
+
+    def forward(self, hidden: Tensor, sequence_mask: Tensor) -> Tensor:
+        if hidden.ndim != 3 or hidden.size(-1) != self.model_dim:
+            raise ValueError(
+                f"masked reward head expects hidden [batch, sequence, {self.model_dim}]"
+            )
+        if sequence_mask.shape != hidden.shape[:2]:
+            raise ValueError("masked reward head mask must match hidden batch/sequence axes")
+        if not bool(torch.isfinite(sequence_mask).all().item()) or bool((sequence_mask < 0).any().item()):
+            raise ValueError("masked reward head mask must be finite and non-negative")
+        selected = sequence_mask > 0
+        if bool((selected.sum(dim=-1) <= 0).any().item()):
+            raise ValueError("masked reward head requires at least one selected token per example")
+        positions = torch.arange(hidden.size(1), device=hidden.device).view(1, -1)
+        last_positions = positions.masked_fill(~selected, -1).amax(dim=-1)
+        rows = torch.arange(hidden.size(0), device=hidden.device)
+        pooled = hidden[rows, last_positions]
+        return self.proj(pooled).squeeze(-1)
+
+
+class PolicyLogitsValueStage(nn.Module):
+    """Untied policy LM head and value head over one shared decoder body."""
+
+    def __init__(
+        self,
+        model_dim: int,
+        vocab_size: int,
+        output_multiplier: float = 1.0,
+        logit_softcap: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.model_dim = int(model_dim)
+        self.vocab_size = int(vocab_size)
+        self.output_multiplier = float(output_multiplier)
+        self.logit_softcap = float(logit_softcap)
+        self.lm_head = nn.Linear(self.model_dim, self.vocab_size, bias=False)
+        self.value_head = nn.Linear(self.model_dim, 1, bias=False)
+
+    def forward(self, hidden: Tensor) -> tuple[Tensor, Tensor]:
+        if hidden.ndim != 3 or hidden.size(-1) != self.model_dim:
+            raise ValueError(
+                f"policy_logits_value expects hidden [batch, sequence, {self.model_dim}]"
+            )
+        logits = self.lm_head(hidden) * self.output_multiplier
+        if self.logit_softcap > 0.0:
+            logits = self.logit_softcap * torch.tanh(logits / self.logit_softcap)
+        return logits, self.value_head(hidden).squeeze(-1)
 
 
 class ValueHeadStage(nn.Module):
@@ -1260,6 +1441,37 @@ class ValueHeadStage(nn.Module):
 
     def forward(self, hidden: Tensor) -> Tensor:
         return self.proj(hidden).squeeze(-1)
+
+
+class PolicyHeadWithValueStage(nn.Module):
+    """Wrap a checkpoint-compatible policy head with a separately trainable value head."""
+
+    def __init__(
+        self,
+        policy_head: nn.Module,
+        *,
+        model_dim: int,
+        output_multiplier: float,
+        logit_softcap: float,
+    ) -> None:
+        super().__init__()
+        self.policy_head = policy_head
+        self.value_head = ValueHeadStage(model_dim)
+        self.output_multiplier = float(output_multiplier)
+        self.logit_softcap = float(logit_softcap)
+
+    def forward(self, hidden: Tensor) -> tuple[Tensor, Tensor]:
+        logits = self.policy_head(hidden) * self.output_multiplier
+        if self.logit_softcap > 0.0:
+            logits = self.logit_softcap * torch.tanh(logits / self.logit_softcap)
+        return logits, self.value_head(hidden)
+
+
+class PreferenceBCELossStage(nn.Module):
+    """Bradley-Terry preference loss for reward-model training."""
+
+    def forward(self, reward_chosen: Tensor, reward_rejected: Tensor) -> Tensor:
+        return -F.logsigmoid(reward_chosen - reward_rejected).mean()
 
 
 class PPOClippedLossStage(nn.Module):
@@ -1291,6 +1503,60 @@ class PPOClippedLossStage(nn.Module):
         value_loss = 0.5 * torch.maximum(vf_sq1, vf_sq2).mean()
         loss = policy_loss + self.vf_coef * value_loss
         return policy_loss, value_loss, loss
+
+
+class MaskedPPOClippedLossStage(nn.Module):
+    """Per-token clipped PPO objective over only completion positions."""
+
+    def __init__(
+        self,
+        clip_range: float = 0.2,
+        vf_coef: float = 0.5,
+        ent_coef: float = 0.0,
+        normalize_advantages: bool = True,
+    ) -> None:
+        super().__init__()
+        self.clip_range = float(clip_range)
+        self.vf_coef = float(vf_coef)
+        self.ent_coef = float(ent_coef)
+        self.normalize_advantages = bool(normalize_advantages)
+
+    def forward(
+        self,
+        logp_new: Tensor,
+        logp_old: Tensor,
+        advantages: Tensor,
+        value_new: Tensor,
+        value_old: Tensor,
+        returns: Tensor,
+        loss_mask: Tensor,
+        entropy: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        tensors = (logp_new, logp_old, advantages, value_new, value_old, returns, loss_mask, entropy)
+        if any(tensor.shape != logp_new.shape for tensor in tensors[1:]):
+            raise ValueError("masked PPO inputs must all have the same [batch, sequence] shape")
+        mask = loss_mask.to(logp_new.dtype)
+        if not bool(torch.isfinite(mask).all().item()) or bool((mask < 0).any().item()):
+            raise ValueError("masked PPO loss_mask must be finite and non-negative")
+        denom = mask.sum()
+        if not bool((denom > 0).item()):
+            raise ValueError("masked PPO requires at least one selected token")
+        adv = advantages.to(logp_new.dtype)
+        if self.normalize_advantages:
+            mean = (adv * mask).sum() / denom
+            variance = (((adv - mean) ** 2) * mask).sum() / denom
+            adv = (adv - mean) / torch.sqrt(variance + 1e-8)
+        ratio = (logp_new - logp_old).exp()
+        unclipped = ratio * adv
+        clipped = ratio.clamp(1.0 - self.clip_range, 1.0 + self.clip_range) * adv
+        policy_loss = -(torch.minimum(unclipped, clipped) * mask).sum() / denom
+        value_clipped = value_old + (value_new - value_old).clamp(-self.clip_range, self.clip_range)
+        vf_sq1 = (value_new - returns) ** 2
+        vf_sq2 = (value_clipped - returns) ** 2
+        value_loss = 0.5 * (torch.maximum(vf_sq1, vf_sq2) * mask).sum() / denom
+        entropy_bonus = (entropy * mask).sum() / denom
+        loss = policy_loss + self.vf_coef * value_loss - self.ent_coef * entropy_bonus
+        return policy_loss, value_loss, entropy_bonus, loss
 
 
 class KLPenaltyStage(nn.Module):
@@ -1328,11 +1594,16 @@ class RewardForwardStage(nn.Module):
                 "RewardForwardStage requires reward_graph_path and reward_weights_path to be set"
             )
         from .serialization import load_graph
-        from .inference import load_pt_checkpoint
+        from .inference import _graph_topology_sha256, load_pt_checkpoint
         reward_graph = load_graph(self.reward_graph_path)
         compiled = CompiledTorchGraph(reward_graph)
-        state, _meta = load_pt_checkpoint(self.reward_weights_path, map_location=device or "cpu")
-        compiled.load_state_dict(state, strict=False)
+        if compiled._expected_flat_inputs != 1:
+            raise ValueError("Reward inference graph must expose exactly one token input")
+        state, metadata = load_pt_checkpoint(self.reward_weights_path, map_location=device or "cpu")
+        topology_digest = str(metadata.get("graph_topology_sha256", ""))
+        if topology_digest and topology_digest != _graph_topology_sha256(reward_graph):
+            raise ValueError("Reward checkpoint topology SHA-256 does not match reward_graph_path")
+        compiled.load_state_dict(state, strict=True)
         for param in compiled.parameters():
             param.requires_grad = False
         compiled.train(False)
@@ -1345,6 +1616,8 @@ class RewardForwardStage(nn.Module):
     def forward(self, tokens: Tensor) -> Tensor:
         compiled = self._ensure_loaded(device=tokens.device)
         outputs = compiled(tokens)
+        if len(outputs) != 1 or outputs[0].ndim not in {1, 2}:
+            raise ValueError("Reward graph must return one batch reward tensor")
         return outputs[0]
 
 
@@ -1480,15 +1753,25 @@ class RepeatKVStage(nn.Module):
 
 
 class RotaryEmbeddingStage(nn.Module):
-    def __init__(self, head_dim: int, rope_base: float, rope_scaling: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        head_dim: int,
+        rope_base: float,
+        rope_scaling: dict[str, Any] | None = None,
+        convention: str = "legacy",
+    ) -> None:
         super().__init__()
         if head_dim % 2 != 0:
             raise ValueError("head_dim must be even for rotary embeddings")
+        if convention not in {"legacy", "hf"}:
+            raise ValueError("rotary convention must be 'legacy' or 'hf'")
         self.rotary = Rotary(head_dim, rope_base, scaling=rope_scaling)
+        self.convention = convention
 
     def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
         cos, sin = self.rotary(q.size(2), q.device, q.dtype)
-        return apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+        apply = apply_rotary_emb_hf if self.convention == "hf" else apply_rotary_emb
+        return apply(q, cos, sin), apply(k, cos, sin)
 
 
 class QKGainStage(nn.Module):
@@ -1524,6 +1807,402 @@ class ScaledDotProductAttentionStage(nn.Module):
                 return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
         else: # sdpa (default)
             return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
+
+
+class DFlashAttentionStage(nn.Module):
+    """Exact Muse Glimmer assistant block attention.
+
+    K/V projections are shared between accepted target context and the noisy
+    16-row block. RoPE consumes explicit absolute positions, and block queries
+    attend bidirectionally within the configured absolute sliding window.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        num_kv_heads: int,
+        head_dim: int,
+        window_size: int,
+        rope_base: float,
+        norm_eps: float,
+        convention: str = "hf",
+        bias: bool = False,
+        dropout_p: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if (
+            model_dim <= 0
+            or num_heads <= 0
+            or num_kv_heads <= 0
+            or num_heads % num_kv_heads != 0
+            or head_dim <= 0
+            or head_dim % 2 != 0
+            or window_size <= 0
+            or not math.isfinite(rope_base)
+            or rope_base <= 0
+            or not math.isfinite(norm_eps)
+            or norm_eps <= 0
+            or convention not in {"hf", "interleaved"}
+        ):
+            raise ValueError("invalid DFlash attention geometry")
+        self.model_dim = int(model_dim)
+        self.num_heads = int(num_heads)
+        self.num_kv_heads = int(num_kv_heads)
+        self.head_dim = int(head_dim)
+        self.window_size = int(window_size)
+        self.rope_base = float(rope_base)
+        self.norm_eps = float(norm_eps)
+        self.convention = convention
+        self.dropout_p = float(dropout_p)
+        self.q_proj = nn.Linear(model_dim, num_heads * head_dim, bias=bias)
+        self.k_proj = nn.Linear(model_dim, num_kv_heads * head_dim, bias=bias)
+        self.v_proj = nn.Linear(model_dim, num_kv_heads * head_dim, bias=bias)
+        self.q_norm = nn.Parameter(torch.ones(head_dim))
+        self.k_norm = nn.Parameter(torch.ones(head_dim))
+
+    def _heads(self, value: Tensor, heads: int) -> Tensor:
+        batch, sequence, width = value.shape
+        if width != heads * self.head_dim:
+            raise ValueError("DFlash projection width does not match its head geometry")
+        return value.view(batch, sequence, heads, self.head_dim).transpose(1, 2)
+
+    def _rms(self, value: Tensor, weight: Tensor) -> Tensor:
+        work = value.float()
+        inverse = torch.rsqrt(work.square().mean(dim=-1, keepdim=True) + self.norm_eps)
+        return (work * inverse * weight.float()).to(dtype=value.dtype)
+
+    def _positions(self, positions: Tensor, *, batch: int, sequence: int) -> Tensor:
+        if positions.ndim == 1:
+            positions = positions.unsqueeze(0).expand(batch, -1)
+        if tuple(positions.shape) != (batch, sequence):
+            raise ValueError("DFlash position IDs must be [batch, sequence]")
+        if positions.is_floating_point() and not torch.all(positions == positions.round()):
+            raise ValueError("DFlash position IDs must be integral")
+        result = positions.to(dtype=torch.float32)
+        if not torch.isfinite(result).all() or (result < 0).any():
+            raise ValueError("DFlash position IDs must be finite and non-negative")
+        return result
+
+    def _rope(self, value: Tensor, positions: Tensor) -> Tensor:
+        frequencies = 1.0 / (
+            self.rope_base
+            ** (
+                torch.arange(
+                    0,
+                    self.head_dim,
+                    2,
+                    device=value.device,
+                    dtype=torch.float32,
+                )
+                / self.head_dim
+            )
+        )
+        angles = positions.to(device=value.device).unsqueeze(-1) * frequencies
+        cosine = angles.cos().to(dtype=value.dtype).unsqueeze(1)
+        sine = angles.sin().to(dtype=value.dtype).unsqueeze(1)
+        if self.convention == "interleaved":
+            paired = value.view(*value.shape[:-1], self.head_dim // 2, 2)
+            first, second = paired[..., 0], paired[..., 1]
+            rotated = torch.stack(
+                (first * cosine - second * sine, second * cosine + first * sine),
+                dim=-1,
+            )
+            return rotated.flatten(-2)
+        cosine = torch.cat((cosine, cosine), dim=-1)
+        sine = torch.cat((sine, sine), dim=-1)
+        first, second = value.chunk(2, dim=-1)
+        rotate_half = torch.cat((-second, first), dim=-1)
+        return value * cosine + rotate_half * sine
+
+    def forward(
+        self,
+        block_hidden: Tensor,
+        accepted_context: Tensor,
+        context_position_ids: Tensor,
+        block_position_ids: Tensor,
+    ) -> Tensor:
+        if block_hidden.ndim != 3 or accepted_context.ndim != 3:
+            raise ValueError("DFlash hidden inputs must be [batch, sequence, hidden]")
+        batch, block_rows, block_width = block_hidden.shape
+        context_batch, context_rows, context_width = accepted_context.shape
+        if (
+            batch != context_batch
+            or block_width != self.model_dim
+            or context_width != self.model_dim
+            or block_rows <= 0
+            or context_rows <= 0
+        ):
+            raise ValueError("DFlash hidden/context geometry is inconsistent")
+        context_positions = self._positions(
+            context_position_ids, batch=batch, sequence=context_rows
+        )
+        block_positions = self._positions(
+            block_position_ids, batch=batch, sequence=block_rows
+        )
+        query = self._rms(
+            self._heads(self.q_proj(block_hidden), self.num_heads), self.q_norm
+        )
+        block_key = self._rms(
+            self._heads(self.k_proj(block_hidden), self.num_kv_heads), self.k_norm
+        )
+        context_key = self._rms(
+            self._heads(self.k_proj(accepted_context), self.num_kv_heads), self.k_norm
+        )
+        query = self._rope(query, block_positions)
+        block_key = self._rope(block_key, block_positions)
+        context_key = self._rope(context_key, context_positions)
+        key = torch.cat((context_key, block_key), dim=-2)
+        value = torch.cat(
+            (
+                self._heads(self.v_proj(accepted_context), self.num_kv_heads),
+                self._heads(self.v_proj(block_hidden), self.num_kv_heads),
+            ),
+            dim=-2,
+        )
+        key_positions = torch.cat((context_positions, block_positions), dim=-1)
+        distance = key_positions.unsqueeze(1) - block_positions.unsqueeze(-1)
+        allowed = (distance >= -self.window_size) & (distance <= self.window_size)
+        mask = torch.zeros(
+            (batch, 1, block_rows, context_rows + block_rows),
+            dtype=query.dtype,
+            device=query.device,
+        ).masked_fill(~allowed.unsqueeze(1).to(device=query.device), float("-inf"))
+        output = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=mask,
+            dropout_p=self.dropout_p if self.training else 0.0,
+            is_causal=False,
+            enable_gqa=self.num_heads != self.num_kv_heads,
+        )
+        return output.transpose(1, 2).contiguous().view(
+            batch, block_rows, self.num_heads * self.head_dim
+        )
+
+
+def _muse_glimmer_vision_cu_seqlens(grid_thw: Tensor) -> Tensor:
+    lengths = grid_thw.to(dtype=torch.int64).prod(dim=-1)
+    return F.pad(lengths.cumsum(0), (1, 0)).to(dtype=torch.int32)
+
+
+def _muse_glimmer_vision_position_ids(grid_thw: Tensor) -> Tensor:
+    parts: list[Tensor] = []
+    device = grid_thw.device
+    for temporal, height, width in grid_thw.tolist():
+        t, h, w = int(temporal), int(height), int(width)
+        h_ids, w_ids = torch.meshgrid(
+            torch.arange(h, device=device),
+            torch.arange(w, device=device),
+            indexing="ij",
+        )
+        parts.append(torch.stack((h_ids.flatten(), w_ids.flatten()), dim=-1).repeat(t, 1))
+    return torch.cat(parts, dim=0)
+
+
+def _muse_glimmer_vision_window_index(
+    grid_thw: Tensor,
+    *,
+    window_patches: int,
+) -> tuple[Tensor, Tensor]:
+    indices: list[Tensor] = []
+    cumulative: list[int] = [0]
+    offset = 0
+    device = grid_thw.device
+    for temporal, height, width in grid_thw.tolist():
+        t, h, w = int(temporal), int(height), int(width)
+        index = torch.arange(t * h * w, device=device).reshape(t, h, w)
+        pad_h = (window_patches - h % window_patches) % window_patches
+        pad_w = (window_patches - w % window_patches) % window_patches
+        windows_h = (h + pad_h) // window_patches
+        windows_w = (w + pad_w) // window_patches
+        padded = F.pad(index, (0, pad_w, 0, pad_h), value=-100)
+        padded = padded.reshape(
+            t, windows_h, window_patches, windows_w, window_patches
+        ).permute(0, 1, 3, 2, 4)
+        lengths = (padded != -100).sum(dim=(-1, -2)).reshape(-1)
+        flat = padded.reshape(-1)
+        indices.append(flat[flat != -100] + offset)
+        for value in lengths.tolist():
+            if int(value) > 0:
+                cumulative.append(cumulative[-1] + int(value))
+        offset += t * h * w
+    return (
+        torch.cat(indices),
+        torch.tensor(cumulative, dtype=torch.int32, device=device),
+    )
+
+
+def _muse_glimmer_bilinear_position_embedding(table: Tensor, grid_thw: Tensor) -> Tensor:
+    side = int(math.isqrt(table.shape[0]))
+    if side * side != table.shape[0]:
+        raise ValueError("Muse Glimmer vision position table must be square")
+    outputs: list[Tensor] = []
+    device = table.device
+    for temporal, height, width in grid_thw.tolist():
+        t, h, w = int(temporal), int(height), int(width)
+        h_grid = (torch.arange(h, device=device, dtype=torch.float32) + 0.5) * (side / h) - 0.5
+        w_grid = (torch.arange(w, device=device, dtype=torch.float32) + 0.5) * (side / w) - 0.5
+        h_floor_raw, w_floor_raw = torch.floor(h_grid).long(), torch.floor(w_grid).long()
+        h_ceil_raw, w_ceil_raw = h_floor_raw + 1, w_floor_raw + 1
+        h_frac, w_frac = h_grid - h_floor_raw.float(), w_grid - w_floor_raw.float()
+        h_floor_valid, h_ceil_valid = (h_floor_raw >= 0) & (h_floor_raw < side), (h_ceil_raw >= 0) & (h_ceil_raw < side)
+        w_floor_valid, w_ceil_valid = (w_floor_raw >= 0) & (w_floor_raw < side), (w_ceil_raw >= 0) & (w_ceil_raw < side)
+        h_floor, h_ceil = h_floor_raw.clamp(0, side - 1), h_ceil_raw.clamp(0, side - 1)
+        w_floor, w_ceil = w_floor_raw.clamp(0, side - 1), w_ceil_raw.clamp(0, side - 1)
+        corner_indices = torch.stack(
+            (
+                (h_floor[:, None] * side + w_floor[None, :]).flatten(),
+                (h_floor[:, None] * side + w_ceil[None, :]).flatten(),
+                (h_ceil[:, None] * side + w_floor[None, :]).flatten(),
+                (h_ceil[:, None] * side + w_ceil[None, :]).flatten(),
+            )
+        )
+        corner_weights = torch.stack(
+            (
+                ((1 - h_frac)[:, None] * (1 - w_frac)[None, :] * (h_floor_valid[:, None] & w_floor_valid[None, :])).flatten(),
+                ((1 - h_frac)[:, None] * w_frac[None, :] * (h_floor_valid[:, None] & w_ceil_valid[None, :])).flatten(),
+                (h_frac[:, None] * (1 - w_frac)[None, :] * (h_ceil_valid[:, None] & w_floor_valid[None, :])).flatten(),
+                (h_frac[:, None] * w_frac[None, :] * (h_ceil_valid[:, None] & w_ceil_valid[None, :])).flatten(),
+            )
+        )
+        interpolated = (table[corner_indices] * corner_weights[..., None].to(table.dtype)).sum(0)
+        outputs.append(interpolated.repeat(t, 1))
+    return torch.cat(outputs, dim=0)
+
+
+class _MuseGlimmerVisionAttention(nn.Module):
+    def __init__(self, hidden_size: int, num_heads: int, rope_theta: float) -> None:
+        super().__init__()
+        self.hidden_size = int(hidden_size)
+        self.num_heads = int(num_heads)
+        self.head_dim = self.hidden_size // self.num_heads
+        self.rope_theta = float(rope_theta)
+        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+        self.k_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+        self.proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+
+    def _rope(self, value: Tensor, position_ids: Tensor) -> Tensor:
+        spatial_dim = self.head_dim // 2
+        inv_freq = 1.0 / (
+            self.rope_theta
+            ** (torch.arange(0, spatial_dim, 2, device=value.device, dtype=torch.float32) / spatial_dim)
+        )
+        freq_w = position_ids[:, 0:1].float() * inv_freq[None, :]
+        freq_h = position_ids[:, 1:2].float() * inv_freq[None, :]
+        angles = torch.cat((freq_w, freq_h, freq_w, freq_h), dim=-1)
+        cosine = angles.cos().to(value.dtype)[None, :, None, :]
+        sine = angles.sin().to(value.dtype)[None, :, None, :]
+        first, second = value.chunk(2, dim=-1)
+        return value * cosine + torch.cat((-second, first), dim=-1) * sine
+
+    def forward(self, hidden: Tensor, cu_seqlens: Tensor, position_ids: Tensor) -> Tensor:
+        sequence = hidden.shape[0]
+        q = self.q_proj(hidden).reshape(1, sequence, self.num_heads, self.head_dim)
+        k = self.k_proj(hidden).reshape(1, sequence, self.num_heads, self.head_dim)
+        v = self.v_proj(hidden).reshape(1, sequence, self.num_heads, self.head_dim)
+        q, k, v = self._rope(q, position_ids).transpose(1, 2), self._rope(k, position_ids).transpose(1, 2), v.transpose(1, 2)
+        chunks: list[Tensor] = []
+        boundaries = cu_seqlens.to(device="cpu", dtype=torch.int64).tolist()
+        for start, end in zip(boundaries, boundaries[1:]):
+            chunks.append(F.scaled_dot_product_attention(q[:, :, start:end], k[:, :, start:end], v[:, :, start:end], dropout_p=0.0, is_causal=False, scale=self.head_dim**-0.5))
+        attended = torch.cat(chunks, dim=2)
+        return self.proj(attended.transpose(1, 2).reshape(sequence, self.hidden_size))
+
+
+class _MuseGlimmerVisionLayer(nn.Module):
+    def __init__(self, hidden_size: int, intermediate_size: int, num_heads: int, rope_theta: float, eps: float) -> None:
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_size, eps=eps)
+        self.norm2 = nn.LayerNorm(hidden_size, eps=eps)
+        self.attn = _MuseGlimmerVisionAttention(hidden_size, num_heads, rope_theta)
+        self.fc1 = nn.Linear(hidden_size, intermediate_size, bias=True)
+        self.fc2 = nn.Linear(intermediate_size, hidden_size, bias=True)
+
+    def forward(self, hidden: Tensor, cu_seqlens: Tensor, position_ids: Tensor) -> Tensor:
+        hidden = hidden + self.attn(self.norm1(hidden), cu_seqlens, position_ids)
+        return hidden + self.fc2(F.gelu(self.fc1(self.norm2(hidden))))
+
+
+class MuseGlimmerVisionTowerStage(nn.Module):
+    """Exact differentiable packed image/video tower through 2x2 pixel merge."""
+
+    def __init__(self, *, hidden_size: int = 1_536, intermediate_size: int = 8_960, num_heads: int = 16, num_layers: int = 50, patch_size: int = 14, patch_temporal: int = 2, merge_size: int = 2, pos_emb_height: int = 32, pos_emb_width: int = 32, rope_theta: float = 10_000.0, eps: float = 1.0e-5) -> None:
+        super().__init__()
+        if pos_emb_height != pos_emb_width or hidden_size % num_heads != 0:
+            raise ValueError("invalid Muse Glimmer vision tower geometry")
+        self.hidden_size, self.patch_size, self.patch_temporal, self.merge_size = int(hidden_size), int(patch_size), int(patch_temporal), int(merge_size)
+        patch_width = self.patch_temporal * 3 * self.patch_size * self.patch_size
+        self.patch_embedding = nn.Linear(patch_width, self.hidden_size, bias=False)
+        self.position_embedding = nn.Embedding(pos_emb_height * pos_emb_width, self.hidden_size)
+        self.pre_norm = nn.LayerNorm(self.hidden_size, eps=eps)
+        self.layers = nn.ModuleList(_MuseGlimmerVisionLayer(self.hidden_size, intermediate_size, num_heads, rope_theta, eps) for _ in range(num_layers))
+        self.post_norm = nn.LayerNorm(self.hidden_size, eps=eps)
+        self.window_patches = int(pos_emb_height)
+
+    def _pixel_shuffle(self, hidden: Tensor, grid_thw: Tensor) -> Tensor:
+        outputs: list[Tensor] = []
+        offset, factor = 0, self.merge_size
+        for temporal, height, width in grid_thw.tolist():
+            t, h, w = int(temporal), int(height), int(width)
+            count = t * h * w
+            chunk = hidden[offset : offset + count]
+            permutation = torch.arange(h * w, device=hidden.device).view(h // factor, factor, w // factor, factor).permute(0, 2, 1, 3).reshape(-1)
+            permutation = (permutation[None, :] + torch.arange(t, device=hidden.device)[:, None] * (h * w)).reshape(-1)
+            rows = t * (h // factor) * (w // factor)
+            chunk = chunk[permutation].view(rows, factor * factor, self.hidden_size)
+            outputs.append(chunk.permute(0, 2, 1).contiguous().view(rows, -1))
+            offset += count
+        return torch.cat(outputs, dim=0)
+
+    def forward(self, pixel_values: Tensor, grid_thw: Tensor) -> Tensor:
+        if grid_thw.ndim != 2 or grid_thw.shape[1] != 3 or pixel_values.ndim < 2:
+            raise ValueError("Muse Glimmer vision expects packed patches and [media,3] grids")
+        flat = pixel_values.reshape(pixel_values.shape[0], -1)
+        if flat.shape[1] != self.patch_embedding.in_features:
+            raise ValueError("Muse Glimmer packed patch width is incorrect")
+        grid = grid_thw.to(dtype=torch.int64)
+        if (grid <= 0).any() or (grid[:, 1:] % self.merge_size != 0).any() or int(grid.prod(-1).sum()) != flat.shape[0]:
+            raise ValueError("Muse Glimmer grid and packed-patch geometry differ")
+        hidden = self.patch_embedding(flat.to(self.patch_embedding.weight.dtype))
+        hidden = self.pre_norm(hidden + _muse_glimmer_bilinear_position_embedding(self.position_embedding.weight, grid).to(hidden.dtype))
+        window_index, window_cu = _muse_glimmer_vision_window_index(grid, window_patches=self.window_patches)
+        full_cu = _muse_glimmer_vision_cu_seqlens(grid)
+        hidden = hidden[window_index]
+        positions = (_muse_glimmer_vision_position_ids(grid).flip(-1) + 1)[window_index]
+        for index, layer in enumerate(self.layers):
+            is_full = (index + 1) % 4 == 0 or index == len(self.layers) - 1
+            hidden = layer(hidden, full_cu if is_full else window_cu, positions)
+        hidden = hidden[torch.argsort(window_index)]
+        return self._pixel_shuffle(self.post_norm(hidden), grid)
+
+
+class MuseGlimmerPerceptionNormStage(nn.Module):
+    def __init__(self, eps: float = 1.0e-5) -> None:
+        super().__init__()
+        self.eps = float(eps)
+
+    def forward(self, hidden: Tensor) -> Tensor:
+        variance = hidden.float().square().mean(dim=-1, keepdim=True)
+        return (hidden.float() * torch.rsqrt(variance + self.eps)).to(hidden.dtype)
+
+
+class MuseGlimmerMediaScatterStage(nn.Module):
+    def __init__(self, token_id: int) -> None:
+        super().__init__()
+        self.token_id = int(token_id)
+
+    def forward(self, embeddings: Tensor, token_ids: Tensor, features: Tensor) -> Tensor:
+        if embeddings.ndim != 3 or token_ids.shape != embeddings.shape[:2] or features.ndim != 2 or features.shape[1] != embeddings.shape[-1]:
+            raise ValueError("Muse Glimmer media scatter geometry mismatch")
+        mask = token_ids == self.token_id
+        if int(mask.sum().item()) != features.shape[0]:
+            raise ValueError("Muse Glimmer media placeholders and features do not match")
+        output = embeddings.clone()
+        output[mask] = features.to(device=output.device, dtype=output.dtype)
+        return output
 
 
 def _sparse_attn_mask(
@@ -1800,11 +2479,18 @@ class QKNormStage(nn.Module):
     rotation, matching ``CausalSelfAttentionStage``.
     """
 
-    def __init__(self, eps: float = 1e-6) -> None:
+    def __init__(self, eps: float = 1e-6, force_float32: bool = False) -> None:
         super().__init__()
         self.eps = float(eps)
+        self.force_float32 = bool(force_float32)
 
     def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
+        if self.force_float32:
+            q_dtype = q.dtype
+            k_dtype = k.dtype
+            q_out = q.float() * torch.pow(q.float().square().mean(dim=-1, keepdim=True) + self.eps, -0.5)
+            k_out = k.float() * torch.pow(k.float().square().mean(dim=-1, keepdim=True) + self.eps, -0.5)
+            return q_out.to(q_dtype), k_out.to(k_dtype)
         return (
             F.rms_norm(q, (q.size(-1),), eps=self.eps),
             F.rms_norm(k, (k.size(-1),), eps=self.eps),
@@ -2254,6 +2940,17 @@ class LossScaleStage(nn.Module):
         return loss * self.coef
 
 
+class TensorScaleStage(nn.Module):
+    """Multiply an arbitrary tensor by a fixed serialized scalar."""
+
+    def __init__(self, scale: float) -> None:
+        super().__init__()
+        self.scale = float(scale)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x * self.scale
+
+
 class DatasetSourceStage(nn.Module):
     """Source node that stores dataset configuration.
 
@@ -2671,6 +3368,8 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         )
     if module_type == "sequence_logp":
         return SequenceLogpStage(ignore_index=int(cfg.get("ignore_index", -100)))
+    if module_type == "token_logp_entropy":
+        return TokenLogpEntropyStage(ignore_index=int(cfg.get("ignore_index", -100)))
     if module_type == "dpo_pairwise_loss":
         return DPOPairwiseLossStage(
             beta=float(cfg.get("beta", 0.1)),
@@ -2685,10 +3384,23 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             chosen_field=str(cfg.get("chosen_field", "chosen")),
             rejected_field=str(cfg.get("rejected_field", "rejected")),
         )
+    if module_type == "pair_batch_concat":
+        return PairBatchConcatStage()
+    if module_type == "pair_batch_split":
+        return PairBatchSplitStage()
     if module_type == "reward_head":
         return RewardHeadStage(
             model_dim=int(cfg.get("model_dim", 128)),
             pool=str(cfg.get("pool", "last")),
+        )
+    if module_type == "masked_reward_head":
+        return MaskedRewardHeadStage(model_dim=int(cfg.get("model_dim", 128)))
+    if module_type == "policy_logits_value":
+        return PolicyLogitsValueStage(
+            model_dim=int(cfg.get("model_dim", 128)),
+            vocab_size=int(cfg.get("vocab_size", 256)),
+            output_multiplier=float(cfg.get("output_multiplier", 1.0)),
+            logit_softcap=float(cfg.get("logit_softcap", 0.0)),
         )
     if module_type == "preference_bce_loss":
         return PreferenceBCELossStage()
@@ -2699,6 +3411,13 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             clip_range=float(cfg.get("clip_range", 0.2)),
             vf_coef=float(cfg.get("vf_coef", 0.5)),
             ent_coef=float(cfg.get("ent_coef", 0.0)),
+        )
+    if module_type == "masked_ppo_clipped_loss":
+        return MaskedPPOClippedLossStage(
+            clip_range=float(cfg.get("clip_range", 0.2)),
+            vf_coef=float(cfg.get("vf_coef", 0.5)),
+            ent_coef=float(cfg.get("ent_coef", 0.0)),
+            normalize_advantages=bool(cfg.get("normalize_advantages", True)),
         )
     if module_type == "kl_penalty":
         return KLPenaltyStage(kl_coef=float(cfg.get("kl_coef", 0.1)))
@@ -2764,6 +3483,12 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         return DropoutStage(p=float(cfg.get("p", 0.1)))
     if module_type == "gelu":
         return GeluStage()
+    if module_type == "sigmoid":
+        return SigmoidFunctionStage()
+    if module_type == "multiply":
+        return MultiplyFunctionStage()
+    if module_type == "silu":
+        return SiluFunctionStage()
     if module_type == "swiglu":
         return SwiGLUStage(
             model_dim=int(cfg["model_dim"]),
@@ -2789,7 +3514,10 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             eps=float(cfg.get("eps", 1e-5)),
         )
     if module_type == "qk_norm":
-        return QKNormStage(eps=float(cfg.get("eps", 1e-6)))
+        return QKNormStage(
+            eps=float(cfg.get("eps", 1e-6)),
+            force_float32=bool(cfg.get("force_float32", False)),
+        )
     if module_type == "absolute_position_embedding":
         return AbsolutePositionEmbeddingStage(
             max_seq_len=int(cfg.get("max_seq_len", 1024)),
@@ -2835,6 +3563,8 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         return AuxLossAddStage(coef=float(cfg["coef"]))
     if module_type == "loss_scale":
         return LossScaleStage(coef=float(cfg.get("coef", 1.0)))
+    if module_type == "tensor_scale":
+        return TensorScaleStage(scale=float(cfg.get("scale", 1.0)))
     if module_type == "linear":
         return LinearStage(
             input_dim=int(cfg["input_dim"]),
@@ -2855,6 +3585,7 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             head_dim=int(cfg["head_dim"]),
             rope_base=float(cfg["rope_base"]),
             rope_scaling=cfg.get("rope_scaling"),
+            convention=str(cfg.get("convention", "legacy")),
         )
     if module_type == "qk_gain":
         return QKGainStage(
@@ -2867,6 +3598,37 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             backend=str(cfg.get("backend", "sdpa")),
             dropout_p=float(cfg.get("dropout_p", 0.0)),
         )
+    if module_type == "dflash_attention":
+        return DFlashAttentionStage(
+            model_dim=int(cfg["model_dim"]),
+            num_heads=int(cfg["num_heads"]),
+            num_kv_heads=int(cfg["num_kv_heads"]),
+            head_dim=int(cfg["head_dim"]),
+            window_size=int(cfg["window_size"]),
+            rope_base=float(cfg.get("rope_base", 500000.0)),
+            norm_eps=float(cfg.get("norm_eps", 1e-5)),
+            convention=str(cfg.get("convention", "hf")),
+            bias=bool(cfg.get("bias", False)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "muse_glimmer_vision_tower":
+        return MuseGlimmerVisionTowerStage(
+            hidden_size=int(cfg.get("hidden_size", 1_536)),
+            intermediate_size=int(cfg.get("intermediate_size", 8_960)),
+            num_heads=int(cfg.get("num_heads", 16)),
+            num_layers=int(cfg.get("num_layers", 50)),
+            patch_size=int(cfg.get("patch_size", 14)),
+            patch_temporal=int(cfg.get("patch_temporal", 2)),
+            merge_size=int(cfg.get("merge_size", 2)),
+            pos_emb_height=int(cfg.get("pos_emb_height", 32)),
+            pos_emb_width=int(cfg.get("pos_emb_width", 32)),
+            rope_theta=float(cfg.get("rope_theta", 10_000.0)),
+            eps=float(cfg.get("eps", 1.0e-5)),
+        )
+    if module_type == "muse_glimmer_perception_norm":
+        return MuseGlimmerPerceptionNormStage(eps=float(cfg.get("eps", 1.0e-5)))
+    if module_type == "muse_glimmer_media_scatter":
+        return MuseGlimmerMediaScatterStage(token_id=int(cfg["token_id"]))
     if module_type == "sliding_window_attention":
         return SlidingWindowAttentionStage(
             window_size=int(cfg.get("window_size", 256)),
@@ -2912,6 +3674,8 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         return RMSNormStage(
             eps=float(cfg.get("eps", 1e-6)),
             model_dim=int(model_dim) if model_dim is not None else None,
+            centered=bool(cfg.get("centered", False)),
+            force_float32=bool(cfg.get("force_float32", False)),
         )
     if module_type == "residual_mix":
         return ResidualMixStage(
@@ -3220,6 +3984,10 @@ _TILE_CUDA_NVFP4_ACTIVATION_INPUTS: dict[str, tuple[int, ...]] = {
     "solu": (0,),
     "act_halt_gate": (0,),
     "scaled_dot_product_attention": (0, 1, 2),
+    "dflash_attention": (0, 1),
+    "muse_glimmer_vision_tower": (0,),
+    "muse_glimmer_perception_norm": (0,),
+    "muse_glimmer_media_scatter": (0, 2),
     "sliding_window_attention": (0, 1, 2),
     "block_sparse_attention": (0, 1, 2),
     "streaming_attention_sinks": (0, 1, 2),
@@ -3582,6 +4350,8 @@ class TorchTrainer:
         self.loss_history: list[float] = []
         self._active_compiled_graph: CompiledTorchGraph | None = None
         self._last_compiled_graph: CompiledTorchGraph | None = None
+        self.last_optimizer_states: list[dict[str, Any]] = []
+        self.last_global_step: int = 0
 
     def stop(self) -> None:
         self._stop = True
@@ -3595,6 +4365,27 @@ class TorchTrainer:
     def last_compiled_graph(self) -> CompiledTorchGraph | None:
         """Most recent compiled graph retained after train() for validation/inference handoff."""
         return self._last_compiled_graph
+
+    def save_training_checkpoint(self, path: str | Path) -> None:
+        """Persist exact model/optimizer/RNG progress for deterministic resume."""
+        compiled = self._last_compiled_graph
+        if compiled is None:
+            raise RuntimeError("No completed Torch training state is available to save")
+        from .inference import _graph_topology_sha256
+
+        torch.save(
+            {
+                "format": "neuralfn.torch_training.v1",
+                "graph_topology_sha256": _graph_topology_sha256(self.graph),
+                "state_dict": compiled.state_dict(),
+                "optimizer_states": copy.deepcopy(self.last_optimizer_states),
+                "global_step": int(self.last_global_step),
+                "torch_rng_state": torch.get_rng_state(),
+                "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                "loss_history": list(self.loss_history),
+            },
+            path,
+        )
 
     @staticmethod
     def _lr_warmdown_scale(step: int, total_steps: int, warmdown_fraction: float) -> float:
@@ -3801,16 +4592,70 @@ class TorchTrainer:
     def _build_manual_dataset(
         cls,
         graph: NeuronGraph,
-        train_inputs: list[list[int]] | Tensor,
-        train_targets: list[list[int]] | Tensor,
+        train_inputs: list[list[int]] | Tensor | dict[str, Any],
+        train_targets: list[list[int]] | Tensor | None,
     ) -> torch.utils.data.Dataset:
         roles = cls._flatten_input_roles(graph)
+        if isinstance(train_inputs, dict):
+            unexpected = sorted(set(train_inputs) - set(roles))
+            missing = sorted(set(roles) - set(train_inputs))
+            if missing or unexpected:
+                raise ValueError(
+                    f"Structured training fields must exactly match graph inputs: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
+            tensors: list[Tensor] = []
+            batch_size: int | None = None
+            for role in roles:
+                value = torch.as_tensor(train_inputs[role])
+                if value.ndim == 0:
+                    raise ValueError(f"Structured training field {role!r} must have a batch axis")
+                if batch_size is None:
+                    batch_size = int(value.size(0))
+                elif value.size(0) != batch_size:
+                    raise ValueError("All structured training fields must have the same batch size")
+                is_float_role = role in {
+                    "loss_mask",
+                    "mask_chosen",
+                    "mask_rejected",
+                    "logp_old",
+                    "value_old",
+                    "advantages",
+                    "returns",
+                    "rewards",
+                }
+                value = value.to(torch.float32 if is_float_role else torch.long)
+                tensors.append(value)
+            if not tensors or batch_size is None or batch_size <= 0:
+                raise ValueError("Structured training requires at least one example")
+            token_shapes = {
+                tuple(tensor.shape)
+                for role, tensor in zip(roles, tensors, strict=True)
+                if role.startswith("tokens") or role.startswith("targets") or role in {"tokens", "targets"}
+            }
+            if len(token_shapes) > 1:
+                raise ValueError("All structured token/target fields must have the same shape")
+            for role, tensor in zip(roles, tensors, strict=True):
+                if "mask" in role:
+                    if not bool(torch.isfinite(tensor).all().item()) or bool((tensor < 0).any().item()):
+                        raise ValueError(f"Structured mask field {role!r} must be finite and non-negative")
+                    if bool((tensor.reshape(tensor.size(0), -1).sum(dim=-1) <= 0).any().item()):
+                        raise ValueError(f"Structured mask field {role!r} is empty for at least one example")
+                    if token_shapes and tuple(tensor.shape) not in token_shapes:
+                        raise ValueError(f"Structured mask field {role!r} must match token shapes")
+            return torch.utils.data.TensorDataset(*tensors)
+
         x = torch.as_tensor(train_inputs, dtype=torch.long)
         if len(roles) == 1:
             if x.ndim != 2:
                 raise ValueError("Torch training expects integer input arrays of shape [batch, seq_len]")
             return torch.utils.data.TensorDataset(x)
 
+        if train_targets is None:
+            raise ValueError(
+                "train_targets is required for legacy token-array training; "
+                "fine-tuning objectives should pass a role-keyed mapping"
+            )
         y = torch.as_tensor(train_targets, dtype=torch.long)
         if x.ndim != 2 or y.ndim != 2:
             raise ValueError("Torch training expects integer token arrays of shape [batch, seq_len]")
@@ -3841,49 +4686,165 @@ class TorchTrainer:
             cls._freeze_module_params(target)
 
     @classmethod
-    def _load_base_checkpoint(cls, compiled: nn.Module, path: str) -> None:
+    def _load_base_checkpoint(
+        cls,
+        compiled: nn.Module,
+        path: str,
+        *,
+        expected_sha256: str = "",
+    ) -> None:
         """Load a pretrained base-model checkpoint into ``compiled``.
 
-        Uses ``load_pt_checkpoint`` then ``load_state_dict(strict=False)`` so
-        LoRA ``A`` / ``B`` parameters retain their initialization. Also loads
-        base weights into ``NF4LinearStage`` buffers when present.
+        LoRA A/B parameters retain their initialization, but every base tensor
+        must be consumed exactly once with a compatible shape and dtype. NF4
+        destinations quantize each matching dense source projection once.
         """
         if not path:
             return
-        from .inference import load_pt_checkpoint  # local import to avoid cycle
+        from .inference import _sha256_file, load_pt_checkpoint  # local import to avoid cycle
+        expected_sha256 = str(expected_sha256).strip().lower()
+        if expected_sha256 and _sha256_file(path) != expected_sha256:
+            raise ValueError("Base checkpoint SHA-256 does not match FineTuneSpec")
         state, _meta = load_pt_checkpoint(path)
         if not isinstance(compiled, nn.Module):
             return
-        # Remap ``foo.proj.weight`` keys (``LinearStage``) onto ``foo.base.weight``
-        # (``LoRALinearStage`` / ``NF4LinearStage``) so users can fine-tune a
-        # plain pretrained checkpoint without re-exporting.
-        target_keys = set(compiled.state_dict().keys())
+        target_state = compiled.state_dict()
+        target_keys = set(target_state)
+        adapter_keys = {
+            key for key in target_keys if key.endswith(".lora_A") or key.endswith(".lora_B")
+        }
+        nf4_modules = {
+            name: module for name, module in compiled.named_modules() if isinstance(module, NF4LinearStage)
+        }
+        nf4_buffer_keys = {
+            f"{name}.{suffix}"
+            for name in nf4_modules
+            for suffix in ("qweight", "absmax", "nf4_codebook")
+        }
         remapped: dict[str, Tensor] = {}
-        for key, value in state.items():
+        consumed_source: set[str] = set()
+        nf4_dense_sources: dict[str, Tensor] = {}
+        for key in sorted(state):
+            value = state[key]
             if key in target_keys:
                 remapped[key] = value
+                consumed_source.add(key)
                 continue
             if key.endswith(".proj.weight"):
                 candidate = key[: -len(".proj.weight")] + ".base.weight"
                 if candidate in target_keys:
                     remapped[candidate] = value
+                    consumed_source.add(key)
                     continue
-                qcandidate = key[: -len(".proj.weight")] + ".qweight"
-                if qcandidate in target_keys:
-                    remapped[key] = value  # handled in nf4 pass below
+                module_name = key[: -len(".proj.weight")]
+                if module_name in nf4_modules:
+                    nf4_dense_sources[module_name] = value
+                    consumed_source.add(key)
                     continue
-            remapped[key] = value
-        compiled.load_state_dict(remapped, strict=False)
-        # Quantize any matching nf4 linears from the float base weight.
-        for name, module in compiled.named_modules():
-            if isinstance(module, NF4LinearStage):
-                candidate = name + ".proj.weight"
-                if candidate in state:
-                    module.load_base_weight(state[candidate])
-                else:
-                    base_candidate = name + ".base.weight"
-                    if base_candidate in state:
-                        module.load_base_weight(state[base_candidate])
+            if key.endswith(".base.weight"):
+                module_name = key[: -len(".base.weight")]
+                if module_name in nf4_modules:
+                    nf4_dense_sources[module_name] = value
+                    consumed_source.add(key)
+                    continue
+            if key.endswith(".proj.bias"):
+                candidate = key[: -len(".proj.bias")] + ".base.bias"
+                if candidate in target_keys:
+                    remapped[candidate] = value
+                    consumed_source.add(key)
+                    continue
+
+        unknown_source = sorted(set(state) - consumed_source)
+        if unknown_source:
+            raise ValueError(f"Base checkpoint contains unexpected tensors: {unknown_source[:12]}")
+        missing_nf4 = sorted(set(nf4_modules) - set(nf4_dense_sources))
+        if missing_nf4:
+            raise ValueError(f"Base checkpoint is missing NF4 source weights: {missing_nf4[:12]}")
+        expected_loaded = target_keys - adapter_keys - nf4_buffer_keys
+        missing_base = sorted(expected_loaded - set(remapped))
+        if missing_base:
+            raise ValueError(f"Base checkpoint is missing required tensors: {missing_base[:12]}")
+        for key, value in remapped.items():
+            target = target_state[key]
+            if tuple(value.shape) != tuple(target.shape):
+                raise ValueError(
+                    f"Base checkpoint tensor {key!r} has shape {tuple(value.shape)}, "
+                    f"expected {tuple(target.shape)}"
+                )
+            if value.dtype != target.dtype:
+                raise ValueError(
+                    f"Base checkpoint tensor {key!r} has dtype {value.dtype}, expected {target.dtype}"
+                )
+        incompatible = compiled.load_state_dict(remapped, strict=False)
+        if incompatible.unexpected_keys:
+            raise ValueError(f"Unexpected remapped base tensors: {incompatible.unexpected_keys}")
+        missing_after_load = sorted(
+            set(incompatible.missing_keys) - adapter_keys - nf4_buffer_keys
+        )
+        if missing_after_load:
+            raise ValueError(f"Base checkpoint did not initialize required tensors: {missing_after_load[:12]}")
+        for name, module in nf4_modules.items():
+            module.load_base_weight(nf4_dense_sources[name])
+
+    @staticmethod
+    def _load_ppo_base_checkpoint(
+        compiled: CompiledTorchGraph,
+        path: str,
+        *,
+        expected_sha256: str = "",
+    ) -> None:
+        """Load one pretrained body + LM head, leaving the new value head fresh."""
+        from .inference import _sha256_file, load_pt_checkpoint
+
+        if expected_sha256 and _sha256_file(path) != str(expected_sha256).strip().lower():
+            raise ValueError("PPO base checkpoint SHA-256 does not match FineTuneSpec")
+        state, _metadata = load_pt_checkpoint(path)
+        policy_body = compiled.node_modules["policy_body"] if "policy_body" in compiled.node_modules else None
+        policy_heads = compiled.node_modules["policy_heads"] if "policy_heads" in compiled.node_modules else None
+        if not isinstance(policy_body, CompiledTorchGraph) or not isinstance(
+            policy_heads, PolicyLogitsValueStage
+        ):
+            raise ValueError("PPO graph is missing its shared policy body/heads")
+        source_body: dict[str, Tensor] = {}
+        consumed: set[str] = set()
+        body_target = policy_body.state_dict()
+        for local in sorted(body_target):
+            candidates = [
+                key for key in state
+                if key == local or key.endswith("." + local)
+            ]
+            if len(candidates) != 1:
+                raise ValueError(
+                    f"PPO base checkpoint must map body tensor {local!r} exactly once; "
+                    f"found {candidates}"
+                )
+            source_key = candidates[0]
+            source_body[local] = state[source_key]
+            consumed.add(source_key)
+        if set(source_body) != set(body_target):
+            missing = sorted(set(body_target) - set(source_body))
+            raise ValueError(f"PPO base checkpoint is missing policy body tensors: {missing[:12]}")
+        for key, value in source_body.items():
+            if tuple(value.shape) != tuple(body_target[key].shape) or value.dtype != body_target[key].dtype:
+                raise ValueError(f"PPO base tensor {key!r} is incompatible")
+        policy_body.load_state_dict(source_body, strict=True)
+        head_candidates = [
+            key for key in state
+            if key.endswith(".lm_head.proj.weight")
+            or key.endswith(".lm_head.weight")
+            or key.endswith(".policy_head.proj.weight")
+        ]
+        if len(head_candidates) != 1:
+            raise ValueError("PPO base checkpoint is missing the untied LM head weight")
+        head_key = head_candidates[0]
+        head_weight = state[head_key]
+        if tuple(head_weight.shape) != tuple(policy_heads.lm_head.weight.shape) or head_weight.dtype != policy_heads.lm_head.weight.dtype:
+            raise ValueError("PPO base LM head weight is incompatible")
+        policy_heads.lm_head.weight.data.copy_(head_weight)
+        consumed.add(head_key)
+        unexpected = sorted(set(state) - consumed)
+        if unexpected:
+            raise ValueError(f"PPO base checkpoint contains unexpected tensors: {unexpected[:12]}")
 
     @classmethod
     def _freeze_non_lora(cls, compiled: nn.Module) -> None:
@@ -3914,7 +4875,9 @@ class TorchTrainer:
             LoRALinearStage,
             NF4LinearStage,
             RewardHeadStage,
+            MaskedRewardHeadStage,
             ValueHeadStage,
+            PolicyLogitsValueStage,
         )
         for module in compiled.modules():
             if isinstance(module, trainable_unfreeze_types):
@@ -3924,8 +4887,15 @@ class TorchTrainer:
                     if getattr(module, "bias", None) is not None:
                         module.bias.requires_grad = True
                 else:
-                    for p in module.parameters():
-                        p.requires_grad = True
+                    if isinstance(module, PolicyLogitsValueStage):
+                        # Adapter PPO keeps the pretrained language-model head
+                        # frozen while learning the fresh critic head. LoRA
+                        # modules in the shared body are re-enabled above.
+                        for p in module.value_head.parameters():
+                            p.requires_grad = True
+                    else:
+                        for p in module.parameters():
+                            p.requires_grad = True
 
     @classmethod
     def _apply_finetune_prehook(cls, compiled: nn.Module, graph: NeuronGraph) -> None:
@@ -3935,12 +4905,25 @@ class TorchTrainer:
             return
         if isinstance(ft_raw, dict):
             base_ckpt = str(ft_raw.get("base_checkpoint", ""))
+            base_ckpt_sha256 = str(ft_raw.get("base_checkpoint_sha256", ""))
             objective = str(ft_raw.get("objective", "pretrain"))
         else:
             base_ckpt = getattr(ft_raw, "base_checkpoint", "")
+            base_ckpt_sha256 = getattr(ft_raw, "base_checkpoint_sha256", "")
             objective = getattr(ft_raw, "objective", "pretrain")
         if base_ckpt:
-            cls._load_base_checkpoint(compiled, base_ckpt)
+            if objective == "ppo" and isinstance(compiled, CompiledTorchGraph):
+                cls._load_ppo_base_checkpoint(
+                    compiled,
+                    base_ckpt,
+                    expected_sha256=str(base_ckpt_sha256),
+                )
+            else:
+                cls._load_base_checkpoint(
+                    compiled,
+                    base_ckpt,
+                    expected_sha256=str(base_ckpt_sha256),
+                )
         if objective in {"sft", "dpo", "ppo", "reward_model"}:
             # For sft/dpo/ppo we freeze everything except LoRA adapters and
             # small heads. For full fine-tuning, users leave adapter_type="none"
@@ -4705,8 +5688,8 @@ class TorchTrainer:
 
     def train(
         self,
-        train_inputs: list[list[int]] | Tensor,
-        train_targets: list[list[int]] | Tensor,
+        train_inputs: list[list[int]] | Tensor | dict[str, Any],
+        train_targets: list[list[int]] | Tensor | None = None,
         *,
         on_epoch: Callable[[int, float], None] | None = None,
         on_step: Callable[[dict[str, Any]], None] | None = None,
@@ -4854,6 +5837,34 @@ class TorchTrainer:
                 param.requires_grad_(False)
 
         optimizers = [] if self.config.evolutionary else self._build_optimizers(compiled, self.config)
+        resume_path = ""
+        finetune_raw = self.graph.torch_config.get("finetune_spec", {})
+        if isinstance(finetune_raw, dict):
+            resume_path = str(finetune_raw.get("resume_checkpoint", ""))
+        global_step = 0
+        if resume_path:
+            payload = torch.load(resume_path, map_location="cpu", weights_only=False)
+            if not isinstance(payload, dict) or payload.get("format") != "neuralfn.torch_training.v1":
+                raise ValueError("Unsupported Torch training resume checkpoint format")
+            from .inference import _graph_topology_sha256
+
+            if payload.get("graph_topology_sha256") != _graph_topology_sha256(self.graph):
+                raise ValueError("Training resume checkpoint graph topology does not match")
+            compiled.load_state_dict(dict(payload.get("state_dict", {})), strict=True)
+            optimizer_states = list(payload.get("optimizer_states", []))
+            if len(optimizer_states) != len(optimizers):
+                raise ValueError("Training resume checkpoint optimizer layout does not match")
+            for optimizer, state in zip(optimizers, optimizer_states, strict=True):
+                optimizer.load_state_dict(state)
+            torch_rng = payload.get("torch_rng_state")
+            if torch_rng is not None:
+                torch.set_rng_state(torch_rng)
+            cuda_rng = payload.get("cuda_rng_state_all")
+            if cuda_rng is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(cuda_rng)
+            global_step = int(payload.get("global_step", 0))
+            if global_step < 0:
+                raise ValueError("Training resume checkpoint global_step is invalid")
 
         # ── 3. Build DataLoader ───────────────────────────────────────
         resolved_drop_last = resolve_torch_train_drop_last(
@@ -4950,7 +5961,6 @@ class TorchTrainer:
         optimization_method = self._optimization_method(self.config)
         evolutionary_config = self._evolutionary_config_dict(self.config)
 
-        global_step = 0
         start_time = time.perf_counter()
         propagating_exception = False
         try:
@@ -5328,6 +6338,8 @@ class TorchTrainer:
             else:
                 final_torch_config.pop("evolutionary", None)
             self.graph.torch_config = final_torch_config
+            self.last_optimizer_states = [copy.deepcopy(opt.state_dict()) for opt in optimizers]
+            self.last_global_step = int(global_step)
             self._last_compiled_graph = compiled
             self._active_compiled_graph = None
         return self.loss_history
@@ -6164,6 +7176,14 @@ class PPORolloutBatch:
     returns: Tensor
 
 
+@dataclass
+class _PPORuntimeModules:
+    policy_body: CompiledTorchGraph
+    policy_heads: PolicyLogitsValueStage
+    reference: ReferenceForwardStage
+    reward: RewardForwardStage
+
+
 class PPOTrainer:
     """Orchestrates rollout -> score -> advantage -> inner PPO train.
 
@@ -6172,11 +7192,10 @@ class PPOTrainer:
     feeds it through the PPO root graph (``build_ppo_root_graph``) for
     ``ppo_epochs_per_rollout`` passes.
 
-    Rollout generation is intentionally simple: we call the policy via
-    ``InferenceCache`` on a batch of prompts drawn from a ``DatasetSourceStage``
-    inside the graph, sample one token at a time under a temperature schedule,
-    and score the completion with the reward graph node. For anything beyond
-    smoke-test scale, plug in a proper sampling loop with beam/top-p as needed.
+    Rollout collection samples the current policy autoregressively, evaluates
+    one strict frozen reference graph and one strict frozen reward graph,
+    shapes token rewards with KL, and computes GAE/returns before minibatch PPO
+    epochs. No placeholder tokens/rewards/log-probabilities are synthesized.
     """
 
     def __init__(
@@ -6190,6 +7209,10 @@ class PPOTrainer:
         gae_gamma: float = 1.0,
         gae_lambda: float = 0.95,
         kl_coef: float = 0.1,
+        temperature: float = 1.0,
+        top_k: int = 0,
+        eos_token_ids: tuple[int, ...] = (),
+        seed: int = 0,
     ) -> None:
         self.graph = graph
         self.config = config or TorchTrainConfig()
@@ -6199,8 +7222,19 @@ class PPOTrainer:
         self.gae_gamma = float(gae_gamma)
         self.gae_lambda = float(gae_lambda)
         self.kl_coef = float(kl_coef)
+        self.temperature = float(temperature)
+        self.top_k = int(top_k)
+        self.eos_token_ids = tuple(int(token) for token in eos_token_ids)
+        self.seed = int(seed)
+        if self.rollout_length <= 0 or self.ppo_epochs_per_rollout <= 0 or self.ppo_minibatch_size <= 0:
+            raise ValueError("PPO rollout length, epochs, and minibatch size must be positive")
+        if self.temperature <= 0.0:
+            raise ValueError("PPO rollout temperature must be positive")
+        if self.top_k < 0:
+            raise ValueError("PPO top_k must be non-negative")
         self._stop = False
         self.loss_history: list[float] = []
+        self.last_rollout: PPORolloutBatch | None = None
         # Delegate inner optimization to a vanilla TorchTrainer; we override
         # the data pipeline by seeding ``train`` with explicit prompt batches.
         self._inner_trainer = TorchTrainer(graph, config)
@@ -6244,6 +7278,10 @@ class PPOTrainer:
         TorchTrainer._apply_finetune_prehook(compiled, self.graph)
         compiled.to(device)
 
+        runtime = self._resolve_runtime_modules(compiled)
+        runtime.reference._ensure_loaded(device=device)
+        runtime.reward._ensure_loaded(device=device)
+
         optimizers = self._inner_trainer._build_optimizers(compiled, self.config)
         total_steps = int(self.config.max_steps or len(prompt_batches))
         self.loss_history = []
@@ -6253,35 +7291,112 @@ class PPOTrainer:
             if self._stop:
                 break
             prompt = prompt_batches[step % len(prompt_batches)].to(device)
-            batch = self._rollout(compiled, prompt, device=device)
+            generator = torch.Generator(device=device.type)
+            generator.manual_seed(self.seed + step)
+            batch = self._rollout(
+                compiled,
+                runtime,
+                prompt,
+                device=device,
+                generator=generator,
+            )
+            self.last_rollout = batch
             if on_step is not None:
                 on_step({"phase": "rollout", "step": step, "rollout_length": batch.tokens.size(1)})
 
             for epoch in range(self.ppo_epochs_per_rollout):
                 if self._stop:
                     break
-                loss_value = self._ppo_inner_step(compiled, batch, optimizers)
+                minibatch_losses: list[float] = []
+                permutation = torch.randperm(batch.tokens.size(0), generator=generator, device=device)
+                for start in range(0, batch.tokens.size(0), self.ppo_minibatch_size):
+                    indices = permutation[start : start + self.ppo_minibatch_size]
+                    minibatch = self._select_rollout_rows(batch, indices)
+                    minibatch_losses.append(self._ppo_inner_step(compiled, minibatch, optimizers))
+                loss_value = float(sum(minibatch_losses) / max(len(minibatch_losses), 1))
                 self.loss_history.append(loss_value)
                 if on_step is not None:
                     on_step({
                         "phase": "ppo_epoch",
                         "step": step * self.ppo_epochs_per_rollout + epoch,
                         "loss": loss_value,
+                        "minibatches": len(minibatch_losses),
                     })
             if on_epoch is not None and self.loss_history:
                 on_epoch(step, float(self.loss_history[-1]))
         return self.loss_history
 
+    @staticmethod
+    def _resolve_runtime_modules(compiled: CompiledTorchGraph) -> _PPORuntimeModules:
+        try:
+            policy_body = compiled.node_modules["policy_body"]
+            policy_heads = compiled.node_modules["policy_heads"]
+        except KeyError as exc:
+            raise ValueError("PPO graph is missing the shared policy body/heads contract") from exc
+        if not isinstance(policy_body, CompiledTorchGraph) or not isinstance(policy_heads, PolicyLogitsValueStage):
+            raise TypeError("PPO graph policy_body/policy_heads have incompatible runtime modules")
+        ft = dict(compiled.graph.torch_config.get("finetune_spec", {}) or {})
+        ref_graph_path = str(ft.get("ref_graph_path", ""))
+        ref_checkpoint = str(ft.get("ref_checkpoint", ""))
+        reward_graph_path = str(ft.get("reward_graph_path", ""))
+        reward_checkpoint = str(ft.get("reward_checkpoint", ""))
+        if not (ref_graph_path and ref_checkpoint and reward_graph_path and reward_checkpoint):
+            raise ValueError(
+                "PPO requires ref_graph_path/ref_checkpoint and reward_graph_path/reward_checkpoint"
+            )
+        return _PPORuntimeModules(
+            policy_body=policy_body,
+            policy_heads=policy_heads,
+            reference=ReferenceForwardStage(
+                ref_graph_path=ref_graph_path,
+                ref_weights_path=ref_checkpoint,
+            ),
+            reward=RewardForwardStage(
+                reward_graph_path=reward_graph_path,
+                reward_weights_path=reward_checkpoint,
+            ),
+        )
+
+    @staticmethod
+    def _select_rollout_rows(batch: PPORolloutBatch, indices: Tensor) -> PPORolloutBatch:
+        return PPORolloutBatch(
+            tokens=batch.tokens.index_select(0, indices),
+            targets=batch.targets.index_select(0, indices),
+            loss_mask=batch.loss_mask.index_select(0, indices),
+            logp_old=batch.logp_old.index_select(0, indices),
+            value_old=batch.value_old.index_select(0, indices),
+            advantages=batch.advantages.index_select(0, indices),
+            returns=batch.returns.index_select(0, indices),
+        )
+
+    @staticmethod
+    def _policy_forward(runtime: _PPORuntimeModules, tokens: Tensor) -> tuple[Tensor, Tensor]:
+        hidden = runtime.policy_body(tokens)[0]
+        return runtime.policy_heads(hidden)
+
+    def _sample_next(self, logits: Tensor, *, generator: torch.Generator) -> Tensor:
+        scaled = logits.float() / self.temperature
+        if self.top_k > 0 and self.top_k < scaled.size(-1):
+            threshold = torch.topk(scaled, self.top_k, dim=-1).values[:, -1:]
+            scaled = scaled.masked_fill(scaled < threshold, float("-inf"))
+        return torch.multinomial(torch.softmax(scaled, dim=-1), 1, generator=generator).squeeze(-1)
+
     @torch.no_grad()
-    def _rollout(self, compiled: nn.Module, prompt: Tensor, *, device: torch.device) -> PPORolloutBatch:
+    def _rollout(
+        self,
+        compiled: nn.Module,
+        runtime: _PPORuntimeModules,
+        prompt: Tensor,
+        *,
+        device: torch.device,
+        generator: torch.Generator,
+    ) -> PPORolloutBatch:
         """Generate one rollout from ``prompt`` under the current policy.
 
-        This is intentionally simple: it concatenates the prompt with
-        ``rollout_length`` greedy-argmax continuations from the policy, then
-        computes per-token old-logprobs, values, a constant reward at the
-        final token (hard-coded to zero here — caller should override the
-        ``RewardForwardStage`` config on the graph for realistic scoring),
-        and GAE advantages.
+        Tokens are sampled from the current policy. The frozen reference and
+        reward graphs are evaluated on the complete sequence, KL is subtracted
+        per generated token, terminal reward is applied to the last generated
+        token, and GAE is computed over the generated span.
         """
         # For this initial implementation we freeze the compiled graph in eval
         # mode only for the rollout pass; training mode is re-entered for the
@@ -6289,24 +7404,81 @@ class PPOTrainer:
         compiled.train(False)
         tokens = prompt.clone()
         batch_size = tokens.size(0)
-        # Append rollout_length dummy tokens; trainer must supply a policy
-        # sampling path for real rollouts. We use zeros so the pipeline is
-        # exercised end-to-end even without reward model wiring.
-        pad = torch.zeros(batch_size, self.rollout_length, dtype=tokens.dtype, device=device)
-        tokens = torch.cat([tokens, pad], dim=1)
-        targets = torch.roll(tokens, shifts=-1, dims=1)
-        targets[:, -1] = 0
+        if prompt.ndim != 2 or prompt.size(1) <= 0 or batch_size <= 0:
+            raise ValueError("PPO prompts must be a non-empty [batch, sequence] token tensor")
+        alive = torch.ones(batch_size, dtype=torch.bool, device=device)
+        generated = 0
+        for _ in range(self.rollout_length):
+            policy_logits, _values = self._policy_forward(runtime, tokens)
+            next_token = self._sample_next(policy_logits[:, -1, :], generator=generator)
+            if self.eos_token_ids:
+                eos_fill = torch.full_like(next_token, self.eos_token_ids[0])
+                next_token = torch.where(alive, next_token, eos_fill)
+            tokens = torch.cat((tokens, next_token[:, None]), dim=1)
+            generated += 1
+            if self.eos_token_ids:
+                ended = torch.zeros_like(alive)
+                for eos in self.eos_token_ids:
+                    ended |= next_token == eos
+                alive &= ~ended
+                if not bool(alive.any().item()):
+                    break
+
+        policy_logits, value_old = self._policy_forward(runtime, tokens)
+        ref_logits = runtime.reference(tokens)
+        reward_scores = runtime.reward(tokens).float()
+        if reward_scores.ndim == 2 and reward_scores.size(1) == 1:
+            reward_scores = reward_scores[:, 0]
+        if reward_scores.shape != (batch_size,):
+            raise ValueError("PPO reward graph must return one scalar per sequence")
+        targets = torch.empty_like(tokens)
+        targets[:, :-1] = tokens[:, 1:]
+        targets[:, -1] = tokens[:, -1]
         seq_len = tokens.size(1)
         loss_mask = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
-        if seq_len > prompt.size(1):
-            loss_mask[:, prompt.size(1):] = 1.0
-        logp_old = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
-        value_old = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
+        action_start = max(prompt.size(1) - 1, 0)
+        action_end = action_start + generated
+        loss_mask[:, action_start:action_end] = 1.0
+        if self.eos_token_ids:
+            for row in range(batch_size):
+                generated_tokens = tokens[row, prompt.size(1):]
+                stop_offset: int | None = None
+                for offset, token in enumerate(generated_tokens.tolist()):
+                    if int(token) in self.eos_token_ids:
+                        stop_offset = offset
+                        break
+                if stop_offset is not None:
+                    loss_mask[row, action_start + stop_offset + 1 :] = 0.0
+
+        valid_targets = targets.long()
+        policy_log_probs = F.log_softmax(policy_logits.float(), dim=-1)
+        ref_log_probs = F.log_softmax(ref_logits.float(), dim=-1)
+        logp_old = policy_log_probs.gather(-1, valid_targets.unsqueeze(-1)).squeeze(-1) * loss_mask
+        ref_logp = ref_log_probs.gather(-1, valid_targets.unsqueeze(-1)).squeeze(-1) * loss_mask
+        value_old = value_old.float()
         rewards = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
-        # GAE advantages / returns (with trivial zero rewards the advantages
-        # collapse to -value_old; returns = advantages + value_old = 0).
-        advantages = -value_old
-        returns = torch.zeros_like(value_old)
+        rewards -= self.kl_coef * (logp_old - ref_logp) * loss_mask
+        action_counts = loss_mask.long().sum(dim=-1)
+        if bool((action_counts <= 0).any().item()):
+            raise ValueError("PPO rollout produced an example with no generated action")
+        last_action = action_counts + action_start - 1
+        rows = torch.arange(batch_size, device=device)
+        rewards[rows, last_action] += reward_scores
+        advantages = torch.zeros_like(rewards)
+        returns = torch.zeros_like(rewards)
+        for row in range(batch_size):
+            count = int(action_counts[row].item())
+            start = action_start
+            stop = start + count
+            row_advantages, row_returns = GAEComputeStage(
+                gamma=self.gae_gamma,
+                lambda_=self.gae_lambda,
+            )(
+                rewards[row : row + 1, start:stop],
+                value_old[row : row + 1, start:stop],
+            )
+            advantages[row, start:stop] = row_advantages[0]
+            returns[row, start:stop] = row_returns[0]
         compiled.train(True)
         return PPORolloutBatch(
             tokens=tokens,

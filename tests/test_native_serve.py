@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -13,6 +15,7 @@ from typing import Any, Mapping, Sequence
 import anyio
 import httpx
 import pytest
+from PIL import Image
 
 from neuralfn.native_inference import (
     GenerationEvent,
@@ -58,6 +61,12 @@ class RecordingCodec(FakeCodec):
         return super().encode(text)
 
 
+class MediaCodec(FakeCodec):
+    def encode(self, text: str) -> tuple[int, ...]:
+        assert "<|image_start|>" in text and "<|image_end|>" in text
+        return (1, *(200_092 for _ in range(text.count("<|patch|>"))), 3)
+
+
 class FakeSession:
     def __init__(self, model: "FakeModel") -> None:
         self.model = model
@@ -79,6 +88,22 @@ class FakeSession:
             "prefix_reused": 0,
             "prefilled_tokens": len(token_ids),
         }
+
+    def prefill_with_embeddings(
+        self,
+        token_ids: Sequence[int],
+        *,
+        replacement_positions: Sequence[int],
+        replacement_embeddings: Sequence[Sequence[float]],
+    ) -> dict[str, int]:
+        self.model.embedding_prefills.append(
+            (
+                tuple(token_ids),
+                tuple(replacement_positions),
+                tuple(tuple(row) for row in replacement_embeddings),
+            )
+        )
+        return self.prefill(token_ids)
 
     def decode(self, generation, *, on_token=None) -> GenerationResult:
         self.model.started.set()
@@ -131,6 +156,9 @@ class FakeModel:
         self.release = release
         self.started = threading.Event()
         self.prefills: list[tuple[int, ...]] = []
+        self.embedding_prefills: list[
+            tuple[tuple[int, ...], tuple[int, ...], tuple[tuple[float, ...], ...]]
+        ] = []
         self.session_creates = 0
         self.session_closes = 0
         self.model_closes = 0
@@ -148,8 +176,37 @@ class FakeModel:
             "effective_cache": "full",
         }
 
+    def encode_media(
+        self,
+        packed_patches: Sequence[Sequence[float]],
+        grid_thw: Sequence[Sequence[int]],
+    ) -> tuple[tuple[float, ...], ...]:
+        rows = sum(int(t) * int(h) * int(w) // 4 for t, h, w in grid_thw)
+        return tuple((float(index),) * 8 for index in range(rows))
+
     def close(self) -> None:
         self.model_closes += 1
+
+
+class MediaModel(FakeModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.capabilities = NativeInferenceCapabilities(
+            native_inference=True,
+            resident_inference=True,
+            lossless_kv_cache=True,
+            turboquant_kv_cache=False,
+            vision=True,
+            vision_cpu=True,
+            session_state_kinds=("token_history",),
+        )
+
+    def stats(self) -> dict[str, Any]:
+        return {
+            **super().stats(),
+            "vision_loaded": True,
+            "vision_resident_weight_bytes": 3_843_691_520,
+        }
 
 
 class PrefixSession(FakeSession):
@@ -929,7 +986,7 @@ def test_unsupported_resources_and_features_fail_explicitly() -> None:
         )
         assert nested_tool.status_code == 400
         assert nested_tool.json()["error"] == {
-            "message": "messages.0.tool_calls is not supported by this text-only server.",
+            "message": "messages.0.tool_calls is not supported by this bounded server.",
             "type": "invalid_request_error",
             "param": "messages.0.tool_calls",
             "code": "unsupported_feature",
@@ -2287,6 +2344,48 @@ def test_constrained_modes_reject_before_generation_or_state_mutation(
     assert _native_state_row_counts(state_path) == (0, 0, 0, 0)
 
 
+def test_chat_image_data_url_uses_vision_rows_and_embedding_prefill() -> None:
+    model = MediaModel()
+    runtime = NativeServingRuntime(
+        model=model,  # type: ignore[arg-type]
+        manifest={"schema": "neuralfn.native_execution_manifest", "version": 1},
+        codec=MediaCodec(),
+        renderer=_PlainRolesRenderer(),
+        served_model_name="nfn-test",
+        context_limit=64,
+        max_output_tokens=8,
+        created=1_700_000_000,
+    )
+    image = Image.new("RGB", (28, 28), (127, 64, 255))
+    encoded = BytesIO()
+    image.save(encoded, format="PNG")
+    url = "data:image/png;base64," + base64.b64encode(encoded.getvalue()).decode()
+    prepared = runtime.prepare_chat(
+        _chat_payload(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe: "},
+                        {"type": "image_url", "image_url": {"url": url}},
+                    ],
+                }
+            ]
+        )
+    )
+    assert prepared.media_batch is not None
+    assert prepared.media_batch.grid_thw == ((1, 2, 2),)
+    assert prepared.prompt_token_ids == (1, 200_092, 3)
+    completed = runtime.complete(prepared)
+    assert completed.text == "Hello!"
+    assert len(model.embedding_prefills) == 1
+    token_ids, positions, embeddings = model.embedding_prefills[0]
+    assert token_ids == (1, 200_092, 3)
+    assert positions == (1,)
+    assert embeddings == ((0.0,) * 8,)
+    runtime.close()
+
+
 @pytest.mark.parametrize(
     ("label", "runtime_options"),
     (
@@ -3015,6 +3114,17 @@ def test_importing_serve_surface_does_not_initialize_editor_or_heavy_stacks() ->
         check=True,
         capture_output=True,
         text=True,
-        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                filter(
+                    None,
+                    (
+                        str(Path(__file__).resolve().parents[1]),
+                        os.environ.get("PYTHONPATH"),
+                    ),
+                )
+            ),
+        },
     )
     assert completed.stdout.strip() == ""

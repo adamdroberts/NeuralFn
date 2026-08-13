@@ -19,10 +19,24 @@ _LAZY_EXPORTS = {
     "load_graph": ("serialization", "load_graph"),
     "SHIPPED_GPT_TEMPLATE_BASE_PRESETS": ("config", "SHIPPED_GPT_TEMPLATE_BASE_PRESETS"),
     "SHIPPED_GPT_TEMPLATE_PRESETS": ("config", "SHIPPED_GPT_TEMPLATE_PRESETS"),
+    "MuseGlimmerVisionSpec": ("config", "MuseGlimmerVisionSpec"),
+    "MuseGlimmerDFlashSpec": ("config", "MuseGlimmerDFlashSpec"),
     "TorchTrainConfig": ("torch_backend", "TorchTrainConfig"),
     "TorchTrainer": ("torch_backend", "TorchTrainer"),
     "build_gpt_root_graph": ("torch_templates", "build_gpt_root_graph"),
     "build_model_stage_graph": ("torch_templates", "build_model_stage_graph"),
+    "build_muse_glimmer_assistant_graph": (
+        "torch_templates",
+        "build_muse_glimmer_assistant_graph",
+    ),
+    "build_muse_glimmer_vision_graph": (
+        "torch_templates",
+        "build_muse_glimmer_vision_graph",
+    ),
+    "build_muse_glimmer_media_fusion_graph": (
+        "torch_templates",
+        "build_muse_glimmer_media_fusion_graph",
+    ),
     "NativeGptRunConfig": ("native_gpt", "NativeGptRunConfig"),
     "NativeGptCheckpointInfo": ("native_gpt", "NativeGptCheckpointInfo"),
     "NativeGptRunnerStatus": ("native_gpt", "NativeGptRunnerStatus"),
@@ -48,7 +62,40 @@ _LAZY_EXPORTS = {
     "NativeInferenceClosedError": ("native_inference", "NativeInferenceClosedError"),
     "NativeInferenceError": ("native_inference", "NativeInferenceError"),
     "NativeInferenceModel": ("native_inference", "NativeInferenceModel"),
+    "NativeModelLoadConfig": ("native_inference", "NativeModelLoadConfig"),
     "NativeInferenceSession": ("native_inference", "NativeInferenceSession"),
+    "NativeMuseGlimmerMediaBatch": (
+        "native_glimmer_media",
+        "NativeMuseGlimmerMediaBatch",
+    ),
+    "NativeMuseGlimmerEncodedMedia": (
+        "native_glimmer_media",
+        "NativeMuseGlimmerEncodedMedia",
+    ),
+    "NativeMuseGlimmerMediaError": (
+        "native_glimmer_media",
+        "NativeMuseGlimmerMediaError",
+    ),
+    "prepare_muse_glimmer_images": (
+        "native_glimmer_media",
+        "prepare_images",
+    ),
+    "prepare_muse_glimmer_videos": (
+        "native_glimmer_media",
+        "prepare_videos",
+    ),
+    "sample_muse_glimmer_video_frame_indices": (
+        "native_glimmer_media",
+        "sample_video_frame_indices",
+    ),
+    "inspect_native_muse_glimmer_lora_checkpoint": (
+        "native_muse_glimmer_checkpoint",
+        "inspect_native_muse_glimmer_lora_checkpoint",
+    ),
+    "attach_native_muse_glimmer_lora": (
+        "native_muse_glimmer_checkpoint",
+        "attach_native_muse_glimmer_lora",
+    ),
     "TurboQuantEncodedVector": ("turboquant", "TurboQuantEncodedVector"),
     "TurboQuantError": ("turboquant", "TurboQuantError"),
     "TurboQuantReferenceCodec": ("turboquant", "TurboQuantReferenceCodec"),

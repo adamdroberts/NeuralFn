@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${ROOT_DIR}/neuralfn/csrc/native_train/missing_native_train.cpp"
 GPT2_EVO_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/gpt2_evo_native_train.cpp"
 NANOGPT_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/nanogpt_native_train.cpp"
+GLIMMER_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/muse_glimmer_native_train.cpp"
 TOKEN_SHARDS_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/token_shards.cpp"
 OUT_DIR="${1:-${ROOT_DIR}/build}"
 CXX_BIN="${CXX:-c++}"
@@ -178,6 +179,15 @@ build_nanogpt() {
   printf '%s\n' "${out}"
 }
 
+build_muse_glimmer() {
+  local out="${OUT_DIR}/nfn_muse_glimmer_native_train"
+  "${CXX_BIN}" -std=c++20 ${CXX_OPT_FLAGS} -Wall -Wextra -pedantic \
+    -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
+    -I"${ROOT_DIR}/neuralfn/csrc/native_gpt2" \
+    "${GLIMMER_SRC}" "${TOKEN_SHARDS_SRC}" -ldl -o "${out}"
+  printf '%s\n' "${out}"
+}
+
 if target_selected "gpt2-evo" "nfn_gpt2_evo_native_train"; then
   "${CXX_BIN}" -std=c++20 ${CXX_OPT_FLAGS} -Wall -Wextra -pedantic \
     -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
@@ -186,6 +196,9 @@ if target_selected "gpt2-evo" "nfn_gpt2_evo_native_train"; then
 fi
 if target_selected "nanogpt" "nfn_nanogpt_native_train"; then
   build_nanogpt
+fi
+if target_selected "muse-glimmer" "nfn_muse_glimmer_native_train"; then
+  build_muse_glimmer
 fi
 build_one "llama" "nfn_llama_native_train" \
   "LLaMA RoPE/RMSNorm/SwiGLU attention and MLP CUDA Tile trainer" \

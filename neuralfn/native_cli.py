@@ -23,7 +23,12 @@ from .native_chat import (
     resolve_native_chat_renderer,
     strip_native_text_delimiters,
 )
-from .native_inference import GenerationConfig, KVCacheConfig, NativeInferenceModel
+from .native_inference import (
+    GenerationConfig,
+    KVCacheConfig,
+    NativeInferenceModel,
+    NativeModelLoadConfig,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +45,7 @@ class NativeArtifactCLIConfig:
     top_p: float = 1.0
     seed: int = 1337
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
+    model_load: NativeModelLoadConfig = field(default_factory=NativeModelLoadConfig)
     native_info: bool = False
 
     def __post_init__(self) -> None:
@@ -112,12 +118,12 @@ def run_native_artifact_cli(
     output = stdout or sys.stdout
     errors = stderr or sys.stderr
     read_line = input_fn or input
-    _artifact_root, _manifest_path, manifest = read_native_execution_manifest(config.artifact)
+    artifact_root, _manifest_path, manifest = read_native_execution_manifest(config.artifact)
     if codec is not None:
         text_codec = codec
     elif config.prompt_token_ids and not interactive:
         try:
-            text_codec = load_native_text_codec(manifest)
+            text_codec = load_native_text_codec(manifest, artifact_root=artifact_root)
         except NativeChatConfigurationError:
             text_codec = TokenIdTextCodec()
             print(
@@ -126,11 +132,12 @@ def run_native_artifact_cli(
                 file=errors,
             )
     else:
-        text_codec = load_native_text_codec(manifest)
+        text_codec = load_native_text_codec(manifest, artifact_root=artifact_root)
     renderer_resolution = resolve_native_chat_renderer(
         manifest,
         config.chat_template,
         allow_auto_fallback=True,
+        artifact_root=artifact_root,
     )
     renderer = renderer_resolution.renderer
     if renderer_resolution.warning:
@@ -161,6 +168,7 @@ def run_native_artifact_cli(
         config.artifact,
         binding=binding,
         kv_cache=config.kv_cache,
+        load_config=config.model_load,
     ) as model:
         with model.create_session(seed=config.seed) as session:
             if config.native_info:

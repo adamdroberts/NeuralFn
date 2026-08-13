@@ -2,6 +2,88 @@
 
 ## Unreleased
 
+- Implemented end-to-end native Muse Glimmer text support. Strict streaming
+  converters now authenticate the pinned 627-tensor BF16 decoder, embedded
+  809-tensor vision component, 58-tensor BF16 assistant, and the canonical
+  official GGUF v3 K-Quant-Dynamic, K-Quant-17GB, DFlash, and mmproj files.
+  Native Execution Manifest v1 gained additive checkpoint-variant, companion,
+  speculative-decoding, memory-profile, and compatibility metadata while its
+  existing top-level `checkpoint` shape remains backward compatible.
+- Added an exact resident C++ target for BF16 and mixed F32/Q4_K/Q5_K/Q6_K
+  weights, with asymmetric Q32/KV2 attention, three-local/one-global dispatch,
+  absolute-position RoPE/NoPE, wide centered RMSNorm, gated attention, hybrid
+  local-ring/global-full BF16 KV, untied head, output multiplier/softcap,
+  multi-token verification, and transactional cache state. Added a
+  device-resident CUDA text runner and versioned typed-packed-weight, GQA,
+  positioned-RoPE, norm, gate, logit, cache, DFlash, loss, and optimizer ABIs.
+  The legacy fixed-1024 generic SDPA/fused-causal path is not used.
+- Added BF16 and packed DFlash companion execution on CPU and CUDA. The
+  assistant consumes exact target taps `[1,13,25,37,49]`, raw target
+  embeddings, a noncausal 16-row diffusion block, and the shared target head.
+  Greedy and lossless sampled speculative decoding use atomic proposal,
+  verification, accepted-prefix commit/crop, EOS/max-token clipping, and
+  acceptance telemetry. `--speculative-decoding off|auto|required` is a
+  startup/load policy; `required` never silently falls back.
+- Added `NativeModelLoadConfig` and CLI/server
+  `--weight-precision {auto,bf16,k-quant-dynamic,k-quant-17gb}`. CUDA `auto`
+  queries current free/total memory and chooses quality-first only after
+  budgeting authenticated weights, companions, workspaces, hybrid caches,
+  sessions, and reserve. Explicit precision is a strict pin. CPU `auto` uses
+  the authenticated primary rather than applying a fictitious VRAM policy.
+- Added the dedicated no-Python `nfn_muse_glimmer_native_train` C++/CUDA
+  trainer. It consumes versioned uint32 pretraining or structured masked-SFT
+  records, imports the exact BF16 source, recomputes activations, updates and
+  resumes the complete 627-tensor topology, and supports all-eight-projection
+  LoRA or frozen NF4 group-64 QLoRA. QLoRA keeps source bytes immutable,
+  allocates no base gradients/moments, saves only adapters, and records its
+  training-base precision. Added strict adapter inspection, atomic attachment,
+  direct resident CPU/CUDA execution, and
+  `nfn migrate muse-glimmer-lora-to-native`. The lightweight CLI now routes
+  `nfn train --base-model muse-glimmer` directly to that family binary and
+  preserves its source, objective, adapter, and dataset arguments.
+- Reworked Torch Glimmer post-training roots to use one exact body. SFT/LoRA/
+  QLoRA, DPO with a frozen strict reference, sequence-masked reward modeling,
+  and real PPO policy/reference/reward/value/logprob/GAE state now have
+  formula/gradient and checkpoint tests. Native DPO/reward/PPO, K-Quant
+  adapter tuning, and DFlash distillation remain independently unavailable.
+- Added exact CPU vision/media support: full-BF16 embedded vision, packed
+  still-image mmproj execution, bounded LANCZOS image preprocessing, temporal-2
+  channel-major patch packing, decoded-video sampling/timestamps/prompt
+  expansion, and placeholder fusion. The packed mmproj deliberately reports
+  `video=false`; whole-model CUDA vision deliberately reports
+  `vision_cuda=false` and fails before mutation.
+- Final verification includes 153 native training/resident/vision/graph tests,
+  112 converter/GGUF/VRAM/chat/media/serving tests, 44 Torch post-training and
+  uint32-shard tests, a successful native binding build, a successful dedicated
+  Glimmer trainer build, and the required `python -m pytest
+  tests/test_template_presets.py -x -q` gate with 42 passing tests over all 67
+  presets. The local environment lacked NVCC/a usable GPU, so
+  real-CUDA and full-size 24/32/80-GB model benchmarks remain release gates;
+  fake-CUDA ABI tests do not replace those hardware measurements.
+
+- Added the `muse_glimmer` GPT preset for the text decoder in
+  `meta-models/Muse-Glimmer-30B`. The serialized model contract now supports an
+  explicit head dimension and attention width independent of the residual
+  width, exact FFN width, typed per-layer local/full attention schedules,
+  weightless Q/K and embedding norms, gated attention, centered four-norm
+  sandwich blocks, maximum positions, and a distinct output multiplier. The
+  Glimmer graph uses the upstream half-rotation convention without changing
+  legacy preset RoPE, decomposes all attention/MLP projections for strict
+  checkpoint and adapter targeting, and shares one exact body across AR, SFT,
+  logits/hidden, DPO, reward, and PPO wrappers.
+- Added tensor-stage `tensor_scale`, `tensor_sigmoid`, `tensor_multiply`, and
+  `tensor_silu` builtins and centered/forced-float32 RMSNorm execution. The new
+  preset is registered in the Python and generated C++ catalogs and editor
+  dropdown. Native capability remains separately gated; the subsequent
+  implementation entries describe the supported resident/training profiles.
+- Added an immutable Muse Glimmer reference fixture pinned to Transformers
+  `d1123114da1ab4395198146f4f84dae7fe8b693e` and a direct four-layer
+  forward/backward oracle covering local/global boundaries, HF RoPE, Q/K
+  scaling, gated attention, sandwich norms, SwiGLU, and final logit transform.
+  Verification: `python -m pytest tests/test_template_presets.py -x -q`
+  completed with 42 passing tests, including all 67 shipped presets and every
+  ordered cross-preset variant-resolution pair.
+
 - Added an opt-in, process-local resident prefix cache for foreground native
   Responses. `nfn infer --serve` now accepts `--prefix-cache-capacity N`, and
   the public frozen `NativeServeConfig` has matching

@@ -58,7 +58,7 @@ inference-checkpoint v2 metadata is also Torch-free: migration validates its
 full float32 tensor contract and copies the sidecar as `model.f32`; direct
 `.f32` input and diagnostic family metadata fail closed.
 
-The current IR structurally lowers all 66 shipped text presets, but this does
+The current IR structurally lowers all 67 shipped text presets, but this does
 not mean that every family can execute or serve natively. Seven reviewed dense
 GPT preset topologies (`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and
 softcap) paired with a compatible dense-v5 `.bin` have the current
@@ -85,6 +85,34 @@ other families remain unavailable. See
 [Native Execution IR](../python-sdk/native-ir.md) for the schema, Python API,
 capability registry, and exact safety contract.
 
+Muse Glimmer uses a pinned family converter rather than the generic graph plus
+`.pt` route. Convert BF16 with `nfn migrate muse-glimmer-to-native`, or bundle
+the canonical official Dynamic/17GB GGUF mains and optional DFlash/mmproj
+companions with `nfn migrate muse-glimmer-gguf-to-native`. These commands
+authenticate every source/config/tokenizer/tensor hash and emit additive
+checkpoint variants without changing the v1 `checkpoint` object. The exact
+Glimmer resident path supports C++ CPU and whole-model CUDA **text** execution,
+packed weights without whole-model dequantization, hybrid local/global KV,
+DFlash, and strict load-time weight selection:
+
+```bash
+nfn infer \
+  --checkpoint artifacts/glimmer-kquant \
+  --runtime native-cuda \
+  --weight-precision auto \
+  --speculative-decoding auto \
+  --companion-checkpoint dflash \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --prompt "Hello"
+```
+
+CUDA `auto` budgets current free VRAM, configured context/session cache,
+enabled companions, staging, workspace, and reserve before choosing BF16,
+Dynamic, or 17GB in quality order. Explicit precision never downgrades. CPU
+`auto` selects the authenticated primary. Full-BF16 and packed-mmproj vision
+are CPU-only; a CUDA request with mmproj fails before load because
+`vision_cuda=false`.
+
 When comparing the trained MoA choice with the authored graph, use
 `load_native_moa_graph_runtime()` from
 `neuralfn.native_moa_graph_runtime`. It requires the original byte-identical
@@ -102,8 +130,9 @@ in-process binding. It loads immutable model state once, isolates mutable
 token/RNG/cache state per session, synchronizes the exact longest common
 prefix, exposes token callbacks and cancellation, and rejects unproved cache
 modes. It never falls back to a subprocess. The first binding contains real
-dense GPT-family bf16-v5, canonical LLaMA float32, and exact standard-MoE
-float32 CPU resident engines.
+dense GPT-family bf16-v5, canonical LLaMA float32, exact standard-MoE float32
+CPU resident engines, and exact Muse Glimmer BF16/K-Quant CPU plus CUDA text
+engines.
 `auto`/`full` use preallocated lossless K/V state with exact recomputation
 parity, while `off` remains the
 full-prefix-recompute oracle. Reviewed dense artifacts with even head dimensions
@@ -121,9 +150,10 @@ instead requires the exact v2 tensor layout and reviewed topology,
 independently rehashes the loaded float image, and rejects TurboQuant. The
 standard-MoE loader independently requires graph SHA, preset/runtime,
 floating width, router semantics/coefficient, tensor layout, and whole-file
-hash before using its top-k-routed expert engine. Do not describe these paths as
-a whole-model CUDA runtime or as coverage for differential/modern and other
-family adapters. The reviewed-dense CPU path is the default; its explicitly
+hash before using its top-k-routed expert engine. Do not describe the legacy
+dense, LLaMA, standard-MoE, or Tile TurboQuant paths as whole-model CUDA; only
+the separately gated Glimmer text runner has that contract. None is coverage
+for differential/modern and other family adapters. The reviewed-dense CPU path is the default; its explicitly
 configured hybrid Tile backend moves only compressed historical attention to
 CUDA. See
 [Resident Native Inference SDK](../python-sdk/native-inference.md) for the
@@ -188,7 +218,9 @@ Startup validates presentation metadata, context limits, authentication,
 artifact proof, binding ABI, and cache mode before the socket can bind. The
 server keeps one model resident, creates an isolated session per request, and
 bounds admission around one generation worker. It implements Models and
-text-only Chat Completions, including genuine token SSE ending in `[DONE]`.
+bounded Chat Completions, including genuine token SSE ending in `[DONE]`.
+Chat is text by default; a jointly proven CPU Muse Glimmer vision artifact can
+also accept bounded base64 image data URLs.
 With `--state-db`, the same isolated server mounts the bounded text Responses
 and Conversations subset, scope-bound local compaction, durable background
 jobs, and semantic Responses SSE.

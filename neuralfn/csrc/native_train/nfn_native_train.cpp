@@ -113,6 +113,17 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
+        "muse-glimmer",
+        "implemented-exact-native-trainer-v1",
+        "nfn_muse_glimmer_native_train",
+        "native-glimmer-transformer-lm-v1",
+        "uint32-token-shards-v2",
+        "exact-nonsquare-gqa-sandwich-norm",
+        "glimmer-training-abi-v1",
+        "native-bf16-train-save-resume-v1",
+        "Muse Glimmer dispatches to its dedicated no-Python C++/CUDA trainer with exact hybrid GQA, wide norms, masked CE, BF16 AdamW, activation recomputation, and authenticated save/resume.",
+    },
+    {
         "mixllama",
         "native-trainer-covered",
         "nfn_mixllama_native_train",
@@ -388,6 +399,7 @@ std::string forwarded_value_or_empty(const std::vector<std::string>& args, const
 const ModelEntry* template_family_model(const std::vector<std::string>& args) {
     static constexpr std::pair<std::string_view, std::string_view> ALIASES[] = {
         {"llama", "llama"},
+        {"muse-glimmer", "muse-glimmer"},
         {"llama-fast", "llama"},
         {"llama-fast-megakernel", "llama"},
         {"llama-modern", "llama"},

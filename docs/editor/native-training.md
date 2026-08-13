@@ -32,7 +32,7 @@ profiles `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
 `gpt2_softcap`, `gpt2_stable`, and `gpt2_zloss`, plus exact canonical `llama`
 and its exact compile-runtime alias `llama_fast`, plus exact standard-MoE
 `moe`, `mixllama`, and `mixllama_fast`, plus trusted-planner proof-bound
-`gpt2_diff` training (13 ready; 53 blocked).
+`gpt2_diff` training (13 ready; 54 blocked).
 The LLaMA adapter requires the reviewed RMSNorm/RoPE/MHA-or-GQA/dense-attention/
 gate-first-SwiGLU topology and binds graph geometry and SHA-256 through training
 and checkpoint discovery. Both profiles use the canonical native `llama` ABI
@@ -76,3 +76,13 @@ Native editor training currently has these explicit limits:
 - progress is lifecycle/checkpoint based rather than per-step loss streaming.
 
 These are fail-closed limits, not fallback triggers.
+
+The dedicated Muse Glimmer trainer is currently a direct CLI/SDK native path,
+not an editor-run-service promotion. Exact production Glimmer AR/SFT and
+LoRA/QLoRA graphs can preflight to `nfn_muse_glimmer_native_train`, but the
+trainer also requires an authenticated 627-tensor BF16 source, its SHA-256,
+uint32 or structured-SFT dataset lineage, and (for SFT) the pinned ATEM hash.
+The editor request schema does not yet carry that source/checkpoint contract,
+so it must continue to reject a Glimmer start rather than launching with
+invented defaults. Use the direct workflow documented in
+[CLI Workflows](../cli.md#native-muse-glimmer-training).

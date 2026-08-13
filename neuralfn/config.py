@@ -19,7 +19,17 @@ ObjectiveType = Literal[
     "ppo",
     "reward_model",
 ]
-BackboneType = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
+BackboneType = Literal[
+    "gpt2",
+    "nanogpt",
+    "llama",
+    "mixllama",
+    "jamba",
+    "universal",
+    "ttt",
+    "hnet",
+    "muse_glimmer",
+]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType = Literal["dense", "moe"]
 CompressionType = Literal[
@@ -74,6 +84,21 @@ def resolve_backend_capabilities(spec: "TemplateSpec") -> dict[str, bool]:
 
 
 @dataclass
+class LayerAttentionSpec:
+    """One entry in a decoder's repeating per-layer attention schedule.
+
+    Defaults describe ordinary full causal attention with no positional
+    encoding. Architectures that do not set ``BlockSpec.layer_attention_pattern``
+    retain their existing homogeneous block behavior.
+    """
+
+    kind: str = "full"  # "full" | "local"
+    window_size: int | None = None
+    pos_encoding: str = "none"  # "none" | "rope"
+    rope_theta: float = 10_000.0
+
+
+@dataclass
 class BlockSpec:
     family: str  # "nanogpt" | "gpt2" | "llama" | "mixllama"
     norm_type: str = "layernorm"  # "layernorm" | "rmsnorm" | "dyt" | "group_norm"
@@ -82,6 +107,12 @@ class BlockSpec:
     attention_backend: str = "sdpa"  # "sdpa" | "flex" | "math"
     num_heads: int = 4
     num_kv_heads: int | None = None  # None => MHA, smaller => GQA/MQA
+    # Explicit attention geometry. ``None`` preserves the historical
+    # ``head_dim = model_dim // num_heads`` and Q-width == model-width rules.
+    head_dim: int | None = None
+    attention_inner_dim: int | None = None
+    intermediate_size: int | None = None
+    layer_attention_pattern: tuple[LayerAttentionSpec, ...] = ()
     is_causal: bool = True
     linear_bias: bool = True
     dropout_p: float = 0.0
@@ -111,6 +142,17 @@ class BlockSpec:
     # Attention core variant swapped in at the SDPA node in build_dense_attention_graph.
     attention_variant: str = "dense"  # "dense" | "differential" | "sliding_window" | "block_sparse" | "nsa" | "streaming"
     use_qk_norm: bool = False  # fused RMSNorm on Q and K before SDPA (DeepSeek-V3, Gemma-3)
+    qk_norm_kind: str = "none"  # "none" | "weightless_rms"
+    qk_norm_eps: float = 1e-6
+    q_scale_factor: float = 1.0
+    attention_gate: str = "none"  # "none" | "sigmoid"
+    attention_gate_dim: int | None = None
+    norm_layout: str = "pre"  # "pre" | "sandwich"
+    centered_rms_norm: bool = False
+    norm_eps: float = 1e-6
+    post_norm_eps: float = 1e-6
+    embedding_norm_kind: str = "none"  # "none" | "weightless_rms"
+    embedding_norm_eps: float = 1e-6
     dyt_alpha_init: float = 1.0  # Dynamic Tanh initial alpha (norm_type == "dyt")
     group_norm_groups: int = 1  # groups for norm_type == "group_norm"
     diff_lambda_init: float = 0.8  # Differential Transformer initial lambda
@@ -153,8 +195,14 @@ class FineTuneSpec:
     """
     objective: str = "pretrain"  # "pretrain" | "sft" | "dpo" | "ppo" | "reward_model"
     base_checkpoint: str = ""
+    base_checkpoint_sha256: str = ""
+    tokenizer_sha256: str = ""
+    chat_template_sha256: str = ""
+    ref_graph_path: str = ""
     ref_checkpoint: str = ""
+    reward_graph_path: str = ""
     reward_checkpoint: str = ""
+    resume_checkpoint: str = ""
     adapter_only_save: bool = False
     # DPO knobs
     beta: float = 0.1
@@ -171,6 +219,136 @@ class FineTuneSpec:
     gae_gamma: float = 1.0
     gae_lambda: float = 0.95
 
+    def __post_init__(self) -> None:
+        allowed_objectives = {"pretrain", "sft", "dpo", "ppo", "reward_model"}
+        self.objective = str(self.objective).strip().lower()
+        if self.objective not in allowed_objectives:
+            raise ValueError(
+                f"Unsupported fine-tuning objective {self.objective!r}; "
+                f"expected one of {sorted(allowed_objectives)}"
+            )
+        for field_name in (
+            "base_checkpoint_sha256",
+            "tokenizer_sha256",
+            "chat_template_sha256",
+        ):
+            digest = str(getattr(self, field_name)).strip().lower()
+            if digest and (len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)):
+                raise ValueError(f"{field_name} must be an empty string or a 64-character SHA-256 digest")
+            setattr(self, field_name, digest)
+        if self.beta <= 0.0:
+            raise ValueError("FineTuneSpec.beta must be positive")
+        if self.dpo_loss_type not in {"sigmoid", "hinge", "ipo"}:
+            raise ValueError("FineTuneSpec.dpo_loss_type must be 'sigmoid', 'hinge', or 'ipo'")
+        if not 0.0 <= self.dpo_label_smoothing < 0.5:
+            raise ValueError("FineTuneSpec.dpo_label_smoothing must be in [0, 0.5)")
+        if self.kl_coef < 0.0:
+            raise ValueError("FineTuneSpec.kl_coef must be non-negative")
+        if not 0.0 < self.ppo_clip < 1.0:
+            raise ValueError("FineTuneSpec.ppo_clip must be in (0, 1)")
+        if self.ppo_vf_coef < 0.0 or self.ppo_ent_coef < 0.0:
+            raise ValueError("PPO value and entropy coefficients must be non-negative")
+        if self.rollout_length <= 0 or self.ppo_epochs_per_rollout <= 0 or self.ppo_minibatch_size <= 0:
+            raise ValueError("PPO rollout length, epochs, and minibatch size must be positive")
+        if not 0.0 <= self.gae_gamma <= 1.0 or not 0.0 <= self.gae_lambda <= 1.0:
+            raise ValueError("GAE gamma and lambda must be in [0, 1]")
+
+
+@dataclass
+class MuseGlimmerVisionSpec:
+    """Exact vision-tower/projector contract for Muse Glimmer.
+
+    The fields are intentionally independent from :class:`BlockSpec`: vision
+    attention is non-causal, biased, variable-length, and uses a different
+    hidden geometry from the text decoder.
+    """
+
+    num_hidden_layers: int = 50
+    hidden_size: int = 1_536
+    intermediate_size: int = 8_960
+    num_attention_heads: int = 16
+    patch_size: int = 14
+    patch_temporal: int = 2
+    merge_size: int = 2
+    pos_emb_height: int = 32
+    pos_emb_width: int = 32
+    rope_theta: float = 10_000.0
+    layer_norm_eps: float = 1.0e-5
+    projector_hidden_size: int = 4_096
+    image_token_id: int = 200_092
+    video_token_id: int = 200_091
+
+    def __post_init__(self) -> None:
+        positive = (
+            self.num_hidden_layers,
+            self.hidden_size,
+            self.intermediate_size,
+            self.num_attention_heads,
+            self.patch_size,
+            self.patch_temporal,
+            self.merge_size,
+            self.pos_emb_height,
+            self.pos_emb_width,
+            self.projector_hidden_size,
+        )
+        if any(int(value) <= 0 for value in positive):
+            raise ValueError("Muse Glimmer vision dimensions must be positive")
+        if self.hidden_size % self.num_attention_heads != 0:
+            raise ValueError("Muse Glimmer vision heads must divide hidden_size")
+        if self.pos_emb_height != self.pos_emb_width:
+            raise ValueError("Muse Glimmer v1 requires a square learned position table")
+        if self.rope_theta <= 0.0 or self.layer_norm_eps <= 0.0:
+            raise ValueError("Muse Glimmer vision RoPE/norm values must be positive")
+        if self.image_token_id < 0 or self.video_token_id < 0:
+            raise ValueError("Muse Glimmer media token IDs must be non-negative")
+
+    def layer_type(self, index: int) -> str:
+        if index < 0 or index >= self.num_hidden_layers:
+            raise IndexError(index)
+        return (
+            "full_attention"
+            if (index + 1) % 4 == 0 or index == self.num_hidden_layers - 1
+            else "window_attention"
+        )
+
+
+@dataclass
+class MuseGlimmerDFlashSpec:
+    """Target-bound shape contract for the stock Muse Glimmer assistant."""
+
+    num_hidden_layers: int = 5
+    hidden_size: int = 6_656
+    intermediate_size: int = 19_968
+    num_attention_heads: int = 32
+    num_key_value_heads: int = 8
+    head_dim: int = 128
+    block_size: int = 16
+    mask_token_id: int = 201_818
+    sliding_window: int = 2_048
+    rope_theta: float = 500_000.0
+    target_layer_ids: tuple[int, ...] = (1, 13, 25, 37, 49)
+
+    def __post_init__(self) -> None:
+        if (
+            self.num_hidden_layers <= 0
+            or self.hidden_size <= 0
+            or self.intermediate_size <= 0
+            or self.num_attention_heads <= 0
+            or self.num_key_value_heads <= 0
+            or self.num_attention_heads % self.num_key_value_heads != 0
+            or self.head_dim <= 0
+            or self.head_dim % 2 != 0
+            or self.block_size < 2
+            or self.mask_token_id < 0
+            or self.sliding_window <= 0
+            or self.rope_theta <= 0.0
+        ):
+            raise ValueError("invalid Muse Glimmer DFlash contract")
+        normalized = tuple(int(value) for value in self.target_layer_ids)
+        if normalized != tuple(sorted(set(normalized))) or not normalized:
+            raise ValueError("DFlash target_layer_ids must be sorted and unique")
+        self.target_layer_ids = normalized
+
 
 @dataclass
 class ModelSpec:
@@ -178,6 +356,8 @@ class ModelSpec:
     num_layers: int = 4
     vocab_size: int = 256
     tie_embeddings: bool = True
+    max_position_embeddings: int = 1024
+    output_multiplier: float = 1.0
     logit_softcap: float = 0.0  # 0.0 = disabled; >0.0 = tanh softcap (Gemma, PaLM)
     # H0302: coefficient on mean(logsumexp(logits)^2). 0.0 = plain cross-entropy;
     # 1e-4 is the value used by the gpt2_zloss / gpt2_stable presets.
@@ -218,10 +398,19 @@ class ModelSpec:
     jepa_loss_coef: float = 0.25
     semantic_align_loss_coef: float = 0.5
     finetune: FineTuneSpec | None = None
+    vision: MuseGlimmerVisionSpec | None = None
+    dflash: MuseGlimmerDFlashSpec | None = None
 
 
 def model_spec_to_dict(spec: ModelSpec) -> dict[str, Any]:
-    return asdict(spec)
+    payload = asdict(spec)
+    # Keep old preset payloads byte/field compatible. These optional contracts
+    # are serialized only by architectures that actually declare them.
+    if spec.vision is None:
+        payload.pop("vision", None)
+    if spec.dflash is None:
+        payload.pop("dflash", None)
+    return payload
 
 
 def _base_model_spec(
@@ -233,11 +422,22 @@ def _base_model_spec(
 ) -> ModelSpec:
     template.backend_capabilities = resolve_backend_capabilities(template)
     model_dim = int(kwargs.get("model_dim", kwargs.get("n_embd", 128)))
+    finetune_raw = kwargs.get("finetune")
+    if finetune_raw is None:
+        finetune = None
+    elif isinstance(finetune_raw, FineTuneSpec):
+        finetune = finetune_raw
+    elif isinstance(finetune_raw, dict):
+        finetune = FineTuneSpec(**finetune_raw)
+    else:
+        raise TypeError("finetune must be FineTuneSpec, a mapping, or None")
     return ModelSpec(
         model_dim=model_dim,
         num_layers=int(kwargs.get("num_layers", kwargs.get("n_layer", 4))),
         vocab_size=int(kwargs.get("vocab_size", 256)),
         tie_embeddings=bool(kwargs.get("tie_embeddings", default_tie_embeddings)),
+        max_position_embeddings=int(kwargs.get("max_position_embeddings", 1024)),
+        output_multiplier=float(kwargs.get("output_multiplier", 1.0)),
         logit_softcap=float(kwargs.get("logit_softcap", 0.0)),
         z_loss_coef=float(kwargs.get("z_loss_coef", 0.0)),
         block_spec=block_spec,
@@ -277,6 +477,7 @@ def _base_model_spec(
         ar_loss_coef=float(kwargs.get("ar_loss_coef", 1.0)),
         jepa_loss_coef=float(kwargs.get("jepa_loss_coef", 0.25)),
         semantic_align_loss_coef=float(kwargs.get("semantic_align_loss_coef", 0.5)),
+        finetune=finetune,
     )
 
 
@@ -314,6 +515,7 @@ SHIPPED_GPT_TEMPLATE_BASE_PRESETS: tuple[str, ...] = (
     "gpt2_diff",
     "gpt2_stable",
     "llama",
+    "muse_glimmer",
     "modern_norms_llama",
     "mixllama",
     "moe",
@@ -741,6 +943,191 @@ def build_llama_spec(**kwargs: Any) -> ModelSpec:
         ),
         default_tie_embeddings=False,
     )
+
+
+def build_muse_glimmer_spec(**kwargs: Any) -> ModelSpec:
+    """Build the exact Muse Glimmer text-decoder architecture.
+
+    The defaults match ``meta-models/Muse-Glimmer-30B``. Small caller-supplied
+    dimensions remain supported for graph previews and parity fixtures while
+    preserving the defining non-square residual/attention geometry.
+    """
+
+    model_dim = int(kwargs.get("model_dim", kwargs.get("n_embd", 6_656)))
+    adapter_type = str(kwargs.get("adapter_type", "none")).strip().lower()
+    if adapter_type not in {"none", "lora", "qlora"}:
+        raise ValueError("Muse Glimmer adapter_type must be 'none', 'lora', or 'qlora'")
+    default_lora_targets = (
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "attn_gate_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    )
+    lora_targets_raw = kwargs.get("lora_targets", default_lora_targets)
+    if isinstance(lora_targets_raw, str):
+        lora_targets = tuple(part.strip() for part in lora_targets_raw.split(",") if part.strip())
+    else:
+        lora_targets = tuple(str(part).strip() for part in lora_targets_raw if str(part).strip())
+    unknown_lora_targets = sorted(set(lora_targets) - set(default_lora_targets))
+    if unknown_lora_targets:
+        raise ValueError(f"Unsupported Muse Glimmer LoRA targets: {unknown_lora_targets}")
+    if adapter_type in {"lora", "qlora"} and not lora_targets:
+        raise ValueError("Muse Glimmer LoRA/QLoRA requires at least one projection target")
+    if int(kwargs.get("lora_rank", 8)) <= 0:
+        raise ValueError("Muse Glimmer lora_rank must be positive")
+    if float(kwargs.get("lora_alpha", 16.0)) <= 0.0:
+        raise ValueError("Muse Glimmer lora_alpha must be positive")
+    if not 0.0 <= float(kwargs.get("lora_dropout", 0.0)) < 1.0:
+        raise ValueError("Muse Glimmer lora_dropout must be in [0, 1)")
+    if int(kwargs.get("qlora_group_size", 64)) <= 0:
+        raise ValueError("Muse Glimmer qlora_group_size must be positive")
+    num_heads = int(kwargs.get("num_heads", kwargs.get("n_head", 32)))
+    if num_heads <= 0:
+        raise ValueError("Muse Glimmer num_heads must be positive")
+
+    production_geometry = model_dim == 6_656 and num_heads == 32
+    head_dim = int(
+        kwargs.get(
+            "head_dim",
+            128 if production_geometry else max(2, model_dim // (2 * num_heads)),
+        )
+    )
+    attention_inner_dim = int(kwargs.get("attention_inner_dim", num_heads * head_dim))
+    if attention_inner_dim != num_heads * head_dim:
+        raise ValueError(
+            "Muse Glimmer attention_inner_dim must equal num_heads * head_dim "
+            f"({num_heads * head_dim}), got {attention_inner_dim}"
+        )
+    if head_dim % 2 != 0:
+        raise ValueError("Muse Glimmer head_dim must be even for RoPE")
+
+    num_kv_heads = int(kwargs.get("num_kv_heads", 2 if production_geometry else max(1, num_heads // 2)))
+    if num_kv_heads <= 0 or num_heads % num_kv_heads != 0:
+        raise ValueError("Muse Glimmer num_kv_heads must be positive and divide num_heads")
+
+    local_window = int(kwargs.get("window_size", 2_048))
+    rope_theta = float(kwargs.get("rope_theta", kwargs.get("rope_base", 500_000.0)))
+    intermediate_size = int(
+        kwargs.get("intermediate_size", 19_968 if model_dim == 6_656 else 3 * model_dim)
+    )
+    pattern = (
+        LayerAttentionSpec("local", local_window, "rope", rope_theta),
+        LayerAttentionSpec("local", local_window, "rope", rope_theta),
+        LayerAttentionSpec("local", local_window, "rope", rope_theta),
+        LayerAttentionSpec("full", None, "none", rope_theta),
+    )
+
+    normalized = dict(kwargs)
+    normalized.setdefault("model_dim", model_dim)
+    normalized.setdefault("num_layers", 52)
+    normalized.setdefault("vocab_size", 202_048)
+    normalized.setdefault("tie_embeddings", False)
+    normalized.setdefault("max_position_embeddings", 131_072)
+    normalized.setdefault("output_multiplier", 0.19611613513818404)
+    normalized.setdefault("logit_softcap", 20.0)
+
+    spec = _base_model_spec(
+        kwargs=normalized,
+        template=TemplateSpec(backbone="muse_glimmer", runtime="eager"),
+        block_spec=BlockSpec(
+            family="muse_glimmer",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="none",
+            linear_bias=False,
+            dropout_p=0.0,
+            num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
+            head_dim=head_dim,
+            attention_inner_dim=attention_inner_dim,
+            intermediate_size=intermediate_size,
+            layer_attention_pattern=pattern,
+            rope_theta=rope_theta,
+            window_size=local_window,
+            use_qk_norm=True,
+            qk_norm_kind="weightless_rms",
+            qk_norm_eps=float(kwargs.get("qk_norm_eps", kwargs.get("norm_eps", 1e-5))),
+            q_scale_factor=float(kwargs.get("q_scale_factor", 3.87)),
+            attention_gate="sigmoid",
+            attention_gate_dim=attention_inner_dim,
+            norm_layout="sandwich",
+            centered_rms_norm=True,
+            norm_eps=float(kwargs.get("norm_eps", 1e-5)),
+            post_norm_eps=float(kwargs.get("post_norm_eps", 1e-8)),
+            embedding_norm_kind="weightless_rms",
+            embedding_norm_eps=float(kwargs.get("embedding_norm_eps", kwargs.get("norm_eps", 1e-5))),
+            adapter_type=adapter_type,
+            adapter_dim=int(kwargs.get("adapter_dim", 0)),
+            lora_rank=int(kwargs.get("lora_rank", 8)),
+            lora_alpha=float(kwargs.get("lora_alpha", 16.0)),
+            lora_dropout=float(kwargs.get("lora_dropout", 0.0)),
+            lora_targets=lora_targets,
+            lora_bias=bool(kwargs.get("lora_bias", False)),
+            qlora_group_size=int(kwargs.get("qlora_group_size", 64)),
+            qlora_compute_dtype=str(kwargs.get("qlora_compute_dtype", "bf16")),
+        ),
+        default_tie_embeddings=False,
+    )
+    production_contract = (
+        model_dim == 6_656
+        and int(spec.num_layers) == 52
+        and int(spec.vocab_size) == 202_048
+        and num_heads == 32
+        and num_kv_heads == 2
+        and head_dim == 128
+    )
+    enable_vision = bool(kwargs.get("enable_vision", production_contract))
+    enable_dflash = bool(kwargs.get("enable_dflash", production_contract))
+    if enable_vision:
+        spec.vision = MuseGlimmerVisionSpec(
+            num_hidden_layers=int(kwargs.get("vision_num_hidden_layers", 50)),
+            hidden_size=int(kwargs.get("vision_hidden_size", 1_536)),
+            intermediate_size=int(kwargs.get("vision_intermediate_size", 8_960)),
+            num_attention_heads=int(kwargs.get("vision_num_attention_heads", 16)),
+            patch_size=int(kwargs.get("vision_patch_size", 14)),
+            patch_temporal=int(kwargs.get("vision_patch_temporal", 2)),
+            merge_size=int(kwargs.get("vision_merge_size", 2)),
+            pos_emb_height=int(kwargs.get("vision_pos_emb_height", 32)),
+            pos_emb_width=int(kwargs.get("vision_pos_emb_width", 32)),
+            rope_theta=float(kwargs.get("vision_rope_theta", 10_000.0)),
+            layer_norm_eps=float(kwargs.get("vision_layer_norm_eps", 1.0e-5)),
+            projector_hidden_size=int(kwargs.get("projector_hidden_size", 4_096)),
+            image_token_id=int(kwargs.get("image_token_id", 200_092)),
+            video_token_id=int(kwargs.get("video_token_id", 200_091)),
+        )
+    if enable_dflash:
+        spec.dflash = MuseGlimmerDFlashSpec(
+            hidden_size=model_dim,
+            intermediate_size=intermediate_size,
+            mask_token_id=int(kwargs.get("dflash_mask_token_id", 201_818)),
+            target_layer_ids=tuple(
+                int(value)
+                for value in kwargs.get("dflash_target_layer_ids", (1, 13, 25, 37, 49))
+            ),
+        )
+        if spec.dflash.target_layer_ids[-1] >= spec.num_layers:
+            raise ValueError("DFlash target_layer_ids exceed the target decoder layer count")
+
+    # Backend capability bits describe the independently implemented default
+    # production contract. Small preview geometries stay graph-only unless the
+    # caller explicitly enables their companion specs.
+    spec.template.backend_capabilities.update(
+        {
+            "cache": True,
+            "quantized_export": False,
+            "native_train": True,
+            "native_inference": True,
+            "whole_model_cuda": True,
+            "k_quant": True,
+            "speculative_decoding": True,
+            "multimodal": spec.vision is not None,
+        }
+    )
+    return spec
 
 
 def build_modern_norms_llama_spec(**kwargs: Any) -> ModelSpec:

@@ -8,6 +8,232 @@ enum : std::uint32_t {
     NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5 = 2,
 };
 
+enum : std::uint32_t {
+    NFN_NATIVE_TILE_PACKED_WEIGHT_V1 = 1,
+    NFN_NATIVE_TILE_PACKED_WEIGHT_F32 = 0,
+    NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K = 12,
+    NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K = 13,
+    NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K = 14,
+    NFN_NATIVE_TILE_PACKED_WEIGHT_BF16 = 30,
+    // Training-only NF4 row layout. Each 64-value group is encoded as one
+    // little-endian FP32 absolute-maximum followed by 32 low-nibble-first NF4
+    // codes. The final group is zero-padded when input_dim is not divisible by
+    // 64. This
+    // self-contained layout deliberately avoids auxiliary scale pointers and
+    // can therefore use the authenticated v1 typed-weight descriptor.
+    NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64 = 31,
+};
+
+// Muse Glimmer whole-model CUDA feature ABI.  It is deliberately separate
+// from the generic SDPA ABI: the latter has a 1,024-key implementation limit
+// and cannot represent Glimmer's 32-query/2-KV-head, 128-wide, hybrid
+// local/global decode contract.  All cache payloads in this ABI are BF16 bits;
+// projections and normalization accumulators are float32.
+enum : std::uint32_t {
+    NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 = 1,
+    NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT = 0,
+    NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED = 1,
+    NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL = 1,
+};
+
+// Training feature ABI for the exact Muse Glimmer decoder.  This stays
+// separate from the inference ABI so adding saved-LSE/backward state cannot
+// change the resident loader's contract.  Activations and gradients are
+// float32 in v1; immutable/trainable BF16 weights use the typed packed-weight
+// descriptor above.  `window == 0` means full attention, otherwise it is the
+// exact causal left window (2,048 for local Glimmer layers).
+enum : std::uint32_t {
+    NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 = 1,
+    NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL = 1,
+};
+
+struct NfnNativeTilePackedWeightDescriptorV1;
+
+struct NfnNativeTileGlimmerAttentionTrainingDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* query;
+    const float* key;
+    const float* value;
+    float* output;
+    float* logsumexp;
+
+    // Backward-only fields.  They may be null for forward.
+    const float* grad_output;
+    float* grad_query;
+    float* grad_key;
+    float* grad_value;
+
+    std::int64_t batch_size;
+    std::int64_t sequence_length;
+    std::int64_t query_heads;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t window;
+    float scale;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+
+    // Optional packed-example segment IDs, shaped [batch, sequence].  When
+    // non-null, query/key pairs with different IDs are masked in both forward
+    // and backward.  This tail field is part of the Glimmer training-v1
+    // descriptor size and prevents response-only SFT packing from leaking
+    // attention across examples.
+    const std::int32_t* sequence_ids;
+    std::uint32_t reserved2;
+    std::uint32_t reserved3;
+};
+
+struct NfnNativeTileGlimmerRmsNormBackwardDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* input;
+    const NfnNativeTilePackedWeightDescriptorV1* weight;
+    const float* grad_output;
+    float* grad_input;
+    float* grad_weight;
+
+    std::int64_t rows;
+    std::int64_t width;
+    float eps;
+    std::uint32_t centered;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileGlimmerMaskedCeDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* transformed_logits;
+    const std::int32_t* targets;
+    const float* loss_mask;
+    float* row_loss;
+    float* grad_transformed_logits;
+
+    std::int64_t rows;
+    std::int64_t vocab_size;
+    std::int32_t ignore_index;
+    std::uint32_t reserved1;
+    float grad_scale;
+    std::uint32_t reserved2;
+    void* cuda_stream;
+};
+
+// Typed, immutable packed-weight ABI.  This is intentionally distinct from
+// nfn_native_tile_linear_quantized_float32, whose `const float*` input is a
+// fake-quant training oracle rather than packed checkpoint storage.  Every v1
+// call validates the exact canonical row stride and byte extent; unknown
+// encoding IDs fail instead of falling through to float reads.
+struct NfnNativeTilePackedWeightDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t encoding;
+    std::uint32_t flags;
+
+    const std::uint8_t* data;
+    std::int64_t data_nbytes;
+    std::int64_t output_dim;
+    std::int64_t input_dim;
+    std::int64_t row_stride_bytes;
+    std::uint32_t reserved0;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+// One causal one-token GQA attention operation.  `position` is the absolute
+// position of current_key/current_value and is not yet present in the cache.
+// Historical rows occupy `key_cache`/`value_cache`; local caches use
+// absolute_position % cache_capacity, while global caches use the absolute
+// position directly.  `first_key_position` makes the local 2,048-token window
+// explicit and must be in [0, position].  The operation is read-only and thus
+// safe to abandon before the separate transactional cache commit call.
+struct NfnNativeTileGlimmerGqaDecodeDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* query;
+    const float* current_key;
+    const float* current_value;
+    const std::uint16_t* key_cache_bf16;
+    const std::uint16_t* value_cache_bf16;
+    float* output;
+
+    std::int64_t query_heads;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t position;
+    std::int64_t first_key_position;
+    std::int64_t cache_capacity;
+    std::int64_t cache_row_stride;
+    float scale;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileGlimmerCacheCommitDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* current_key;
+    const float* current_value;
+    std::uint16_t* key_cache_bf16;
+    std::uint16_t* value_cache_bf16;
+
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t position;
+    std::int64_t cache_capacity;
+    std::int64_t cache_row_stride;
+    std::uint32_t reserved1;
+    std::uint32_t reserved2;
+    void* cuda_stream;
+};
+
+// Block attention evaluates current rows against accepted-context K/V.  With
+// flags=0 the current block is bidirectional for DFlash.  With
+// NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL it is the target verifier's causal
+// block.  Both modes obey the configured absolute sliding window.
+// Historical cache rows are BF16 ring-buffer entries; current-block K/V and
+// the output remain float32 so a proposal may be abandoned transactionally.
+struct NfnNativeTileDFlashBlockAttentionDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* query;
+    const float* block_key;
+    const float* block_value;
+    const std::uint16_t* key_cache_bf16;
+    const std::uint16_t* value_cache_bf16;
+    float* output;
+
+    std::int64_t query_rows;
+    std::int64_t block_rows;
+    std::int64_t query_heads;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t context_length;
+    std::int64_t sliding_window;
+    std::int64_t cache_capacity;
+    std::int64_t cache_row_stride;
+    float scale;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
 // Additive TurboQuant attention ABI.  struct_size is first so callers may pass
 // a larger future descriptor while v1 validates and consumes this prefix.
 //
@@ -69,6 +295,130 @@ extern "C" {
 int nfn_native_tile_ops_abi_version();
 int nfn_native_tile_strict_math_abi_version();
 int nfn_native_tile_turboquant_attention_abi_version();
+int nfn_native_tile_packed_weight_abi_version();
+int nfn_native_tile_glimmer_inference_abi_version();
+int nfn_native_tile_glimmer_training_abi_version();
+int nfn_native_tile_packed_weight_validate_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor);
+int nfn_native_tile_packed_weight_dequantize_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    float* output);
+int nfn_native_tile_linear_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const float* input,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias);
+int nfn_native_tile_linear_backward_input_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t rows);
+int nfn_native_tile_glimmer_embedding_gather_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    std::int64_t token_id,
+    float* output);
+int nfn_native_tile_glimmer_embedding_batch_i32_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int32_t* token_ids,
+    float* output,
+    std::int64_t rows);
+int nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_positioned_rope_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_gqa_decode_float32_v1(
+    const NfnNativeTileGlimmerGqaDecodeDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_cache_commit_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor);
+int nfn_native_tile_dflash_block_attention_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_sigmoid_gate_float32_v1(
+    const float* values,
+    const float* gate,
+    float* output,
+    std::int64_t count,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_logit_transform_float32_v1(
+    float* logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_attention_forward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_attention_backward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_rms_norm_backward_float32_v1(
+    const NfnNativeTileGlimmerRmsNormBackwardDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_positioned_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t start_position,
+    float theta,
+    std::uint32_t layout,
+    bool inverse,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_sigmoid_gate_backward_float32_v1(
+    const float* values,
+    const float* gate,
+    const float* grad_output,
+    float* grad_values,
+    float* grad_gate,
+    std::int64_t count,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_logit_transform_backward_float32_v1(
+    const float* transformed_logits,
+    const float* grad_transformed_logits,
+    float* grad_raw_logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1(
+    const NfnNativeTileGlimmerMaskedCeDescriptorV1* descriptor);
+int nfn_native_tile_token_embedding_backward_weight_i32_float32(
+    const std::int32_t* token_ids,
+    const float* grad_output,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t vocab_size,
+    std::int64_t embedding_dim,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_adamw_bf16_float32_v1(
+    std::uint16_t* parameter_bf16,
+    const float* gradient,
+    float* exp_avg,
+    float* exp_avg_sq,
+    std::int64_t count,
+    float learning_rate,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    std::int64_t step,
+    float gradient_scale,
+    void* cuda_stream);
 int nfn_native_tile_turboquant_attention_forward_v1(
     const NfnNativeTileTurboQuantAttentionDescriptorV1* descriptor);
 void nfn_native_tile_turboquant_attention_stats_reset();
@@ -603,6 +953,12 @@ int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16
 
 int nfn_native_tile_uint16_to_int64(
     const std::uint16_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_uint32_to_int64(
+    const std::uint32_t* source,
     std::int64_t* dest,
     std::int64_t n,
     void* cuda_stream);

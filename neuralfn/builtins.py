@@ -63,9 +63,15 @@ def default_repeat_kv_config() -> dict[str, int]:
     return {"num_heads": int(cfg["num_heads"]), "num_kv_heads": int(cfg["num_kv_heads"])}
 
 
-def default_rotary_embedding_config() -> dict[str, int | float]:
+def default_rotary_embedding_config() -> dict[str, int | float | str]:
     cfg = default_gpt_config()
-    return {"head_dim": int(cfg["model_dim"]) // int(cfg["num_heads"]), "rope_base": float(cfg["rope_base"])}
+    return {
+        "head_dim": int(cfg["model_dim"]) // int(cfg["num_heads"]),
+        "rope_base": float(cfg["rope_base"]),
+        # Preserve the historical NeuralFn rotation unless a model contract
+        # explicitly requests the Hugging Face rotate-half convention.
+        "convention": "legacy",
+    }
 
 
 def default_qk_gain_config() -> dict[str, int | float]:
@@ -75,6 +81,37 @@ def default_qk_gain_config() -> dict[str, int | float]:
 
 def default_scaled_dot_product_attention_config() -> dict[str, bool]:
     return {"is_causal": True}
+
+
+def default_dflash_attention_config() -> dict[str, int | float | str]:
+    return {
+        "model_dim": 128,
+        "num_heads": 4,
+        "num_kv_heads": 2,
+        "head_dim": 32,
+        "window_size": 256,
+        "rope_base": 500000.0,
+        "norm_eps": 1e-5,
+        "convention": "hf",
+        "bias": False,
+        "dropout_p": 0.0,
+    }
+
+
+def default_muse_glimmer_vision_config() -> dict[str, int | float]:
+    return {
+        "hidden_size": 1_536,
+        "intermediate_size": 8_960,
+        "num_heads": 16,
+        "num_layers": 50,
+        "patch_size": 14,
+        "patch_temporal": 2,
+        "merge_size": 2,
+        "pos_emb_height": 32,
+        "pos_emb_width": 32,
+        "rope_theta": 10_000.0,
+        "eps": 1.0e-5,
+    }
 
 
 def default_residual_mix_config() -> dict[str, int | float]:
@@ -101,6 +138,10 @@ def default_logit_softcap_config() -> dict[str, float]:
 
 def default_loss_scale_config() -> dict[str, float]:
     return {"coef": 1.0}
+
+
+def default_tensor_scale_config() -> dict[str, float]:
+    return {"scale": 1.0}
 
 
 def default_fused_attention_config() -> dict[str, int | float]:
@@ -482,6 +523,47 @@ scaled_dot_product_attention_module = module_neuron(
     module_config=default_scaled_dot_product_attention_config(),
 )
 
+dflash_attention_module = module_neuron(
+    name="dflash_attention",
+    module_type="dflash_attention",
+    input_ports=[
+        Port("block_hidden", dtype="tensor"),
+        Port("accepted_context", dtype="tensor"),
+        Port("context_position_ids", dtype="tensor"),
+        Port("block_position_ids", dtype="tensor"),
+    ],
+    output_ports=[Port("attention", dtype="tensor")],
+    module_config=default_dflash_attention_config(),
+)
+
+muse_glimmer_vision_tower_module = module_neuron(
+    name="muse_glimmer_vision_tower",
+    module_type="muse_glimmer_vision_tower",
+    input_ports=[Port("pixel_values", dtype="tensor"), Port("grid_thw", dtype="tensor")],
+    output_ports=[Port("merged_patches", dtype="tensor")],
+    module_config=default_muse_glimmer_vision_config(),
+)
+
+muse_glimmer_perception_norm_module = module_neuron(
+    name="muse_glimmer_perception_norm",
+    module_type="muse_glimmer_perception_norm",
+    input_ports=[Port("features", dtype="tensor")],
+    output_ports=[Port("normalized", dtype="tensor")],
+    module_config={"eps": 1.0e-5},
+)
+
+muse_glimmer_media_scatter_module = module_neuron(
+    name="muse_glimmer_media_scatter",
+    module_type="muse_glimmer_media_scatter",
+    input_ports=[
+        Port("embeddings", dtype="tensor"),
+        Port("token_ids", dtype="tokens", range=(0, 2_147_483_647), precision=1.0),
+        Port("features", dtype="tensor"),
+    ],
+    output_ports=[Port("fused_embeddings", dtype="tensor")],
+    module_config={"token_id": 200_092},
+)
+
 
 def _attn_core_ports() -> tuple[list[Port], list[Port]]:
     return (
@@ -662,6 +744,33 @@ dropout_module = module_neuron(
 gelu_module = module_neuron(
     name="gelu",
     module_type="gelu",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+sigmoid_module = module_neuron(
+    name="tensor_sigmoid",
+    module_type="sigmoid",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+multiply_module = module_neuron(
+    name="tensor_multiply",
+    module_type="multiply",
+    input_ports=[
+        Port("a", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("b", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+silu_module = module_neuron(
+    name="tensor_silu",
+    module_type="silu",
     input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config={},
@@ -896,6 +1005,14 @@ loss_scale_module = module_neuron(
     input_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
     output_ports=[Port("scaled_loss", range=(0, 100), precision=0.0001, dtype="loss")],
     module_config=default_loss_scale_config(),
+)
+
+tensor_scale_module = module_neuron(
+    name="tensor_scale",
+    module_type="tensor_scale",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_tensor_scale_config(),
 )
 
 dataset_source_module = module_neuron(
@@ -1432,6 +1549,21 @@ sequence_logp_module = module_neuron(
     module_config={"ignore_index": -100},
 )
 
+token_logp_entropy_module = module_neuron(
+    name="token_logp_entropy",
+    module_type="token_logp_entropy",
+    input_ports=[
+        Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("targets", range=(0, 4_294_967_295), precision=1.0, dtype="tokens"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("selected_logp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("entropy", range=(0, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"ignore_index": -100},
+)
+
 dpo_pairwise_loss_module = module_neuron(
     name="dpo_pairwise_loss",
     module_type="dpo_pairwise_loss",
@@ -1470,12 +1602,61 @@ dpo_dataset_source_module = module_neuron(
     },
 )
 
+pair_batch_concat_module = module_neuron(
+    name="pair_batch_concat",
+    module_type="pair_batch_concat",
+    input_ports=[
+        Port("chosen", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("rejected", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("paired", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+pair_batch_split_module = module_neuron(
+    name="pair_batch_split",
+    module_type="pair_batch_split",
+    input_ports=[Port("paired", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("chosen", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("rejected", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={},
+)
+
 reward_head_module = module_neuron(
     name="reward_head",
     module_type="reward_head",
     input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     output_ports=[Port("scalar", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config={"model_dim": 128, "pool": "last"},
+)
+
+masked_reward_head_module = module_neuron(
+    name="masked_reward_head",
+    module_type="masked_reward_head",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("sequence_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("scalar", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128},
+)
+
+policy_logits_value_module = module_neuron(
+    name="policy_logits_value",
+    module_type="policy_logits_value",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "model_dim": 128,
+        "vocab_size": 256,
+        "output_multiplier": 1.0,
+        "logit_softcap": 0.0,
+    },
 )
 
 preference_bce_loss_module = module_neuron(
@@ -1516,6 +1697,33 @@ ppo_clipped_loss_module = module_neuron(
         Port("loss", range=(0, 100), precision=0.0001, dtype="loss"),
     ],
     module_config={"clip_range": 0.2, "vf_coef": 0.5, "ent_coef": 0.0},
+)
+
+masked_ppo_clipped_loss_module = module_neuron(
+    name="masked_ppo_clipped_loss",
+    module_type="masked_ppo_clipped_loss",
+    input_ports=[
+        Port("logp_new", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("logp_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("advantages", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value_new", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("returns", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("entropy", range=(0, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("policy_loss", range=(-100, 100), precision=0.0001, dtype="tensor"),
+        Port("value_loss", range=(0, 100), precision=0.0001, dtype="tensor"),
+        Port("entropy_bonus", range=(0, 100), precision=0.0001, dtype="tensor"),
+        Port("loss", range=(-100, 100), precision=0.0001, dtype="loss"),
+    ],
+    module_config={
+        "clip_range": 0.2,
+        "vf_coef": 0.5,
+        "ent_coef": 0.0,
+        "normalize_advantages": True,
+    },
 )
 
 kl_penalty_module = module_neuron(
@@ -1609,6 +1817,10 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "rotary_embedding_module": rotary_embedding_module,
     "qk_gain_module": qk_gain_module,
     "scaled_dot_product_attention_module": scaled_dot_product_attention_module,
+    "dflash_attention_module": dflash_attention_module,
+    "muse_glimmer_vision_tower_module": muse_glimmer_vision_tower_module,
+    "muse_glimmer_perception_norm_module": muse_glimmer_perception_norm_module,
+    "muse_glimmer_media_scatter_module": muse_glimmer_media_scatter_module,
     "sliding_window_attention_module": sliding_window_attention_module,
     "block_sparse_attention_module": block_sparse_attention_module,
     "streaming_attention_sinks_module": streaming_attention_sinks_module,
@@ -1627,6 +1839,9 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "layer_norm_module": layer_norm_module,
     "dropout_module": dropout_module,
     "gelu_module": gelu_module,
+    "sigmoid_module": sigmoid_module,
+    "multiply_module": multiply_module,
+    "silu_module": silu_module,
     "swiglu_module": swiglu_module,
     "geglu_module": geglu_module,
     "reglu_module": reglu_module,
@@ -1649,6 +1864,7 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "load_balance_loss_module": load_balance_loss_module,
     "aux_loss_add_module": aux_loss_add_module,
     "loss_scale_module": loss_scale_module,
+    "tensor_scale_module": tensor_scale_module,
     "token_cross_entropy_module": token_cross_entropy_module,
     "dataset_source_module": dataset_source_module,
     "bitlinear_ternary_module": bitlinear_ternary_module,
@@ -1694,12 +1910,18 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "reference_forward_module": reference_forward_module,
     "sft_dataset_source_module": sft_dataset_source_module,
     "sequence_logp_module": sequence_logp_module,
+    "token_logp_entropy_module": token_logp_entropy_module,
     "dpo_pairwise_loss_module": dpo_pairwise_loss_module,
     "dpo_dataset_source_module": dpo_dataset_source_module,
+    "pair_batch_concat_module": pair_batch_concat_module,
+    "pair_batch_split_module": pair_batch_split_module,
     "reward_head_module": reward_head_module,
+    "masked_reward_head_module": masked_reward_head_module,
+    "policy_logits_value_module": policy_logits_value_module,
     "preference_bce_loss_module": preference_bce_loss_module,
     "value_head_module": value_head_module,
     "ppo_clipped_loss_module": ppo_clipped_loss_module,
+    "masked_ppo_clipped_loss_module": masked_ppo_clipped_loss_module,
     "kl_penalty_module": kl_penalty_module,
     "reward_forward_module": reward_forward_module,
     "ppo_rollout_source_module": ppo_rollout_source_module,
@@ -1748,6 +1970,10 @@ class BuiltinNeurons:
     rotary_embedding_module = rotary_embedding_module
     qk_gain_module = qk_gain_module
     scaled_dot_product_attention_module = scaled_dot_product_attention_module
+    dflash_attention_module = dflash_attention_module
+    muse_glimmer_vision_tower_module = muse_glimmer_vision_tower_module
+    muse_glimmer_perception_norm_module = muse_glimmer_perception_norm_module
+    muse_glimmer_media_scatter_module = muse_glimmer_media_scatter_module
     sliding_window_attention_module = sliding_window_attention_module
     block_sparse_attention_module = block_sparse_attention_module
     streaming_attention_sinks_module = streaming_attention_sinks_module
@@ -1766,6 +1992,9 @@ class BuiltinNeurons:
     layer_norm_module = layer_norm_module
     dropout_module = dropout_module
     gelu_module = gelu_module
+    sigmoid_module = sigmoid_module
+    multiply_module = multiply_module
+    silu_module = silu_module
     swiglu_module = swiglu_module
     geglu_module = geglu_module
     reglu_module = reglu_module
@@ -1788,6 +2017,7 @@ class BuiltinNeurons:
     load_balance_loss_module = load_balance_loss_module
     aux_loss_add_module = aux_loss_add_module
     loss_scale_module = loss_scale_module
+    tensor_scale_module = tensor_scale_module
     token_cross_entropy_module = token_cross_entropy_module
     dataset_source_module = dataset_source_module
     bitlinear_ternary_module = bitlinear_ternary_module
@@ -1833,12 +2063,18 @@ class BuiltinNeurons:
     reference_forward_module = reference_forward_module
     sft_dataset_source_module = sft_dataset_source_module
     sequence_logp_module = sequence_logp_module
+    token_logp_entropy_module = token_logp_entropy_module
     dpo_pairwise_loss_module = dpo_pairwise_loss_module
     dpo_dataset_source_module = dpo_dataset_source_module
+    pair_batch_concat_module = pair_batch_concat_module
+    pair_batch_split_module = pair_batch_split_module
     reward_head_module = reward_head_module
+    masked_reward_head_module = masked_reward_head_module
+    policy_logits_value_module = policy_logits_value_module
     preference_bce_loss_module = preference_bce_loss_module
     value_head_module = value_head_module
     ppo_clipped_loss_module = ppo_clipped_loss_module
+    masked_ppo_clipped_loss_module = masked_ppo_clipped_loss_module
     kl_penalty_module = kl_penalty_module
     reward_forward_module = reward_forward_module
     ppo_rollout_source_module = ppo_rollout_source_module
@@ -1910,6 +2146,10 @@ __all__ = [
     "rotary_embedding_module",
     "qk_gain_module",
     "scaled_dot_product_attention_module",
+    "dflash_attention_module",
+    "muse_glimmer_vision_tower_module",
+    "muse_glimmer_perception_norm_module",
+    "muse_glimmer_media_scatter_module",
     "sliding_window_attention_module",
     "block_sparse_attention_module",
     "streaming_attention_sinks_module",
@@ -1928,6 +2168,9 @@ __all__ = [
     "layer_norm_module",
     "dropout_module",
     "gelu_module",
+    "sigmoid_module",
+    "multiply_module",
+    "silu_module",
     "swiglu_module",
     "geglu_module",
     "reglu_module",
@@ -1950,6 +2193,7 @@ __all__ = [
     "load_balance_loss_module",
     "aux_loss_add_module",
     "loss_scale_module",
+    "tensor_scale_module",
     "token_cross_entropy_module",
     "dataset_source_module",
     "bitlinear_ternary_module",
@@ -1995,12 +2239,18 @@ __all__ = [
     "reference_forward_module",
     "sft_dataset_source_module",
     "sequence_logp_module",
+    "token_logp_entropy_module",
     "dpo_pairwise_loss_module",
     "dpo_dataset_source_module",
+    "pair_batch_concat_module",
+    "pair_batch_split_module",
     "reward_head_module",
+    "masked_reward_head_module",
+    "policy_logits_value_module",
     "preference_bce_loss_module",
     "value_head_module",
     "ppo_clipped_loss_module",
+    "masked_ppo_clipped_loss_module",
     "kl_penalty_module",
     "reward_forward_module",
     "ppo_rollout_source_module",

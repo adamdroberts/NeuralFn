@@ -54,13 +54,28 @@ Canonical docs:
   paths. `.pt` conversion belongs in the isolated `weights_only` worker. A
   compatible result exits 0; incompatible preflight exits 2 and creates no
   directory.
+- Keep Muse Glimmer family commands lightweight and strict:
+  `nfn migrate muse-glimmer-to-native` accepts only the pinned BF16
+  target/full/assistant snapshots;
+  `nfn migrate muse-glimmer-gguf-to-native` accepts only canonical authenticated
+  Dynamic/17GB/DFlash/mmproj files; and
+  `nfn migrate muse-glimmer-lora-to-native` authenticates and atomically
+  attaches a source-bound LoRA/QLoRA checkpoint. Resident inference exposes
+  `--weight-precision auto|bf16|k-quant-dynamic|k-quant-17gb`,
+  `--speculative-decoding off|auto|required`, and repeatable
+  `--companion-checkpoint dflash|mmproj|lora`. Explicit precision/speculation
+  must fail rather than downgrade, and server requests may not override startup
+  policy. `nfn train --base-model muse-glimmer` dispatches directly to the
+  exact C++ trainer for uint32 AR or structured SFT and
+  `--adapter none|lora|qlora`; do not reinterpret NF4 QLoRA as GGUF K-Quant
+  tuning.
 - For `nfn train --runtime native-cuda --graph-file`, run source-safe Native IR
   preflight before binary resolution. Only exact reviewed graph adapters may
   set `execution_ready`; the current set is `gpt2`, `gpt2_megakernel`,
   `gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`, `gpt2_stable`,
   `gpt2_zloss`, canonical `llama`, and its exact compile-runtime alias
   `llama_fast`, plus standard-MoE `moe`, `mixllama`, and `mixllama_fast`, and
-  exact proof-bound `gpt2_diff` training (13 ready; 53 blocked). `gpt2_diff`
+  exact proof-bound `gpt2_diff` training (13 ready; 54 blocked). `gpt2_diff`
   must stay execution-closed at migration/resident boundaries. Its trusted
   planner materializes `native-training-proof.json`; the child requires the
   exact graph/fingerprint/proof triplet before plan/Tile/CUDA work. The unkeyed
@@ -109,7 +124,7 @@ Canonical docs:
   `--fast`) even for plan/check actions; this routing guarantee is not evidence
   of a real fused GPU megakernel or resident support.
   Never route diagnostic transition samplers as production adapters.
-- Native IR structural lowering is not runtime proof. All 66 shipped text
+- Native IR structural lowering is not runtime proof. All 67 shipped text
   presets currently lower, but only the seven reviewed dense preset topologies
   (`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and softcap) paired with a
   compatible dense-v5 `.bin` additionally prove the in-process resident ABI,
@@ -203,8 +218,10 @@ Canonical docs:
   uses ordinary text sampling but stays stored/buffered/foreground with
   truncation disabled. Keep general,
   parallel, hosted, streamed/background, Conversation/compaction, and Chat
-  Completions tool modes, nested/array schemas, multimedia, batching,
-  unimplemented `/v1` resources, and subprocess generation fail-closed.
+  Completions tool modes, nested/array schemas, Responses multimedia,
+  audio/files/server-video, batching, unimplemented `/v1` resources, and
+  subprocess generation fail-closed. The only Chat media exception is bounded
+  base64 images for a jointly proven CPU Muse Glimmer vision artifact.
   `--prefix-cache-capacity N` is a separate default-zero, entry-count limit for
   a deterministic process-local foreground Responses LRU. Require
   `--state-db` and jointly proven lossless-full COW or reviewed dense CPU
