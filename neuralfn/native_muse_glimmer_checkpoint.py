@@ -338,8 +338,9 @@ def build_muse_glimmer_execution_manifest_payload(
 ) -> dict[str, Any]:
     """Build the exact text-decoder Native Execution Manifest.
 
-    The full BF16 artifact contains embedded vision weights, but this manifest
-    intentionally grants only the independently proved text capability.
+    The full BF16 artifact contains embedded vision weights. The manifest keeps
+    text, image, and video capability bits independent and grants the media
+    bits only for that authenticated full component.
     """
 
     if converted.component not in {"text", "full"} or converted.format != MAIN_FORMAT:
@@ -596,6 +597,7 @@ def inspect_native_muse_glimmer_lora_checkpoint(
     training_base_precision = str(
         manifest.get("training_base_precision") or "bf16"
     )
+    base_weight_precision = str(manifest.get("base_weight_precision") or "")
     allowed_targets = {
         "q_proj", "k_proj", "v_proj", "o_proj", "attn_gate_proj",
         "gate_proj", "up_proj", "down_proj",
@@ -605,13 +607,19 @@ def inspect_native_muse_glimmer_lora_checkpoint(
     if (
         manifest.get("format") != NATIVE_LORA_FORMAT
         or manifest.get("architecture") != "muse_glimmer"
-        or manifest.get("base_weight_precision") != "bf16"
+        or base_weight_precision
+        not in {"bf16", "k-quant-17gb", "k-quant-dynamic"}
         or training_adapter not in {"lora", "qlora"}
-        or training_base_precision
-        != (
-            "nf4-group64-fp32-scale"
-            if training_adapter == "qlora"
-            else "bf16"
+        or (
+            training_adapter == "qlora"
+            and (
+                base_weight_precision != "bf16"
+                or training_base_precision != "nf4-group64-fp32-scale"
+            )
+        )
+        or (
+            training_adapter == "lora"
+            and training_base_precision != base_weight_precision
         )
         or manifest.get("layers") != 52
         or manifest.get("hidden_size") != 6_656
@@ -737,7 +745,7 @@ def inspect_native_muse_glimmer_lora_checkpoint(
         "graph_fingerprint": manifest["graph_fingerprint"],
         "target_compatibility": {
             "allowed_target_checkpoint_sha256": [manifest["base_sha256"]],
-            "base_weight_precision": "bf16",
+            "base_weight_precision": base_weight_precision,
             "tokenizer_sha256": manifest["tokenizer_sha256"],
             "chat_template_sha256": manifest["chat_template_sha256"],
         },
@@ -756,6 +764,8 @@ def inspect_native_muse_glimmer_lora_checkpoint(
             "adapter_only": True,
             "base_frozen": True,
             "qlora": training_adapter == "qlora",
+            "kquant_lora": base_weight_precision
+            in {"k-quant-17gb", "k-quant-dynamic"},
         },
     }
 
@@ -805,12 +815,13 @@ def attach_native_muse_glimmer_lora(
         != descriptor["target_compatibility"]["tokenizer_sha256"]
         or chat_template.get("sha256")
         != descriptor["target_compatibility"]["chat_template_sha256"]
-        or base_digest
-        not in {
-            row.get("target_sha256")
+        or not any(
+            isinstance(row, Mapping)
+            and row.get("target_sha256") == base_digest
+            and row.get("weight_precision")
+            == descriptor["target_compatibility"]["base_weight_precision"]
             for row in variants.values()
-            if isinstance(row, Mapping)
-        }
+        )
     ):
         raise MuseGlimmerCheckpointError(
             "Target bundle is incompatible with the native LoRA lineage"
@@ -1880,11 +1891,11 @@ def _publish_converted_checkpoint(
             },
             "capabilities": {
                 "checkpoint_import": True,
-                "resident_cpu": component == "assistant",
-                "resident_cuda": False,
+                "resident_cpu": component in {"text", "full", "assistant"},
+                "resident_cuda": component in {"text", "full", "assistant"},
                 "speculative_decoding": component == "assistant",
                 "vision": component == "full",
-                "video": False,
+                "video": component == "full",
             },
         }
         if component == "assistant":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -246,6 +247,91 @@ def test_canonical_profile_contracts_are_pinned() -> None:
     assert len(gguf.expected_muse_glimmer_mmproj_gguf_tensor_names()) == 809
 
 
+def test_gguf_migration_cli_routes_dflash_and_mmproj_companions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cli import nfn
+
+    captured: dict[str, object] = {}
+
+    def fake_publish(
+        gguf_paths,
+        *,
+        tokenizer_source,
+        output_root,
+        primary_variant=None,
+        dflash_path=None,
+        mmproj_path=None,
+    ) -> Path:
+        captured.update(
+            {
+                "gguf_paths": list(gguf_paths),
+                "tokenizer_source": tokenizer_source,
+                "output_root": output_root,
+                "primary_variant": primary_variant,
+                "dflash_path": dflash_path,
+                "mmproj_path": mmproj_path,
+            }
+        )
+        manifest_path = tmp_path / "native-execution-manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "primary_checkpoint_variant": "k-quant-dynamic",
+                    "checkpoint_variants": {"k-quant-dynamic": {}},
+                    "companion_checkpoints": {"dflash": {}, "mmproj": {}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        gguf,
+        "publish_muse_glimmer_kquant_execution_bundle",
+        fake_publish,
+    )
+    target = tmp_path / "target.gguf"
+    dflash = tmp_path / "dflash.gguf"
+    mmproj = tmp_path / "mmproj.gguf"
+    tokenizer = tmp_path / "tokenizer"
+    output = tmp_path / "bundle"
+    assert (
+        nfn.main(
+            [
+                "migrate",
+                "muse-glimmer-gguf-to-native",
+                "--gguf",
+                str(target),
+                "--dflash",
+                str(dflash),
+                "--mmproj",
+                str(mmproj),
+                "--tokenizer-source",
+                str(tokenizer),
+                "--output-dir",
+                str(output),
+                "--primary",
+                "k-quant-dynamic",
+            ]
+        )
+        == 0
+    )
+    assert captured == {
+        "gguf_paths": [str(target)],
+        "tokenizer_source": str(tokenizer),
+        "output_root": str(output),
+        "primary_variant": "k-quant-dynamic",
+        "dflash_path": str(dflash),
+        "mmproj_path": str(mmproj),
+    }
+    result = json.loads(capsys.readouterr().out)
+    assert result["dflash"] is True
+    assert result["mmproj"] is True
+
+
 def test_mmproj_parser_and_descriptor_cover_mixed_vision_types(
     tmp_path: Path,
 ) -> None:
@@ -288,6 +374,7 @@ def test_mmproj_parser_and_descriptor_cover_mixed_vision_types(
     )
     descriptor = payload["companion_checkpoints"]["mmproj"]
     assert descriptor["encoding_inventory"] == gguf.MMPROJ_KQUANT_PROFILE["inventory"]
+    assert descriptor["capabilities"]["resident_cuda"] is True
     assert descriptor["target_compatibility"]["packed_patch_width"] == 588
     assert descriptor["target_compatibility"]["temporal_patch_reduction"] == "sum"
     assert descriptor["target_compatibility"]["media_token_ids"] == {
@@ -528,9 +615,12 @@ def test_authenticated_kquant_descriptor_and_manifest_are_cpu_runnable(tmp_path:
     assert descriptor["required_kernel_profile"] == (
         "muse-glimmer-gguf-kquant-mapped-v1"
     )
+    assert descriptor["memory_profile"]["minimum_total_vram_bytes"] == 24_000_000_000
     assert descriptor["capabilities"] == {
         "resident_cpu": True,
         "whole_model_cuda": True,
+        "kquant_lora_training": True,
+        "kquant_lora_objectives": ["sft", "dpo"],
         "post_training": False,
     }
     payload = gguf.build_muse_glimmer_kquant_execution_manifest_payload(
@@ -546,6 +636,28 @@ def test_authenticated_kquant_descriptor_and_manifest_are_cpu_runnable(tmp_path:
     }
     assert parsed.capabilities["resident_inference"] is True
     assert parsed.capabilities["whole_model_cuda"] is True
+
+
+def test_kquant_hardware_tiers_use_vendor_decimal_gb(tmp_path: Path) -> None:
+    for profile, minimum_total in (
+        ("k-quant-17gb", 24_000_000_000),
+        ("k-quant-dynamic", 32_000_000_000),
+    ):
+        expected = gguf.KQUANT_PROFILES[profile]
+        model = gguf.GGUFModel(
+            path=tmp_path / expected["filename"],
+            version=3,
+            metadata={},
+            tensors=(),
+            alignment=32,
+            data_offset=13_000_000,
+            file_nbytes=expected["nbytes"],
+            file_sha256=expected["sha256"],
+            tensor_table_sha256=expected["tensor_table_sha256"],
+            tokenizer_metadata_sha256=gguf.MUSE_GLIMMER_GGUF_TOKENIZER_METADATA_SHA256,
+        )
+        descriptor = gguf.kquant_checkpoint_descriptor(model, profile=profile)
+        assert descriptor["memory_profile"]["minimum_total_vram_bytes"] == minimum_total
 
 
 def test_packed_dflash_descriptor_binds_both_kquant_targets(tmp_path: Path, monkeypatch) -> None:

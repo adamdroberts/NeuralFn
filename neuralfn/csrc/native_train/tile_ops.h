@@ -45,6 +45,10 @@ enum : std::uint32_t {
 enum : std::uint32_t {
     NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 = 1,
     NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL = 1,
+    NFN_NATIVE_TILE_DPO_LOSS_SIGMOID = 0,
+    NFN_NATIVE_TILE_DPO_LOSS_HINGE = 1,
+    NFN_NATIVE_TILE_DPO_LOSS_IPO = 2,
+    NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES = 1,
 };
 
 struct NfnNativeTilePackedWeightDescriptorV1;
@@ -124,6 +128,159 @@ struct NfnNativeTileGlimmerMaskedCeDescriptorV1 {
     std::uint32_t reserved1;
     float grad_scale;
     std::uint32_t reserved2;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileSequenceLogpDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* transformed_logits;
+    const std::int32_t* targets;
+    const float* loss_mask;
+    float* sequence_logp;
+
+    // Backward-only fields. `grad_sequence_logp` has one value per example;
+    // `grad_transformed_logits` has batch * sequence * vocab values.
+    const float* grad_sequence_logp;
+    float* grad_transformed_logits;
+
+    std::int64_t batch_size;
+    std::int64_t sequence_length;
+    std::int64_t vocab_size;
+    std::int32_t ignore_index;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileDpoPairwiseDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t loss_type;
+    std::uint32_t flags;
+
+    const float* policy_logp_chosen;
+    const float* policy_logp_rejected;
+    const float* reference_logp_chosen;
+    const float* reference_logp_rejected;
+    float* row_loss;
+    float* chosen_reward;
+    float* rejected_reward;
+
+    // Backward-only outputs.  The reference is immutable, so this ABI only
+    // emits policy gradients.
+    float* grad_policy_logp_chosen;
+    float* grad_policy_logp_rejected;
+
+    std::int64_t examples;
+    float beta;
+    float label_smoothing;
+    float grad_scale;
+    std::uint32_t reserved0;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileMaskedRewardHeadDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* hidden;
+    const float* sequence_mask;
+    const NfnNativeTilePackedWeightDescriptorV1* weight;
+    float* reward;
+    std::int32_t* selected_positions;
+
+    // Backward-only fields.
+    const float* grad_reward;
+    float* grad_hidden;
+    float* grad_weight;
+
+    std::int64_t batch_size;
+    std::int64_t sequence_length;
+    std::int64_t hidden_size;
+    void* cuda_stream;
+};
+
+struct NfnNativeTilePreferenceBceDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* reward_chosen;
+    const float* reward_rejected;
+    float* row_loss;
+
+    // Backward-only outputs.
+    float* grad_reward_chosen;
+    float* grad_reward_rejected;
+
+    std::int64_t examples;
+    float grad_scale;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileTokenLogpEntropyDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* transformed_logits;
+    const std::int32_t* targets;
+    const float* loss_mask;
+    float* token_logp;
+    float* token_entropy;
+
+    // Backward-only inputs/outputs.
+    const float* grad_token_logp;
+    const float* grad_token_entropy;
+    float* grad_transformed_logits;
+
+    std::int64_t rows;
+    std::int64_t vocab_size;
+    std::int32_t ignore_index;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileMaskedPpoLossDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* logp_new;
+    const float* logp_old;
+    const float* advantages;
+    const float* value_new;
+    const float* value_old;
+    const float* returns;
+    const float* loss_mask;
+    const float* entropy;
+
+    // Four scalar outputs.
+    float* policy_loss;
+    float* value_loss;
+    float* entropy_bonus;
+    float* total_loss;
+
+    // Backward-only outputs. Inputs other than logp_new/value_new/entropy are
+    // immutable rollout data and intentionally receive no gradient.
+    float* grad_logp_new;
+    float* grad_value_new;
+    float* grad_entropy;
+
+    std::int64_t rows;
+    float clip_range;
+    float value_coefficient;
+    float entropy_coefficient;
+    float epsilon;
     void* cuda_stream;
 };
 
@@ -234,6 +391,61 @@ struct NfnNativeTileDFlashBlockAttentionDescriptorV1 {
     void* cuda_stream;
 };
 
+#define NFN_NATIVE_TILE_GLIMMER_VISION_V1 1u
+
+// Whole-model Muse Glimmer vision operations. All tensor and layout pointers
+// are device pointers. The host may construct index/mask metadata because it
+// is independent of learned weights, but patch projection, learned-position
+// interpolation, normalization, RoPE, attention and pixel shuffle execute on
+// the selected CUDA stream.
+struct NfnNativeTileGlimmerVisionPrepareDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    const float* projected;
+    const float* position_table;
+    const std::int32_t* corner_indices;
+    const float* corner_weights;
+    const std::int32_t* permutation;
+    float* output;
+    std::int64_t rows;
+    std::int64_t width;
+    std::int64_t position_rows;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileGlimmerVisionAttentionDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t interleaved_rope;
+    std::uint32_t reserved0;
+    const float* query;
+    const float* key;
+    const float* value;
+    const std::int32_t* position_width;
+    const std::int32_t* position_height;
+    const std::int32_t* row_begin;
+    const std::int32_t* row_end;
+    float* output;
+    std::int64_t rows;
+    std::int64_t heads;
+    std::int64_t head_dim;
+    float rope_theta;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+struct NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    const float* reordered_hidden;
+    const std::int32_t* source_rows;
+    float* output;
+    std::int64_t merged_rows;
+    std::int64_t hidden_size;
+    std::int64_t merge_area;
+    void* cuda_stream;
+};
+
 // Additive TurboQuant attention ABI.  struct_size is first so callers may pass
 // a larger future descriptor while v1 validates and consumes this prefix.
 //
@@ -297,6 +509,7 @@ int nfn_native_tile_strict_math_abi_version();
 int nfn_native_tile_turboquant_attention_abi_version();
 int nfn_native_tile_packed_weight_abi_version();
 int nfn_native_tile_glimmer_inference_abi_version();
+int nfn_native_tile_glimmer_vision_abi_version();
 int nfn_native_tile_glimmer_training_abi_version();
 int nfn_native_tile_packed_weight_validate_v1(
     const NfnNativeTilePackedWeightDescriptorV1* descriptor);
@@ -349,6 +562,21 @@ int nfn_native_tile_glimmer_cache_commit_bf16_v1(
     const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor);
 int nfn_native_tile_dflash_block_attention_float32_v1(
     const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1* descriptor);
 int nfn_native_tile_glimmer_sigmoid_gate_float32_v1(
     const float* values,
     const float* gate,
@@ -397,6 +625,30 @@ int nfn_native_tile_glimmer_logit_transform_backward_float32_v1(
     void* cuda_stream);
 int nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1(
     const NfnNativeTileGlimmerMaskedCeDescriptorV1* descriptor);
+int nfn_native_tile_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor);
+int nfn_native_tile_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor);
+int nfn_native_tile_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor);
+int nfn_native_tile_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor);
+int nfn_native_tile_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor);
+int nfn_native_tile_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor);
+int nfn_native_tile_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor);
+int nfn_native_tile_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor);
+int nfn_native_tile_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor);
+int nfn_native_tile_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor);
+int nfn_native_tile_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor);
+int nfn_native_tile_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor);
 int nfn_native_tile_token_embedding_backward_weight_i32_float32(
     const std::int32_t* token_ids,
     const float* grad_output,

@@ -9,6 +9,12 @@ int cudaGetDeviceCount(int* count) {
     return 0;
 }
 int cudaSetDevice(int device) { return device == 0 ? 0 : 1; }
+int cudaMemGetInfo(std::size_t* free_bytes, std::size_t* total_bytes) {
+    if (free_bytes == nullptr || total_bytes == nullptr) return 1;
+    *total_bytes = static_cast<std::size_t>(16ULL * 1024ULL * 1024ULL * 1024ULL);
+    *free_bytes = static_cast<std::size_t>(15ULL * 1024ULL * 1024ULL * 1024ULL);
+    return 0;
+}
 int cudaMalloc(void** pointer, std::size_t bytes) {
     if (pointer == nullptr) return 1;
     *pointer = std::malloc(bytes == 0 ? 1 : bytes);

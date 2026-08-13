@@ -2,6 +2,147 @@
 
 ## Unreleased
 
+- Completed a source-built 24-GB-tier Muse Glimmer qualification by explicitly
+  selecting the canonical K-Quant-17GB profile on a larger physical RTX 5090.
+  The harness recorded the real 33,708,376,064-byte device total instead of
+  rejecting or relabeling it, loaded the target plus official DFlash and
+  mmproj companions in 24.52 seconds, and measured a 20,359,217,152-byte
+  (18.961-GiB) peak CUDA delta with 9,398,059,008 bytes still free. The full
+  52-layer model completed one 128-token and one 8,192-token capacity trial,
+  CUDA vision, and all four source-bound compute-sanitizer tools with
+  `cpu_model_compute_rows=0`. The 8K trial measured 8.96 prefill tok/s,
+  914.161-second TTFT, and 1.490 tok/s for 16-token DFlash decode. Source proof
+  `26d412085b7941a2a7d55c00b49b6fdc885c0ab2d5709083c101a367e0105469`
+  and result SHA-256
+  `cc70412c7299a3cc84d2247a9d81466104e47b5d411c571b236ce5b4f8c8c30a`
+  bind the evidence. This is a single-repetition capacity qualification, not a
+  multi-sample performance distribution; only the 80-GB BF16 hardware tier is
+  still unmeasured.
+- Changed Muse Glimmer GPU qualification tiers from exact VRAM bands to
+  minimum decimal-byte capacities. A 32-GB or 80-GB physical GPU can now
+  qualify the 24-GB K-Quant-17GB profile instead of being rejected for having
+  extra memory. When the requested profile is below the highest tier that the
+  device can run, the harness uses the public explicit precision pin rather
+  than weakening quality-first `auto`; it records the real physical total,
+  requested/effective selection, sampled peak delta, and minimum free VRAM.
+  Matrix verification accepts this evidence and still rejects devices below a
+  profile's 24/32/80-billion-byte minimum.
+- Added a bounded independent full-size Muse Glimmer target oracle check using
+  llama.cpp build 10349 at pinned commit
+  `62bf73d25c53b8161f8a22894d4f90c4aebbd7d0`. With the canonical
+  K-Quant-Dynamic GGUF, raw prefix `[200000, 19873]` (BOS + `Hello`), greedy
+  decoding, and 16 generated tokens, llama.cpp and the NeuralFn whole-model
+  CUDA resident produced the identical ID sequence
+  `[24, 372, 1045, 10016, 328, 2885, 262, 5091, 8811, 511, 917, 4921, 768, 328, 2885, 262]`.
+  NeuralFn reported zero CPU model-compute rows. This is deliberately recorded
+  as raw-prompt target token parity; full logit, ATEM chat, sampled, and DFlash
+  oracle coverage remains gated.
+- Completed the real-device 32-GB-class Muse Glimmer qualification on an RTX
+  5090 (`sm_120`, CUDA runtime/driver 13.3). The default VRAM `auto` policy
+  selected the canonical K-Quant-Dynamic target and loaded the official DFlash
+  and mmproj companions; the full 52-layer, 6,656-wide target reported zero CPU
+  model-compute rows across three repetitions at 128, 2,048, and 8,192 prompt
+  tokens. A source- and strict-library-bound kernel probe passed compute-sanitizer
+  `memcheck`, `synccheck`, `initcheck`, and `racecheck` with zero errors/hazards
+  before the uninstrumented full-artifact benchmark. Peak sampled device-memory
+  delta was 23,171,432,448 bytes, leaving at least 6,168,707,072 bytes free.
+  P50 prefill measured 19.67, 12.77, and 8.26 tok/s respectively; p50 16-token
+  DFlash decode measured 2.134, 1.618, and 1.410 tok/s. The repeated-token
+  capacity prompt accepted 9/375 proposals at 128 and 0/405 at 2K/8K, so those
+  acceptance figures are recorded as fixture behavior rather than a quality
+  claim. The packed mmproj path produced one 6,656-wide row in 15.82 ms p50.
+  A subsequent explicit K-Quant-17GB run completed the 24-GB profile tier on
+  the same larger GPU; the 80-GB BF16 run remains a fail-closed release gate.
+- Replaced the Glimmer packed-weight inference kernel's serial per-output dot
+  product with a 256-thread cooperative GEMV and tiled target/DFlash GQA key
+  traversal eight positions per block iteration. The attention kernels retain
+  online-softmax stability, local-ring/global-cache addressing, bidirectional
+  DFlash block semantics, and the existing ABI. Against the earlier serial
+  128-token run, the cooperative packed GEMV improved full-size Dynamic prefill
+  from 0.1805 to 17.40 tok/s and first decode from 5.627 s to 63.5 ms while
+  preserving the exact greedy tokens and DFlash counters; the final tiled-GQA
+  build reached 19.67 tok/s p50 and 54.9 ms first decode. Real-device numeric
+  parity and all four sanitizer modes cover the final kernels.
+- Corrected Muse Glimmer K-Quant hardware-tier admission to interpret Meta's
+  24 GB and 32 GB profile labels as vendor decimal GB. The previous GiB
+  conversion rejected a physical 32 GB RTX 5090 reporting 33.71 billion bytes
+  even when the authenticated target, companions, workspace, cache, and safety
+  reserve fit current free VRAM. Runtime fit remains byte-exact and fail-closed;
+  this only fixes the minimum marketed-device-class gate. Also added the
+  missing `--mmproj FILE` companion option to the lightweight GGUF migration
+  CLI, with typed `--dflash`/`--mmproj` routing and result reporting. Corrected
+  the resident binding's mmproj load confirmation to report its synchronously
+  uploaded CUDA vision executor instead of a hard-coded false value; CUDA
+  loads still fail closed unless that device executor is actually present.
+  The full-size qualifier now validates the exact pinned decoder count
+  (27,854,780,928 parameters) instead of a rounded 30B-name-derived minimum.
+  Full-size timing trials now reuse one session for TTFT and subsequent decode
+  measurement instead of redundantly prefilling a second session. They report
+  prefill, first-decode, TTFT, and steady-decode distributions separately and
+  atomically checkpoint load/warmup/context/vision progress under the selected
+  build directory so multi-hour context runs remain observable.
+- Added `tools/qualify_muse_glimmer_gpu.py`, a fail-closed full-size hardware
+  qualification runner for the canonical 24-GB K-Quant-17GB, 32-GB
+  K-Quant-Dynamic, and 80-GB BF16 profiles. Each run rebuilds the current
+  source tree with real NVCC for the detected compute capability. It uses the
+  default CUDA VRAM `auto` policy for the highest tier eligible on the device
+  and the public explicit precision pin for a lower tier on a larger device,
+  then validates strict/inference/vision/training ABIs, executes a source-bound
+  raw-kernel probe under all four compute-sanitizer tools, and benchmarks
+  target+DFlash+vision without instrumentation. It requires zero CPU
+  model-compute rows and records
+  source/binary/artifact hashes, p50/p95 TTFT, decode throughput, DFlash
+  acceptance, resident/workspace counters, and sampled VRAM. The matrix
+  verifier requires all three hardware classes from the same source proof and
+  refuses fake, tiny, unsanitized, noncanonical, or silently downgraded runs.
+  The Tile build helper now makes its strict sidecar inherit the selected
+  `sm_80+` architecture, allowing CUDA Tile C++ Glimmer kernels to build for
+  pre-SM120 24/32/80-GB cards instead of hard-coding `sm_120`. Corrected BF16
+  and mmproj conversion metadata to report
+  their implemented CPU/CUDA and full-BF16 video capabilities.
+- Added a separate compiler-only `qualify_muse_glimmer_gpu.py build` contract.
+  It accepts an explicit concrete `sm_80+` architecture, builds and hashes the
+  normal/strict Tile libraries, resident binding, trainer, and source tree,
+  validates the training, strict-math, packed-weight, inference, and vision
+  ABI versions, and always reports `release_qualified=false`. Real CUDA
+  13.3.33 NVCC passes completed for `sm_80`, `sm_89`, `sm_90`, and `sm_120`
+  from one source-tree proof, covering representative Ampere, Ada, Hopper, and
+  Blackwell targets. The first pass
+  exposed undefined `CUDART_INF_F`/`CUDART_NAN_F` uses in the Glimmer kernels;
+  the CUDA translation unit now includes `math_constants.h`. The proof records
+  `NVCC_PREPEND_FLAGS`, including the local
+  `-allow-unsupported-compiler` workaround needed for GCC 16, so this compiler
+  result cannot be mistaken for a supported-host or on-device qualification.
+  Later source-built RTX 5090 runs supplied real-device sanitizer plus
+  full-size 24-GB-tier K-Quant-17GB and 32-GB Dynamic evidence; the independent
+  80-GB BF16 result remains pending.
+- Completed the remaining Muse Glimmer post-training, distributed, and vision
+  software gates. The raw Tile ABI now includes masked sequence log-probability,
+  DPO, masked reward-head/Bradley-Terry, token log-probability/entropy, clipped
+  PPO, learned-position vision preparation, wide vision LayerNorm, segmented
+  noncausal 2-D-RoPE attention, and pixel-shuffle operations. The native
+  trainer now runs single-device DPO, reward modeling, and online PPO with
+  strict frozen reference/reward lineage; official K-Quant bases support
+  immutable LoRA SFT/DPO without whole-model dequantization. Full-BF16 AR/SFT
+  can run as contiguous NCCL pipeline stages with per-rank memory admission,
+  authenticated rank-local model/optimizer/state shards, atomic completion,
+  and strict distributed resume. `MuseGlimmerDFlashDistillationSpec`,
+  `build_muse_glimmer_dflash_distillation_graph`, and
+  `DFlashDistillationTrainer` add target-frozen five-tap assistant training,
+  D-PACE/decay weighting, self-logit distillation, exact RNG/data-cursor
+  resume, greedy acceptance audit, and target-bound native BF16 assistant
+  export. Resident CUDA vision now loads embedded BF16 or packed mmproj weights
+  atomically and executes all request-time model math on the selected CUDA
+  stream; missing vision ABI symbols fail before sessions rather than falling
+  back to CPU.
+- Added `FineTuneSpec.base_weight_precision`,
+  `FineTuneSpec.ref_checkpoint_sha256`, and
+  `FineTuneSpec.reward_checkpoint_sha256`; all are additive fields. Native
+  K-Quant training must explicitly select `k-quant-17gb` or
+  `k-quant-dynamic`, use LoRA with SFT/DPO, and save adapter-only state. Added
+  `--pipeline-parallel-size`, `--pipeline-cuda-devices`, per-child CUDA rank,
+  NCCL library/bootstrap, timeout/reserve, and distributed-plan controls to
+  the direct Muse Glimmer trainer workflow.
 - Implemented end-to-end native Muse Glimmer text support. Strict streaming
   converters now authenticate the pinned 627-tensor BF16 decoder, embedded
   809-tensor vision component, 58-tensor BF16 assistant, and the canonical
@@ -44,22 +185,27 @@
 - Reworked Torch Glimmer post-training roots to use one exact body. SFT/LoRA/
   QLoRA, DPO with a frozen strict reference, sequence-masked reward modeling,
   and real PPO policy/reference/reward/value/logprob/GAE state now have
-  formula/gradient and checkpoint tests. Native DPO/reward/PPO, K-Quant
-  adapter tuning, and DFlash distillation remain independently unavailable.
-- Added exact CPU vision/media support: full-BF16 embedded vision, packed
+  formula/gradient and checkpoint tests. The dedicated DFlash distillation
+  graph/trainer remains separate from ordinary target post-training.
+- Added exact CPU and CUDA vision/media support: full-BF16 embedded vision, packed
   still-image mmproj execution, bounded LANCZOS image preprocessing, temporal-2
   channel-major patch packing, decoded-video sampling/timestamps/prompt
   expansion, and placeholder fusion. The packed mmproj deliberately reports
-  `video=false`; whole-model CUDA vision deliberately reports
-  `vision_cuda=false` and fails before mutation.
-- Final verification includes 153 native training/resident/vision/graph tests,
-  112 converter/GGUF/VRAM/chat/media/serving tests, 44 Torch post-training and
-  uint32-shard tests, a successful native binding build, a successful dedicated
-  Glimmer trainer build, and the required `python -m pytest
-  tests/test_template_presets.py -x -q` gate with 42 passing tests over all 67
-  presets. The local environment lacked NVCC/a usable GPU, so
-  real-CUDA and full-size 24/32/80-GB model benchmarks remain release gates;
-  fake-CUDA ABI tests do not replace those hardware measurements.
+  `video=false`; full-BF16 video and still-image mmproj vision use the same
+  fail-closed CUDA vision ABI when whole-model CUDA is selected.
+- Verification includes native DPO/reward/PPO save/resume tests, immutable
+  K-Quant LoRA SFT/DPO lineage tests, bit-exact DFlash distillation resume and
+  acceptance tests, two-rank fake-NCCL update/checkpoint parity, a production
+  eight-stage memory plan, CPU/Torch/fake-CUDA vision parity, a successful
+  native binding build, a successful dedicated Glimmer trainer build, and the
+  required `python -m pytest tests/test_template_presets.py -x -q` gate with
+  42 passing tests. A later local pass supplied real NVCC and completed the
+  compiler-only `sm_120` gate. A subsequent pass gained usable RTX 5090 access
+  and completed on-device sanitizer plus full-size 32-GB Dynamic/DFlash/mmproj
+  qualification. A following explicit 17GB-profile run completed the 24-GB
+  tier on the same larger card with measured consumption below 24 billion
+  bytes; the 80-GB BF16 measurement remains a release gate. Fake-CUDA ABI tests
+  and compiler-only output do not replace those hardware measurements.
 
 - Added the `muse_glimmer` GPT preset for the text decoder in
   `meta-models/Muse-Glimmer-30B`. The serialized model contract now supports an

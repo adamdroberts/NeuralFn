@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 
@@ -545,7 +546,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
     "migrate": """\
         usage: nfn migrate graph-to-native --graph GRAPH [--weights WEIGHTS] --output-dir DIR [--dry-run]
                nfn migrate muse-glimmer-to-native --source DIR --output-dir DIR [--component {text,vision,full,assistant}]
-               nfn migrate muse-glimmer-gguf-to-native --gguf FILE [--gguf FILE] --tokenizer-source DIR --output-dir DIR
+               nfn migrate muse-glimmer-gguf-to-native --gguf FILE [--gguf FILE] [--dflash FILE] [--mmproj FILE] --tokenizer-source DIR --output-dir DIR
                nfn migrate muse-glimmer-lora-to-native --artifact DIR --checkpoint DIR
 
         Validate and lower a graph to the versioned Native Execution IR artifact.
@@ -565,7 +566,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn migrate graph-to-native --graph graph.json --output-dir artifacts/native-model --dry-run
           nfn migrate muse-glimmer-to-native --source Muse-Glimmer-30B --output-dir artifacts/glimmer-text
           nfn migrate muse-glimmer-to-native --source Muse-Glimmer-30B-assistant --component assistant --target-checkpoint-sha256 SHA256 --output-dir artifacts/glimmer-dflash
-          nfn migrate muse-glimmer-gguf-to-native --gguf Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf --gguf Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf --tokenizer-source Muse-Glimmer-30B --output-dir artifacts/glimmer-kquant
+          nfn migrate muse-glimmer-gguf-to-native --gguf Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf --gguf Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf --dflash dflash-Muse-Glimmer-30B-Q4_K_M.gguf --mmproj mmproj-Muse-Glimmer-30B-Q4_K_M.gguf --tokenizer-source Muse-Glimmer-30B --output-dir artifacts/glimmer-kquant
           nfn migrate muse-glimmer-lora-to-native --artifact artifacts/glimmer-bf16 --checkpoint runs/checkpoint-step-100
         """,
 }
@@ -827,6 +828,11 @@ def _lightweight_muse_glimmer_gguf_migrate_main(
         metavar="FILE",
         help="Optional canonical packed DFlash companion GGUF.",
     )
+    parser.add_argument(
+        "--mmproj",
+        metavar="FILE",
+        help="Optional canonical packed mmproj vision companion GGUF.",
+    )
     parser.add_argument("--tokenizer-source", required=True, metavar="DIR")
     parser.add_argument("--output-dir", required=True, metavar="DIR")
     parser.add_argument(
@@ -849,6 +855,7 @@ def _lightweight_muse_glimmer_gguf_migrate_main(
             output_root=args.output_dir,
             primary_variant=args.primary,
             dflash_path=args.dflash,
+            mmproj_path=args.mmproj,
         )
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (FileExistsError, FileNotFoundError, GGUFError, OSError, ValueError) as exc:
@@ -861,6 +868,7 @@ def _lightweight_muse_glimmer_gguf_migrate_main(
                 "primary_checkpoint_variant": payload["primary_checkpoint_variant"],
                 "checkpoint_variants": sorted(payload["checkpoint_variants"]),
                 "dflash": "dflash" in payload.get("companion_checkpoints", {}),
+                "mmproj": "mmproj" in payload.get("companion_checkpoints", {}),
                 "resident_cpu": True,
                 "whole_model_cuda": True,
             },
@@ -3213,6 +3221,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--dataset-val-file",
         "--tokenizer",
         "--native-cuda-runner",
+        "--pipeline-cuda-devices",
         "--train-log-file",
         "--eval-log-file",
     }
@@ -3807,6 +3816,95 @@ def _run_native_train_with_progress(
             eval_log.close()
 
 
+def _run_native_pipeline_train_with_progress(
+    commands: list[list[str]],
+    env: dict[str, str],
+    *,
+    train_log_file: str | None,
+    eval_log_file: str | None,
+    progress_tui: bool,
+) -> int:
+    """Launch and multiplex one strict native Glimmer process per stage."""
+
+    train_log = _open_optional_log(train_log_file)
+    eval_log = _open_optional_log(eval_log_file)
+    processes: list[subprocess.Popen[str]] = []
+    selector = selectors.DefaultSelector()
+    try:
+        for rank, command in enumerate(commands):
+            _write_log(
+                train_log,
+                f"[nfn-pipeline] rank={rank} command={shlex.join(command)}\n",
+            )
+            process = subprocess.Popen(
+                command,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            processes.append(process)
+            assert process.stdout is not None
+            assert process.stderr is not None
+            selector.register(process.stdout, selectors.EVENT_READ, (rank, "stdout"))
+            selector.register(process.stderr, selectors.EVENT_READ, (rank, "stderr"))
+        if progress_tui:
+            _print_train_tui_panel(
+                "NeuralFn Glimmer Pipeline Training",
+                [
+                    ("world size", str(len(commands))),
+                    ("transport", "NCCL point-to-point + all-reduce"),
+                    ("train log", train_log_file or "off"),
+                    ("eval log", eval_log_file or "off"),
+                ],
+            )
+        while selector.get_map():
+            for key, _events in selector.select(timeout=0.2):
+                line = key.fileobj.readline()
+                rank, stream_name = key.data
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    continue
+                tagged = f"[rank {rank}] {line}"
+                if stream_name == "stdout":
+                    _write_log(eval_log, tagged)
+                    if rank == 0:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    elif progress_tui:
+                        sys.stderr.write(tagged)
+                        sys.stderr.flush()
+                else:
+                    _write_log(train_log, tagged)
+                    sys.stderr.write(tagged)
+                    sys.stderr.flush()
+            failed = [
+                process.returncode
+                for process in processes
+                if process.poll() not in {None, 0}
+            ]
+            if failed:
+                for process in processes:
+                    if process.poll() is None:
+                        process.terminate()
+        return_codes = [process.wait() for process in processes]
+        return next((code for code in return_codes if code != 0), 0)
+    finally:
+        selector.close()
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+        if train_log is not None:
+            train_log.close()
+        if eval_log is not None:
+            eval_log.close()
+
+
 def _replace_value_argument(
     argv: list[str],
     aliases: tuple[str, ...],
@@ -3831,6 +3929,68 @@ def _replace_value_argument(
         idx += 1
     out.extend([canonical_flag, value])
     return out
+
+
+def _native_glimmer_pipeline_commands(
+    command: list[str], tokens: list[str]
+) -> tuple[list[list[str]], Path | None]:
+    raw_world = _arg_value(command, "--pipeline-parallel-size")
+    if raw_world is None:
+        return [command], None
+    try:
+        world = int(raw_world)
+    except ValueError as exc:
+        raise ValueError("--pipeline-parallel-size must be an integer") from exc
+    if world <= 1:
+        return [command], None
+    if _explicit_arg(command, "--pipeline-parallel-rank"):
+        return [command], None
+    if _explicit_arg(command, "--print-distributed-plan"):
+        return [command], None
+    if _explicit_arg(command, "--cuda-device"):
+        raise ValueError(
+            "multi-rank launch assigns --cuda-device per child; use "
+            "--pipeline-cuda-devices instead"
+        )
+    raw_devices = _arg_value(tokens, "--pipeline-cuda-devices")
+    if raw_devices is None:
+        devices = list(range(world))
+    else:
+        try:
+            devices = [int(value.strip()) for value in raw_devices.split(",")]
+        except ValueError as exc:
+            raise ValueError(
+                "--pipeline-cuda-devices must be a comma-separated integer list"
+            ) from exc
+        if len(devices) != world or any(device < 0 for device in devices) or len(set(devices)) != world:
+            raise ValueError(
+                "--pipeline-cuda-devices must contain one distinct non-negative "
+                "device index per pipeline rank"
+            )
+    temporary_root: Path | None = None
+    bootstrap = _arg_value(command, "--distributed-id-file")
+    if not bootstrap:
+        temporary_root = Path(tempfile.mkdtemp(prefix="nfn-glimmer-pipeline-"))
+        bootstrap = str(temporary_root / "nccl-unique-id.bin")
+    commands: list[list[str]] = []
+    for rank, device in enumerate(devices):
+        child = _replace_value_argument(
+            command,
+            ("--pipeline-parallel-rank",),
+            "--pipeline-parallel-rank",
+            str(rank),
+        )
+        child = _replace_value_argument(
+            child, ("--cuda-device",), "--cuda-device", str(device)
+        )
+        child = _replace_value_argument(
+            child,
+            ("--distributed-id-file",),
+            "--distributed-id-file",
+            bootstrap,
+        )
+        commands.append(child)
+    return commands, temporary_root
 
 
 def _canonical_native_graph_training_tokens(tokens: list[str], plan) -> list[str]:
@@ -4130,7 +4290,21 @@ def _direct_native_train_cli_main(
         and _resolve_direct_native_train_family_cli(model) is not None
     )
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))
+    raw_pipeline_world = _arg_value(command, "--pipeline-parallel-size")
+    try:
+        pipeline_world = int(raw_pipeline_world) if raw_pipeline_world is not None else 1
+    except ValueError:
+        pipeline_world = 1
+    automatic_glimmer_pipeline = bool(
+        model in {"muse-glimmer", "muse_glimmer"}
+        and pipeline_world > 1
+        and not _explicit_arg(command, "--pipeline-parallel-rank")
+        and not _explicit_arg(command, "--print-distributed-plan")
+    )
+    if not automatic_glimmer_pipeline:
+        _set_env_default_if_empty(
+            env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0")
+        )
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     train_log_file, eval_log_file = _native_train_log_paths(tokens)
@@ -4219,6 +4393,25 @@ def _direct_native_train_cli_main(
         if _native_command_is_dense_gpt_cli(command):
             return _run_dense_gpt_compiled_cli_capture(command, env)
         return int(subprocess.run(command, env=env, check=False).returncode)
+    if automatic_glimmer_pipeline:
+        try:
+            pipeline_commands, temporary_root = _native_glimmer_pipeline_commands(
+                command, tokens
+            )
+        except ValueError as exc:
+            print(f"Invalid native Glimmer pipeline launch: {exc}", file=sys.stderr)
+            return 2
+        try:
+            return _run_native_pipeline_train_with_progress(
+                pipeline_commands,
+                env,
+                train_log_file=train_log_file,
+                eval_log_file=eval_log_file,
+                progress_tui=progress_tui,
+            )
+        finally:
+            if temporary_root is not None:
+                shutil.rmtree(temporary_root, ignore_errors=True)
     return _run_native_train_with_progress(
         command,
         env,

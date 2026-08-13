@@ -59,10 +59,12 @@ Muse Glimmer is a separate strict resident family. Authenticated BF16 and
 official K-Quant-Dynamic/K-Quant-17GB bundles can run text on CPU or the
 whole-model native-CUDA text backend, and can attach an authenticated BF16 or
 packed DFlash companion. Weight precision, speculative policy, and companions
-are resolved once at startup. Full-BF16 CPU artifacts may expose embedded
-image/video vision; packed CPU artifacts may attach the official still-image
-`mmproj`. `vision_cuda=false`, so a CUDA load that requests vision fails before
-model/session creation.
+are resolved once at startup. Full-BF16 artifacts may expose embedded
+image/video vision on CPU or whole-model CUDA; packed artifacts may attach the
+official still-image `mmproj` on either backend. CUDA vision requires the
+joint artifact/binding vision ABI and fails before model/session creation if a
+symbol or compatibility proof is missing—there is no request-time CPU
+fallback.
 
 MoA startup additionally requires the migrated manifest's source-bound
 `checkpoint.moa` contract, originally produced from
@@ -328,7 +330,9 @@ nested/array schemas, constrained streaming/background execution, Chat
 Completions tools, reasoning modes, Responses multimedia, Responses WebSocket
 mode, Realtime, and legacy Completions are not implemented. Chat has only the
 independently gated Muse Glimmer base64-image exception; external URLs, audio,
-files, server-side video decoding, and CUDA vision remain unavailable.
+files, and server-side video decoding remain unavailable. The bounded Glimmer
+base64-image exception can use the authenticated CPU or whole-model CUDA vision
+runner.
 Unsupported requests return explicit OpenAI-shaped capability errors rather
 than being partially interpreted.
 

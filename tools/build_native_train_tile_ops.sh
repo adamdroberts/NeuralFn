@@ -80,7 +80,12 @@ printf '%s\n' "${OUT}"
 # kernels from this library.
 case "${NFN_NATIVE_BUILD_STRICT_TILE_OPS:-0}" in
   1|true|TRUE|yes|YES|on|ON)
-    STRICT_CUDA_ARCH="${NFN_TILE_CUDA_STRICT_ARCH:-sm_120}"
+    # Strict Glimmer inference uses the generic CUDA Tile kernels rather than
+    # the ThunderKittens SM120 specialization, so it does not require an
+    # architecture-qualified suffix such as sm_120a. Inherit the selected
+    # device architecture so the same release harness works on sm_80/sm_89/
+    # sm_90 as well as sm_120.
+    STRICT_CUDA_ARCH="${NFN_TILE_CUDA_STRICT_ARCH:-${CUDA_ARCH%a}}"
     mkdir -p "$(dirname "${STRICT_OUT}")"
     "${NVCC_BIN}" -std=c++20 -O3 --shared -Xcompiler -fPIC \
       -enable-tile \

@@ -151,8 +151,8 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   }'
 ```
 
-For a CPU vision-capable Muse Glimmer artifact, the message content may mix
-text and one or more image parts:
+For a jointly proven CPU or whole-model CUDA Muse Glimmer vision artifact, the
+message content may mix text and one or more image parts:
 
 ```json
 {
@@ -662,10 +662,11 @@ Muse Glimmer uses its strict pinned family converters rather than generic
 graph migration. Authenticated BF16 and official K-Quant-Dynamic/K-Quant-17GB
 bundles can serve text through the resident C++ CPU or whole-model CUDA text
 runner. An authenticated BF16 or packed `dflash` companion enables startup
-policy `--speculative-decoding off|auto|required`; a full-BF16 CPU artifact can
-serve embedded vision, and a packed CPU artifact can attach the official
-still-image `mmproj`. The current binding advertises `vision_cuda=false`, so a
-CUDA load that requests vision fails before a model/session handle is created.
+policy `--speculative-decoding off|auto|required`; a full-BF16 artifact can
+serve embedded image/video vision on CPU or CUDA, and a packed artifact can
+attach the official still-image `mmproj` on either backend. CUDA vision is
+jointly gated by artifact metadata and binding vision ABI v1; missing kernels
+fail before a model/session handle is created and never fall back to CPU.
 
 `--weight-precision auto|bf16|k-quant-dynamic|k-quant-17gb`,
 `--speculative-decoding`, and repeated `--companion-checkpoint` values are

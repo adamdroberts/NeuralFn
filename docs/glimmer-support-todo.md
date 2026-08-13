@@ -1,16 +1,27 @@
 # Muse Glimmer native support: implementation status and remaining work
 
-> **Status (2026-08-13): core text support is implemented.** NeuralFn now has
+> **Status (2026-08-13): the planned software paths are implemented.** NeuralFn now has
 > an exact `muse_glimmer` GPT preset, strict BF16 and official GGUF conversion,
 > resident C++ CPU and whole-model CUDA text execution, K-Quant-Dynamic and
 > K-Quant-17GB, VRAM-aware precision selection, DFlash speculative decoding,
-> native pretraining/SFT/LoRA/QLoRA, and exact Torch post-training graphs.
+> native pretraining/SFT/LoRA/QLoRA/DPO/reward/PPO, frozen K-Quant LoRA
+> SFT/DPO, target-bound DFlash distillation, multi-GPU pipeline training, and
+> CPU/CUDA vision execution.
 >
-> Capability claims remain independent and fail closed. Native DPO/reward/PPO,
-> K-Quant adapter tuning, DFlash distillation, distributed 30B training, and
-> whole-model CUDA vision are still TODO. Full-BF16 vision runs on CPU; the
-> official GGUF `mmproj` supports CPU still-image execution only because its
-> temporal patch projection is collapsed.
+> Capability claims remain independent and fail closed. Real CUDA 13.3.33 NVCC
+> `sm_80`, `sm_89`, `sm_90`, and `sm_120` source builds now prove the
+> normal/strict libraries and all Glimmer ABI v1 entry points compile.
+> A source-built RTX 5090 run now proves real-device kernel parity under all
+> four compute-sanitizer tools and full-size 32-GB-class Dynamic+DFlash+mmproj
+> execution through 8K with zero CPU model-compute rows. A pinned llama.cpp
+> full-size target-only raw-prompt check also matches all 16 greedy token IDs.
+> An explicit K-Quant-17GB run on that larger card now completes the 24-GB
+> profile tier with a measured 20,359,217,152-byte peak CUDA delta. Full
+> logit/chat/DFlash oracle coverage and an 80-GB-or-larger BF16 run remain
+> release gates. Profile tiers are minimum capacities, so the result retains
+> both its 24-billion-byte tier and the card's real total. The official GGUF `mmproj`
+> remains still-image-only because its temporal patch projection is collapsed;
+> full-BF16 image/video vision can execute on CPU or whole-model CUDA.
 
 This file began as the implementation plan for
 `meta-models/Muse-Glimmer-30B`. It now records what landed, the exact kernel
@@ -25,19 +36,22 @@ benchmark or an upstream full-size model parity run.
 | Exact GPT template | **Implemented** | `muse_glimmer` preserves asymmetric Q/K/V widths, local/local/local/global attention, NoPE global layers, Q/K RMS + scale, gated attention, four centered norms, decomposed SwiGLU, untied head, multiplier, and softcap. |
 | Torch decoder training | **Implemented** | AR, masked SFT, LoRA, NF4 QLoRA, DPO with a frozen reference, reward modeling, and PPO use the shared exact Glimmer body. |
 | Torch DFlash and vision graphs | **Implemented** | Separate assistant and vision/media-fusion graph builders; neither is silently inserted into an ordinary text root. |
-| Native C++/CUDA pretraining | **Implemented, single device** | Exact 627-tensor text layout, uint32 records, activation recomputation, AdamW, strict save/resume, and source SHA binding. A practical full 30B run still needs sufficient device memory or future tensor parallelism. |
-| Native full SFT | **Implemented, single device** | Structured uint32 records carry targets, loss masks, boundaries, and exact ATEM lineage. |
+| Native C++/CUDA pretraining | **Implemented, single-device or pipeline-parallel** | Exact 627-tensor text layout, uint32 records, activation recomputation, AdamW, strict save/resume, source SHA binding, and contiguous NCCL stages. The production 8-stage plan fits its declared 80-GB-class budget; live hardware validation remains pending. |
+| Native full SFT | **Implemented, single-device or pipeline-parallel** | Structured uint32 records carry targets, loss masks, boundaries, and exact ATEM lineage. Distributed mode is full-BF16 only. |
 | Native LoRA / QLoRA SFT | **Implemented** | All eight projection roles are supported. QLoRA freezes a deterministic NF4 group-64 base and updates only LoRA matrices. |
-| Native DPO / reward / PPO | **Not implemented** | The exact Torch paths are production-correct, but there is no raw native preference/rollout trainer yet. |
+| Native DPO / reward / PPO | **Implemented, single device** | DPO uses frozen-reference sequence log-probabilities; reward training uses a masked scalar head; PPO performs online rollouts with frozen reference/reward models, per-token log-probabilities, KL, GAE, clipped minibatch updates, and strict resume. |
+| K-Quant adapter tuning | **Implemented for LoRA SFT/DPO** | Official GGUF bytes remain immutable; packed forward/`dX`, adapter-only state, exact profile/tensor-table lineage, and same-base frozen DPO reference are enforced. Packed PPO/reward and lossy merge remain gated. |
+| DFlash distillation | **Implemented in the Torch trainer** | A separate assistant-only trainer freezes the target, captures five taps, samples anchors, supports D-PACE/decay and self-logit KD, resumes exactly, audits greedy acceptance, and exports a target-bound native BF16 assistant. It does not claim Meta's unpublished training provenance. |
+| Distributed 30B training | **Implemented for full-BF16 AR/SFT pipeline parallelism** | One process/device per contiguous layer stage, NCCL P2P plus global reductions, per-rank admission, authenticated rank shards, atomic DONE marker, and strict distributed resume. Adapter/preference pipeline modes and tensor/data parallelism remain separate future work. |
 | Resident target CPU | **Implemented** | BF16 and official mixed F32/Q4_K/Q5_K/Q6_K profiles use hybrid local-ring/global-full KV caches and transactional verification. |
 | Resident target CUDA | **Implemented for text** | Target weights and model compute stay on the selected CUDA device. The current ABI uses FP32 activation buffers with BF16 or packed resident weights. |
 | K-Quant-Dynamic / K-Quant-17GB | **Implemented** | Strict GGUF v3 parser, authenticated canonical profiles, exact packed CPU/CUDA dequant/GEMM dispatch, no whole-model dequantization. |
 | Automatic weight precision | **Implemented** | `auto` is quality-first and byte-budgeted on CUDA; explicit values are strict pins. CPU `auto` chooses the authenticated primary. |
 | DFlash speculative decoding | **Implemented** | BF16 and packed assistants, CPU/CUDA assistant execution, target block verification, greedy and lossless sampled acceptance, and atomic cache commit/crop. |
 | Native LoRA deployment | **Implemented** | Strict adapter inspection/attachment and direct CPU/CUDA deltas on Q/K/V/O/gate and MLP projections. Adapted targets reject an unbound stock DFlash assistant. |
-| Image inference | **Implemented on CPU** | Embedded full-BF16 vision and official K-Quant `mmproj`; Chat Completions accepts bounded base64 image data URLs. |
-| Video inference | **Implemented for full BF16 CPU/Python API** | Exact 2 FPS / 96-frame sampling, temporal-2 patching, timestamps, prompt expansion, and placeholder fusion. GGUF `mmproj` and CUDA vision remain unavailable. |
-| Whole-model CUDA vision | **Not implemented** | `vision_cuda=false`; a CUDA target load with `mmproj` fails before model/session mutation. |
+| Image inference | **Implemented on CPU/CUDA** | Embedded full-BF16 vision and official K-Quant `mmproj`; Chat Completions accepts bounded base64 image data URLs. CUDA companion load is atomic and requires vision ABI v1. |
+| Video inference | **Implemented for full BF16 CPU/CUDA Python API** | Exact 2 FPS / 96-frame sampling, temporal-2 patching, timestamps, prompt expansion, and placeholder fusion. The collapsed GGUF `mmproj` remains `video=false`. |
+| Whole-model CUDA vision | **Implemented; packed mmproj validated on 32-GB hardware** | Device-resident packed/BF16 vision weights, position preparation, wide LayerNorm, 2-D RoPE full/window attention, pixel shuffle, adapter/projection and final RMS execute through vision ABI v1 with no request-time CPU model compute. The RTX 5090 qualification covers the official packed mmproj; full-BF16 80-GB validation remains pending. |
 
 The effective runtime capability is the intersection of the authenticated
 manifest and binding-reported ABI. A manifest cannot grant a capability on its
@@ -99,6 +113,7 @@ dispatches each tensor by its authenticated table.
   head, and ordered logit transform in
   [`torch_templates.py`](../neuralfn/torch_templates.py).
 - [x] Added `build_muse_glimmer_assistant_graph()`,
+  `build_muse_glimmer_dflash_distillation_graph()`,
   `build_muse_glimmer_vision_graph()`, and media fusion as separate graph
   contracts.
 - [x] Shared one Glimmer body across AR, logits, hidden-state, SFT, DPO, reward,
@@ -155,8 +170,8 @@ nfn migrate muse-glimmer-to-native \
 nfn migrate muse-glimmer-gguf-to-native \
   --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
   --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
-  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
-  --gguf /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --dflash /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --mmproj /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
   --tokenizer-source /models/Muse-Glimmer-30B \
   --output-dir artifacts/glimmer-kquant
 
@@ -191,7 +206,15 @@ symbols from [`tile_ops.h`](../neuralfn/csrc/native_train/tile_ops.h):
 | Attention gate | `nfn_native_tile_glimmer_sigmoid_gate_float32_v1`, `..._backward_float32_v1` | `attention * sigmoid(gate)` before O projection. |
 | Logit transform | `nfn_native_tile_glimmer_logit_transform_float32_v1`, `..._backward_float32_v1` | Multiplier-before-softcap and exact derivative. |
 | DFlash attention | `nfn_native_tile_dflash_block_attention_float32_v1` | Accepted prefix plus bidirectional 16-row block, KV8, window 2,048. |
+| Vision preparation | `nfn_native_tile_glimmer_vision_prepare_float32_v1` | Learned 32×32 bilinear position interpolation plus authenticated window permutation. |
+| Vision LayerNorm | `nfn_native_tile_glimmer_vision_layer_norm_float32_v1` | Affine FP32 LayerNorm through width 8,192; production vision width is 1,536. |
+| Vision attention | `nfn_native_tile_glimmer_vision_attention_float32_v1` | Noncausal segmented full/window attention with half-split or interleaved 2-D RoPE. |
+| Vision merge | `nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1` | Indexed inverse permutation and exact dimension-major 2×2 pixel shuffle. |
 | Masked loss | `nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1` | Signed int32 targets/mask, 202,048 vocabulary, Glimmer transformed logits. |
+| Sequence log-probability | `nfn_native_tile_sequence_logp_i32_float32_{forward,backward}_v1` | Masked chosen/rejected sequence log-probabilities for a 202,048-way head. |
+| DPO loss | `nfn_native_tile_dpo_pairwise_loss_float32_{forward,backward}_v1` | Sigmoid, hinge, or IPO policy gradients against an immutable reference. |
+| Reward model | `nfn_native_tile_masked_reward_head_float32_{forward,backward}_v1`, `nfn_native_tile_preference_bce_loss_float32_{forward,backward}_v1` | Last-selected-token scalar head and Bradley-Terry pair loss. |
+| PPO | `nfn_native_tile_token_logp_entropy_i32_float32_{forward,backward}_v1`, `nfn_native_tile_masked_ppo_loss_float32_{forward,backward}_v1` | Per-token policy log-probability/entropy and masked clipped policy/value objective. GAE and rollout state are trainer orchestration. |
 | Optimizer | `nfn_native_tile_glimmer_adamw_bf16_float32_v1` | BF16 parameters, FP32 gradients/moments, clipping and exact resume state. |
 
 Existing generic linears, add/scale, SwiGLU, gradient accumulation, and copying
@@ -203,42 +226,42 @@ geometry and equal-width QKV assumptions cannot represent Glimmer.
 each group stores one little-endian FP32 absmax followed by 32 low-nibble-first
 NF4 code bytes. It is not GGUF K-quant and is never assigned a GGML type ID.
 
-### 5.2 Remaining CUDA kernels and orchestration
+### 5.2 Completed orchestration and remaining performance work
 
-These are the concrete missing native pieces:
+The formerly missing correctness paths now exist:
 
-1. **Whole-model CUDA vision.** Add versioned kernels for 1,176→1,536 patch
-   projection, bilinear 32×32 position interpolation, indexed window
-   permutation/inverse, affine LayerNorm forward, biased rectangular packed
-   linears, 2-D positioned RoPE, noncausal varlen full/window attention,
-   exact GELU, 2×2 pixel shuffle, and scaleless RMS. The resident vision weight
-   plan must remain device-resident and report zero CPU model compute before
-   setting `vision_cuda=true`.
-2. **Native DPO.** Export efficient
-   `nfn_native_tile_sequence_logp_i32_float32_v1` forward/backward and a raw
-   `nfn_native_tile_dpo_pairwise_loss_float32_v1` forward/backward. The trainer
-   still needs structured chosen/rejected records, a frozen reference handle,
-   shared policy weights, and strict reference/resume lineage.
-3. **Native reward/PPO.** Add sequence-mask-aware reward/value heads and
-   backward, then a real resident rollout engine with frozen reference and
-   reward models, per-token logprobs, GAE, KL, clipped objectives, minibatches,
-   and complete resume state. Placeholder rollouts are not accepted.
-4. **K-Quant adapter training.** Reuse packed forward and backward-input, but
-   add a trainer-side authenticated GGUF tensor store and pin the resolved
-   profile/digest/tensor table in every adapter checkpoint. Do not route it
-   through NF4 or mutate official packed bytes.
-5. **DFlash distillation.** Add the pinned corruption/reveal objective,
-   target-tap capture, shared frozen target embedding/head, assistant-only
-   checkpoint lineage, and acceptance-quality evaluation.
-6. **Distributed 30B training.** Add tensor/data/pipeline parallel placement,
-   collective kernels, per-device byte plans, distributed optimizer/checkpoint
-   state, and all-device fit checks. Free bytes from separate GPUs must never
-   be summed as if one allocation could span them.
+1. **Whole-model CUDA vision** uploads the packed/BF16 projection weights and
+   one-time F32 norm/bias/position data, then runs patch projection, position
+   preparation, LayerNorm, 50 full/window transformer layers, 2×2 merge,
+   adaptor, projection, and scaleless RMS on the selected CUDA stream. Only
+   final decoder-width rows cross D2H. Missing vision symbols fail during
+   companion attachment before sessions are created.
+2. **Native DPO/reward/PPO** use the raw ABI rows above with structured records,
+   immutable authenticated reference/reward checkpoints, shared policy state,
+   real rollout/GAE/minibatch state, and objective-specific strict checkpoints.
+3. **K-Quant LoRA SFT/DPO** streams each authenticated GGUF tensor through its
+   native type descriptor, computes packed base forward/backward-input without
+   whole-model dequantization, and persists adapter-only state bound to the
+   exact main profile and tensor table.
+4. **DFlash distillation** is a separate Torch training workflow because it
+   consumes an HF-style frozen target with hidden-state taps. Its recipe and
+   lineage are serialized; production export emits only the canonical 58
+   assistant tensors and never copies target embeddings or the shared LM head.
+5. **Distributed 30B AR/SFT** uses contiguous pipeline stages, dynamically
+   loaded NCCL send/receive plus global reductions, stage-local memory
+   admission, and authenticated per-rank model/optimizer/state shards.
+
+Remaining CUDA work is performance and hardware qualification, not a silent
+fallback path: BF16 activation/fused matmul variants, optimized vision
+attention/LayerNorm, tensor/data parallelism, the 80-GB full-size run, and
+full-size layer/logit/chat/DFlash upstream-oracle parity beyond the completed
+16-token raw target check. Live NVCC, four-tool sanitizer coverage, and the
+32-GB Dynamic full-size benchmark are complete. The current exact native
+ABI stores activations and accumulates in FP32 while retaining BF16 or packed
+weights.
 
 Standalone sigmoid or logit-transform fusion is no longer a correctness gap;
-the versioned functions above exist. BF16 activation/fused matmul paths remain
-performance work because the current exact native ABI stores activations and
-accumulates in FP32 while retaining BF16 or packed weights.
+the versioned functions above exist.
 
 ## 6. Resident target and DFlash execution
 
@@ -312,11 +335,11 @@ CUDA VRAM query is a host-RAM policy.
 | Full masked SFT | Yes | Yes | Full BF16 checkpoint + optimizer/RNG/data cursor |
 | LoRA SFT | Yes, eight roles/layer | Yes | Strict adapter v1; CPU/CUDA direct execution and deterministic merge utility |
 | NF4 QLoRA SFT | Yes | Yes | Immutable native NF4 base during training; adapter records QLoRA provenance and deploys against its exact BF16 lineage |
-| K-Quant adapter SFT | No | No | TODO; must pin exact GGUF profile and preserve base bytes |
-| DPO | Yes | No | Torch checkpoint binds a frozen reference digest |
-| Reward model | Yes | No | Torch sequence-mask-aware scalar head |
-| PPO | Yes | No | Torch rollout uses real policy/reference/reward/value/logprob/GAE state |
-| DFlash distillation | Graph only | No | TODO; stock assistant inference is supported |
+| K-Quant adapter SFT | N/A for generic Torch | Yes, LoRA | Immutable official GGUF base; adapter pins profile, target digest and authenticated tensor table |
+| DPO | Yes | Yes | Frozen reference digest; native also supports LoRA over the identical K-Quant base |
+| Reward model | Yes | Yes | Sequence-mask-aware last-token scalar head, pairwise BCE and strict reward artifact |
+| PPO | Yes | Yes | Online policy rollout, frozen reference/reward, value head, per-token log-probabilities, KL, GAE, clipped minibatch epochs and resume |
+| DFlash distillation | Yes, dedicated trainer | Not a C++ loop | Frozen target/taps/shared head, D-PACE or decay, self-logit KD, exact resume/acceptance audit, native assistant export |
 | Multimodal tuning | Vision graph exists | No native loop | TODO |
 
 Native SFT record batches are not flat next-token bins: they include input IDs,
@@ -336,6 +359,31 @@ base forward and `dX`, and stores no base `dW` or AdamW state. Only A/B matrices
 are saved. Resume reconstructs the exact NF4 base from the pinned BF16 source
 and refuses LoRA/QLoRA cross-mode state.
 
+K-Quant adapter tuning instead uses the official Q4_K/Q5_K/Q6_K GGUF tensor
+table directly. It never relabels that base as NF4, never mutates or saves
+packed base codes, and does not claim a lossless merged K artifact. Forced
+profile, digest, objective, reference lineage and adapter state must match on
+resume. The supported native objectives are SFT and DPO; packed-base reward or
+PPO stays rejected until those separate artifact contracts are defined.
+
+`DFlashDistillationTrainer` is deliberately target-bound and assistant-only.
+It freezes the main model, samples valid random anchors, gathers zero-based
+target layers `[1,13,25,37,49]`, reuses raw target embeddings and the frozen
+target head, supports `dpace` and `decay` weighting, saves optimizer/RNG/data
+cursor/recipe lineage, and can run a greedy online acceptance audit. Its native
+export is available only for production geometry and the pinned tokenizer,
+config and ATEM hashes. The metadata explicitly says that NeuralFn does not
+claim reproduction of Meta's unpublished released-assistant recipe.
+
+Full-BF16 AR and SFT can also use `--pipeline-parallel-size N`. The CLI starts
+one process per distinct `--pipeline-cuda-devices` entry; rank 0 owns the token
+embedding, the last rank owns final norm/head, and middle ranks own contiguous
+decoder ranges. NCCL transfers activations/gradients and reduces global loss
+and gradient norm. Each rank independently checks its free bytes plus reserve.
+Checkpoints contain authenticated rank-local BF16 parameters, F32 moments,
+binary cursor/RNG state, a distributed manifest, and a final `DONE` marker.
+Changing world size or stage ownership on resume fails closed.
+
 ## 9. Vision and media boundary
 
 Implemented:
@@ -346,6 +394,9 @@ Implemented:
   decoder-width normalization;
 - full-BF16 embedded vision on the portable C++ CPU runner;
 - packed official mmproj CPU execution for still images;
+- full-BF16 and packed-mmproj whole-model CUDA vision with device-resident
+  linears, wide affine LayerNorm, 2-D RoPE segmented attention, exact merge and
+  adaptor/projector execution; request-time failures never fall back to CPU;
 - exact decoded-video frame sampling (default 96 frames at 2 FPS), even-frame
   padding, per-temporal-pair timestamps, 144-frame-token admission cap, ATEM
   video prompt fragments, and replacement positions;
@@ -360,7 +411,6 @@ process; Python video callers supply decoded frame sequences.
 
 Remaining:
 
-- [ ] whole-model CUDA vision kernels and runner;
 - [ ] a bounded, versioned server video-content extension if container input is
   desired; it must not be confused with OpenAI's image part contract;
 - [ ] native multimodal training and DFlash on multimodal prefixes.
@@ -379,8 +429,16 @@ Remaining:
   companion-budget, and CPU-auto tests.
 - [x] uint32 shard, structured SFT, native full update, LoRA, QLoRA, strict
   save/resume, frozen-base, and adapter attach/load tests.
-- [x] Torch SFT/LoRA/QLoRA/DPO/reward/PPO formula and gradient tests.
-- [x] Native image/video preprocessing, vision CPU oracle, and media fusion.
+- [x] Native DPO/reference, reward-head/BCE, online PPO/GAE/minibatch and strict
+  objective-specific checkpoint/resume tests.
+- [x] K-Quant LoRA SFT/DPO frozen-byte, packed-forward/`dX`, profile lineage,
+  adapter save/resume and mismatch tests.
+- [x] Torch SFT/LoRA/QLoRA/DPO/reward/PPO formula and gradient tests plus
+  target-frozen DFlash distillation, bit-exact resume and acceptance tests.
+- [x] Two-rank fake-NCCL pipeline parity with the single-rank update, rank-shard
+  reconstruction, resume and production 8-stage 80-GB-class planner tests.
+- [x] Native image/video preprocessing, vision CPU oracle, media fusion, and
+  fake-CUDA vision parity with nonzero device workspace/kernel counters.
 - [x] Mandatory all-preset build/resolve/compile/forward/apply and ordered
   cross-preset tests.
 - [x] Native inference binding and exact Glimmer trainer compile with a host C++
@@ -388,19 +446,123 @@ Remaining:
 
 Still required before performance or full-hardware release claims:
 
-- [ ] build the real Tile-CUDA library with NVCC and run kernel parity under
-  compute-sanitizer;
-- [ ] run canonical BF16, Dynamic, 17GB, and DFlash end-to-end on representative
-  24/32/80-GB GPUs, including long-context and memory-counter assertions;
-- [ ] compare full-size logits/tokens against the pinned Transformers and
-  llama.cpp `--jinja` oracles;
-- [ ] publish p50/p95 TTFT, tokens/s, DFlash acceptance, resident bytes, load
-  peak, and context/session envelopes;
-- [ ] complete the native DPO/reward/PPO, K-adapter, DFlash-distillation,
-  distributed-training, and CUDA-vision items above before setting those
-  individual capability bits.
+- [x] build the real normal and strict Tile-CUDA libraries with NVCC and
+  validate the exported ABIs. CUDA 13.3.33 compiled one source proof for
+  `sm_80`, `sm_89`, `sm_90`, and `sm_120`; training, strict-math,
+  packed-weight, inference, and vision all
+  reported ABI v1. The pass found and fixed a missing `math_constants.h`
+  include. Its JSON is compiler-only (`release_qualified=false`) and records
+  the GCC 16 `-allow-unsupported-compiler` caveat;
+- [x] run kernel parity on a real device under compute-sanitizer. The current
+  runner builds a raw CUDA probe against the same strict Tile sidecar and runs
+  it under `memcheck`, `synccheck`, `initcheck`, and `racecheck` before the
+  full-artifact benchmark. The RTX 5090 pass covered packed Q4_K linear/`dX`,
+  gate, wide RMSNorm, positioned RoPE, 2,048-window GQA, cache commit, DFlash
+  block attention, 202,048-way masked CE, DPO/reward/PPO, and the vision
+  prepare/LayerNorm/attention/pixel-shuffle kernels with zero errors or race
+  hazards;
+- [ ] finish one current-source canonical BF16, Dynamic, 17GB, and DFlash
+  matrix across the representative 24/32/80-GB profile tiers. The standalone
+  32→Dynamic run is complete with the default VRAM-driven `auto` selector,
+  DFlash, CUDA mmproj, 128/2,048/8,192 contexts, three trials each, and zero
+  CPU model-compute rows. The standalone 24→17GB profile is also complete on
+  the available larger GPU with an explicit precision pin, one
+  128/8,192-token capacity trial, and measured peak usage below 24 billion
+  bytes. Their source proofs differ because the latter includes the corrected
+  tier policy, so Dynamic must be rerun with the future 80→BF16 result before
+  the matrix verifier can combine them. BF16 still needs at least 80 billion
+  physical bytes; the qualifier records actual capacity and will not
+  synthesize it;
+- [x] compare one bounded full-size target-only greedy token path against the
+  pinned llama.cpp oracle. Build 10349 at commit `62bf73d` and NeuralFn return
+  the same 16 IDs for the authenticated Dynamic artifact and BOS+`Hello` raw
+  prefix, with zero NeuralFn CPU model-compute rows;
+- [ ] compare full-size layer outputs/logits, ATEM-rendered chat, sampled
+  generation, and DFlash proposal/acceptance against the pinned Transformers
+  and llama.cpp `--jinja` oracles;
+- [ ] publish the complete three-class p50/p95 TTFT, tokens/s, DFlash
+  acceptance, resident bytes, load peak, and context/session matrix. The
+  measured packed-profile rows are published below; 80-GB remains open;
+- [ ] qualify the current exact CUDA paths for production performance before
+  publishing throughput claims; software capability bits remain ABI/artifact
+  gated and are not benchmark claims.
 
-The development environment used for the final local pass did not contain
-NVCC or a usable CUDA device. It compiled the C++ binding/trainer, ran the
-fake-CUDA device ABI tests, and kept live-GPU claims explicitly pending rather
-than silently falling back to CPU.
+After the three runs, `tools/qualify_muse_glimmer_gpu.py verify --result ...`
+requires all classes, canonical packed hashes, full 52-layer/6,656-wide
+geometry, DFlash and vision CUDA counters, positive sampled VRAM, sanitizer
+proof, an 8K-or-larger context, and one identical source-tree hash. It cannot
+turn fake-CUDA coverage or a partial profile into a hardware release result.
+
+The completed 2026-08-13 24-GB-tier result explicitly selected
+K-Quant-17GB on the physical RTX 5090 instead of rejecting the larger device or
+letting production `auto` upgrade it to Dynamic. The result records
+`profile_tier.minimum_total_vram_bytes=24000000000`,
+`profile_tier.physical_total_vram_bytes=33708376064`, and
+`profile_tier.larger_device=true`. Source proof
+`26d412085b7941a2a7d55c00b49b6fdc885c0ab2d5709083c101a367e0105469`
+and result JSON SHA-256
+`cc70412c7299a3cc84d2247a9d81466104e47b5d411c571b236ce5b4f8c8c30a`
+bind the run to canonical target SHA
+`4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e`.
+
+K-Quant-17GB+DFlash+mmproj loaded in 24.52 seconds. CUDA's fresh-worker
+baseline sampler measured a 20,359,217,152-byte (18.961-GiB) peak delta and
+9,398,059,008-byte minimum free value; after close, only 4,259,840 bytes of the
+sampled delta remained. Target-only, DFlash, and vision CUDA weights occupied
+16,743,521,568, 1,618,131,968, and 1,400,328,928 bytes respectively. All four
+sanitizer tools passed and `cpu_model_compute_rows=0`.
+
+Single-trial capacity measurements from that exact build:
+
+| Prompt tokens | Prefill | TTFT | 16-token DFlash decode | Acceptance |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 | 21.76 tok/s | 5.937 s | 2.303 tok/s | 3 / 127 (2.36%) |
+| 8,192 | 8.96 tok/s | 914.161 s | 1.490 tok/s | 0 / 135 |
+
+P50 and p95 are the same observation because each row has one repetition. The
+packed mmproj probe encoded four 588-wide rows into one 6,656-wide decoder row
+in 14.35 ms. Treat these as capacity/correctness measurements, not a stable
+performance distribution. The peak is 3,640,782,848 bytes below the declared
+24-GB tier.
+
+The completed 2026-08-13 32-GB-class result used an RTX 5090 (`sm_120`), CUDA
+runtime/driver 13.3, total memory 33,708,376,064 bytes, and source proof
+`cbb3dade82f3939eeee0355ff44a3bd76473fdd524cbbe7295c47a7a85d0b957`.
+The result JSON SHA-256 is
+`7d2a1bcf22a28f0bc9408329974c5f18de4805c83f193af2c10290e0d2508174`.
+`auto` selected the canonical Dynamic artifact SHA
+`ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38`;
+load took 27.08 seconds, the sampled peak delta was 23,171,432,448 bytes, and
+minimum sampled free memory was 6,168,707,072 bytes. Target-only, assistant,
+and vision CUDA weights were 19,640,798,496, 1,618,131,968, and 1,400,328,928
+bytes respectively; the target's aggregate counter includes vision and reports
+21,041,127,424 bytes. `cpu_model_compute_rows=0`.
+
+Three-trial measurements from that exact build:
+
+| Prompt tokens | Prefill p50 / p95 | TTFT p50 / p95 | 16-token DFlash decode p50 / p95 | Acceptance |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 | 19.67 / 19.74 tok/s | 6.568 / 6.586 s | 2.134 / 2.158 tok/s | 9 / 375 (2.4%) |
+| 2,048 | 12.77 / 12.77 tok/s | 160.466 / 160.515 s | 1.618 / 1.619 tok/s | 0 / 405 |
+| 8,192 | 8.26 / 8.54 tok/s | 992.434 / 1050.315 s | 1.410 / 1.416 tok/s | 0 / 405 |
+
+All repetitions at a given context produced identical greedy tokens. The
+repeated-token prompt is a capacity/correctness fixture, so its DFlash
+acceptance is not a representative quality benchmark. The packed mmproj probe
+encoded four 588-wide rows into one 6,656-wide decoder row in 15.82 ms p50.
+These numbers expose the remaining long-context performance work; they are not
+production throughput targets.
+
+The independent target oracle used llama.cpp build 10349 at exact commit
+`62bf73d25c53b8161f8a22894d4f90c4aebbd7d0`, the canonical Dynamic artifact
+SHA above, greedy target-only decoding, and raw prefix `[200000, 19873]`
+(BOS + `Hello`). Both runtimes produced:
+
+```text
+[24, 372, 1045, 10016, 328, 2885, 262, 5091, 8811, 511, 917, 4921, 768, 328, 2885, 262]
+```
+
+That sequence decodes to `, I am trying to create a simple script that will
+allow me to create a`. NeuralFn reported `cpu_model_compute_rows=0`. This is
+one exact raw-prompt greedy-token proof. It does not claim general logit,
+sampling, ATEM chat, DFlash, or quality parity; those remain separate gates.

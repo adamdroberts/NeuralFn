@@ -237,6 +237,7 @@ public:
     const std::string& checkpoint_sha256() const noexcept { return config_.checkpoint_sha256; }
     bool is_local_layer(std::int64_t layer) const noexcept { return layer % 4 != 3; }
     bool whole_model_cuda() const noexcept { return static_cast<bool>(cuda_model_); }
+    bool vision_whole_model_cuda() const noexcept;
     bool has_vision() const noexcept { return static_cast<bool>(vision_model_); }
     bool has_lora_adapter() const noexcept { return static_cast<bool>(adapter_mapped_); }
     void load_vision_companion(const std::string& checkpoint_path);

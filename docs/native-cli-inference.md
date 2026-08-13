@@ -117,7 +117,9 @@ allocation and budgets the authenticated target, enabled companions, load
 staging, workspace, hybrid target/assistant KV, configured context/session
 state, verification scratch, and reserve. It chooses BF16, Dynamic, then 17GB
 in fidelity order only among candidates that fit and whose kernel profile the
-binding proves. Explicit precision is a strict pin. CPU `auto` uses the
+binding proves. The official 24 GB and 32 GB hardware tiers are decimal
+vendor-memory classes; actual admission still uses CUDA's exact free/total byte
+counts and the full byte budget. Explicit precision is a strict pin. CPU `auto` uses the
 authenticated primary and does not query VRAM.
 
 DFlash requires the lossless full/hybrid target cache. `auto` may omit an
@@ -127,6 +129,76 @@ one token at a time. `--native-info` reports requested/effective precision,
 selection proof and VRAM bytes, effective speculation, and acceptance counters.
 A loaded native LoRA disables the stock assistant unless an exact adapted
 assistant lineage is supplied.
+
+### Full-size CUDA qualification
+
+`tools/qualify_muse_glimmer_gpu.py` is the release-evidence harness for this
+path. Unlike `--native-info`, it starts from a fresh worker, builds the current
+sources with real NVCC for the selected compute capability, loads the strict
+math sidecar, runs a source- and binary-bound raw-kernel probe under
+compute-sanitizer `memcheck`, `synccheck`, `initcheck`, and `racecheck`, and
+then benchmarks the same build's authenticated target, DFlash, and vision path
+without sanitizer instrumentation. It only accepts the canonical mapping
+24 GB→`k-quant-17gb`, 32 GB→`k-quant-dynamic`, and 80 GB→`bf16`. These are
+minimum decimal-byte profile tiers, not exact physical-device bands. A larger
+GPU may qualify a lower tier; the worker explicitly pins that lower profile
+because production `auto` must continue choosing the highest-fidelity profile
+that fits. The highest eligible tier still exercises `auto`. Every result
+records the actual CUDA total, requested/effective selection, sampled peak
+delta, and minimum free memory. Devices below the tier minimum still fail.
+
+Each result contains the source, binary, manifest and selected-checkpoint
+hashes; CUDA runtime/driver/compute capability; model and companion resident
+bytes; sampled VRAM; p50/p95 TTFT and decode throughput; speculative
+acceptance; vision timing; and CUDA/CPU compute counters. `verify` accepts a
+three-result matrix only when every run has full production geometry, a
+passing zero-error sanitizer summary, an 8K-or-larger context, positive VRAM,
+DFlash and vision CUDA execution, zero CPU model-compute rows, and the same
+source proof. Source builds require CUDA Toolkit 13.3+ with `cuda_tile.h` and
+NVCC Tile C++ support. A compiler-only proof is available when the build host
+has a toolkit but no usable GPU:
+
+```bash
+python tools/qualify_muse_glimmer_gpu.py build \
+  --cuda-arch sm_120 \
+  --nvcc /usr/local/cuda/bin/nvcc \
+  --build-dir build/glimmer-compile-sm120 \
+  --json-out build/glimmer-compile-sm120.json
+```
+
+That result deliberately reports `status: "source-built"` and
+`release_qualified: false`. It verifies compilation and ABI versions only; it
+does not substitute for device execution, compute-sanitizer, or the three
+full-size `run` results. See the complete commands in the root README.
+
+The 2026-08-13 packed-profile runs are complete on an RTX 5090 with CUDA 13.3.
+For the 32-GB tier, the default policy selected K-Quant-Dynamic; target,
+DFlash, and mmproj were CUDA-resident; all four sanitizer tools reported zero
+errors/hazards; and the 128/2,048/8,192-token full-size trials reported zero
+CPU model-compute rows. At 8,192 tokens, three-trial p50 prefill was 8.26
+tok/s, p50 TTFT was 992.434 s, and p50 16-token speculative decode was 1.410
+tok/s.
+
+For the 24-GB tier, an explicit K-Quant-17GB selection on the same larger card
+also passed all four sanitizer tools, CUDA target+DFlash+mmproj, zero-CPU
+telemetry, and 128/8,192-token trials. It measured a 20,359,217,152-byte
+(18.961-GiB) peak CUDA delta and retained at least 9,398,059,008 bytes free.
+The 8K single trial measured 8.96 prefill tok/s, 914.161-second TTFT, and 1.490
+tok/s for 16-token DFlash decode. Its result records both the 24-billion-byte
+minimum tier and the actual 33,708,376,064-byte device total. Only the
+80-GB-or-larger BF16 result is still unmeasured; the three-tier verifier also
+requires all input results to share one current source proof. Because the
+standalone Dynamic result predates the qualifier's tier-policy edit, it must be
+rerun with the future BF16 result before the final matrix can verify.
+
+A separate full-size target-only oracle check used llama.cpp build 10349 at
+pinned commit `62bf73d25c53b8161f8a22894d4f90c4aebbd7d0` and the same canonical
+Dynamic artifact. For raw prefix `[200000, 19873]` (BOS + `Hello`), both
+runtimes returned the same 16 greedy token IDs:
+`[24, 372, 1045, 10016, 328, 2885, 262, 5091, 8811, 511, 917, 4921, 768, 328, 2885, 262]`.
+NeuralFn reported zero CPU model-compute rows. Treat this as one target
+raw-prompt proof, not as full logit, ATEM chat, sampled, DFlash, or quality
+parity.
 
 ## Interactive transcript
 
@@ -238,8 +310,9 @@ values are rejected.
 This CLI path proves real resident inference for the seven reviewed dense-v5
 topologies, canonical LLaMA, exact standard-MoE profiles, and strict Muse
 Glimmer BF16/K-Quant text profiles. Glimmer's CUDA text runner is separate from
-the legacy hybrid Tile attention path above; full-BF16/mmproj vision remains
-CPU-only and a CUDA mmproj request fails before load. It does not make other native families
+the legacy hybrid Tile attention path above. Full-BF16 vision and packed
+still-image mmproj can use CPU or whole-model CUDA; CUDA requires the separate
+vision ABI and never falls back to CPU after load/session mutation. It does not make other native families
 resident-ready and does not add graph interpretation, tools, persistence,
 batching, or server state. The standalone HTTP surface is documented separately in
 [Native Inference Serving](rest-api/native-inference-serving.md).

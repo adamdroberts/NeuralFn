@@ -60,6 +60,16 @@ using LogitTransformFn = int (*)(float*, std::int64_t, float, float, void*);
 using SwiGluFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
 using AddFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
 using ScaleFn = int (*)(float*, std::int64_t, float, void*);
+using VisionPrepareFn = int (*)(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1*);
+using VisionLayerNormFn = int (*)(
+    const float*, const float*, const float*, float*, std::int64_t,
+    std::int64_t, float, void*);
+using VisionAttentionFn = int (*)(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1*);
+using VisionPixelShuffleFn = int (*)(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1*);
+using GeluFn = int (*)(const float*, float*, std::int64_t, void*);
 
 std::size_t checked_size(std::int64_t value, const char* label) {
     if (value < 0 || static_cast<std::uint64_t>(value) >
@@ -305,6 +315,34 @@ public:
     AddFn add() const noexcept { return add_; }
     ScaleFn scale() const noexcept { return scale_; }
 
+    void enable_vision() {
+        std::lock_guard<std::mutex> lock(vision_mutex_);
+        if (vision_prepare_ != nullptr) return;
+        const auto vision_abi = tile_.require<AbiVersionFn>(
+            "nfn_native_tile_glimmer_vision_abi_version");
+        if (vision_abi() != NFN_NATIVE_TILE_GLIMMER_VISION_V1) {
+            throw std::runtime_error(
+                "whole-model Glimmer CUDA vision requires feature ABI version 1");
+        }
+        vision_prepare_ = tile_.require<VisionPrepareFn>(
+            "nfn_native_tile_glimmer_vision_prepare_float32_v1");
+        vision_layer_norm_ = tile_.require<VisionLayerNormFn>(
+            "nfn_native_tile_glimmer_vision_layer_norm_float32_v1");
+        vision_attention_ = tile_.require<VisionAttentionFn>(
+            "nfn_native_tile_glimmer_vision_attention_float32_v1");
+        vision_pixel_shuffle_ = tile_.require<VisionPixelShuffleFn>(
+            "nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1");
+        gelu_ = tile_.require<GeluFn>("nfn_native_tile_gelu_float32");
+    }
+
+    VisionPrepareFn vision_prepare() const noexcept { return vision_prepare_; }
+    VisionLayerNormFn vision_layer_norm() const noexcept { return vision_layer_norm_; }
+    VisionAttentionFn vision_attention() const noexcept { return vision_attention_; }
+    VisionPixelShuffleFn vision_pixel_shuffle() const noexcept {
+        return vision_pixel_shuffle_;
+    }
+    GeluFn gelu() const noexcept { return gelu_; }
+
 private:
     void check_cuda(int status, const char* operation) const {
         if (status == kCudaSuccess) return;
@@ -336,6 +374,12 @@ private:
     SwiGluFn swiglu_ = nullptr;
     AddFn add_ = nullptr;
     ScaleFn scale_ = nullptr;
+    std::mutex vision_mutex_;
+    VisionPrepareFn vision_prepare_ = nullptr;
+    VisionLayerNormFn vision_layer_norm_ = nullptr;
+    VisionAttentionFn vision_attention_ = nullptr;
+    VisionPixelShuffleFn vision_pixel_shuffle_ = nullptr;
+    GeluFn gelu_ = nullptr;
     CudaGetDeviceCountFn get_device_count_ = nullptr;
     CudaSetDeviceFn set_device_ = nullptr;
     CudaMallocFn malloc_ = nullptr;
@@ -459,6 +503,556 @@ void throw_if_cancelled(const std::atomic<bool>& cancelled) {
         throw std::runtime_error("resident inference session was cancelled");
     }
 }
+
+struct DeviceVisionLinear {
+    DeviceWeight weight;
+    DeviceBuffer bias;
+    bool has_bias = false;
+};
+
+struct DeviceVisionLayer {
+    DeviceVisionLinear query;
+    DeviceVisionLinear key;
+    DeviceVisionLinear value;
+    DeviceVisionLinear output;
+    DeviceBuffer norm1_weight;
+    DeviceBuffer norm1_bias;
+    DeviceBuffer norm2_weight;
+    DeviceBuffer norm2_bias;
+    DeviceVisionLinear fc1;
+    DeviceVisionLinear fc2;
+};
+
+DeviceBuffer upload_float_vector(
+    const std::shared_ptr<Runtime>& runtime,
+    const std::vector<float>& source,
+    std::int64_t expected,
+    std::int64_t* weight_bytes,
+    const char* label) {
+    if (expected <= 0 || source.size() != checked_size(expected, label)) {
+        throw std::runtime_error(std::string("Glimmer CUDA vision ") + label +
+                                 " extent is invalid");
+    }
+    const std::size_t bytes = checked_size(checked_mul(expected, 4, label), label);
+    DeviceBuffer result(runtime, bytes);
+    runtime->copy_h2d_async(result.get(), source.data(), bytes);
+    if (*weight_bytes > std::numeric_limits<std::int64_t>::max() -
+            static_cast<std::int64_t>(bytes)) {
+        throw std::runtime_error("Glimmer CUDA vision weight byte count overflow");
+    }
+    *weight_bytes += static_cast<std::int64_t>(bytes);
+    return result;
+}
+
+class VisionExecutor final {
+public:
+    VisionExecutor(
+        std::shared_ptr<Runtime> source_runtime,
+        const VisionConfig& source_config,
+        const VisionHostWeightPlan& source)
+        : runtime_(std::move(source_runtime)), config_(source_config) {
+        if (config_.hidden_size <= 0 || config_.intermediate_size <= 0 ||
+            config_.num_layers <= 0 || config_.num_heads <= 0 ||
+            config_.hidden_size % config_.num_heads != 0 ||
+            (config_.hidden_size / config_.num_heads) % 4 != 0 ||
+            config_.patch_width <= 0 || config_.merge_size <= 0 ||
+            config_.position_side <= 0 || config_.adapter_size <= 0 ||
+            config_.output_size <= 0 || source.layers.size() !=
+                checked_size(config_.num_layers, "vision layers") ||
+            !std::isfinite(config_.rope_theta) || !(config_.rope_theta > 0.0f) ||
+            !std::isfinite(config_.norm_eps) || !(config_.norm_eps > 0.0f)) {
+            throw std::runtime_error("Glimmer CUDA vision geometry is invalid");
+        }
+        runtime_->enable_vision();
+        patch_ = upload_weight(runtime_, source.patch, &weight_bytes_);
+        const std::int64_t position_rows = checked_mul(
+            config_.position_side, config_.position_side, "vision position rows");
+        position_ = upload_float_vector(
+            runtime_, source.position,
+            checked_mul(position_rows, config_.hidden_size, "vision position"),
+            &weight_bytes_, "position table");
+        pre_norm_weight_ = upload_float_vector(
+            runtime_, source.pre_norm_weight, config_.hidden_size,
+            &weight_bytes_, "pre norm weight");
+        pre_norm_bias_ = upload_float_vector(
+            runtime_, source.pre_norm_bias, config_.hidden_size,
+            &weight_bytes_, "pre norm bias");
+        post_norm_weight_ = upload_float_vector(
+            runtime_, source.post_norm_weight, config_.hidden_size,
+            &weight_bytes_, "post norm weight");
+        post_norm_bias_ = upload_float_vector(
+            runtime_, source.post_norm_bias, config_.hidden_size,
+            &weight_bytes_, "post norm bias");
+        layers_.reserve(source.layers.size());
+        for (const VisionHostLayer& host : source.layers) {
+            DeviceVisionLayer layer;
+            layer.query = upload_linear(host.query);
+            layer.key = upload_linear(host.key);
+            layer.value = upload_linear(host.value);
+            layer.output = upload_linear(host.output);
+            layer.norm1_weight = upload_float_vector(
+                runtime_, host.norm1_weight, config_.hidden_size,
+                &weight_bytes_, "layer norm1 weight");
+            layer.norm1_bias = upload_float_vector(
+                runtime_, host.norm1_bias, config_.hidden_size,
+                &weight_bytes_, "layer norm1 bias");
+            layer.norm2_weight = upload_float_vector(
+                runtime_, host.norm2_weight, config_.hidden_size,
+                &weight_bytes_, "layer norm2 weight");
+            layer.norm2_bias = upload_float_vector(
+                runtime_, host.norm2_bias, config_.hidden_size,
+                &weight_bytes_, "layer norm2 bias");
+            layer.fc1 = upload_linear(host.fc1);
+            layer.fc2 = upload_linear(host.fc2);
+            layers_.push_back(std::move(layer));
+        }
+        adapter_fc1_ = upload_linear(source.adapter_fc1);
+        adapter_fc2_ = upload_linear(source.adapter_fc2);
+        projection_ = upload_linear(source.projection);
+        runtime_->synchronize();
+    }
+
+    std::vector<float> encode(
+        const std::vector<float>& patches,
+        const std::vector<std::int64_t>& grid_thw,
+        const std::atomic<bool>& cancelled) {
+        throw_if_cancelled(cancelled);
+        if (patches.empty() || patches.size() %
+                checked_size(config_.patch_width, "vision patch width") != 0) {
+            throw std::runtime_error("Glimmer CUDA vision patch extent is invalid");
+        }
+        const std::int64_t rows = static_cast<std::int64_t>(patches.size()) /
+            config_.patch_width;
+        const Layout layout = make_layout(grid_thw, rows);
+        const auto floats = [&](std::int64_t count, const char* label) {
+            return checked_size(checked_mul(count, 4, label), label);
+        };
+        DeviceBuffer input(runtime_, floats(
+            checked_mul(rows, config_.patch_width, "vision input"), "vision input"));
+        DeviceBuffer projected(runtime_, floats(
+            checked_mul(rows, config_.hidden_size, "vision projected"), "vision projected"));
+        DeviceBuffer hidden(runtime_, projected.bytes());
+        DeviceBuffer normalized(runtime_, projected.bytes());
+        DeviceBuffer query(runtime_, projected.bytes());
+        DeviceBuffer key(runtime_, projected.bytes());
+        DeviceBuffer value(runtime_, projected.bytes());
+        DeviceBuffer attended(runtime_, projected.bytes());
+        DeviceBuffer branch(runtime_, projected.bytes());
+        DeviceBuffer mlp(runtime_, floats(
+            checked_mul(rows, config_.intermediate_size, "vision MLP"), "vision MLP"));
+        DeviceBuffer permutation = upload_i32(layout.permutation, "vision permutation");
+        DeviceBuffer corner_indices = upload_i32(layout.corner_indices, "vision corners");
+        DeviceBuffer corner_weights = upload_f32(layout.corner_weights, "vision corner weights");
+        DeviceBuffer position_width = upload_i32(layout.position_width, "vision width positions");
+        DeviceBuffer position_height = upload_i32(layout.position_height, "vision height positions");
+        DeviceBuffer window_begin = upload_i32(layout.window_begin, "vision window begin");
+        DeviceBuffer window_end = upload_i32(layout.window_end, "vision window end");
+        DeviceBuffer full_begin = upload_i32(layout.full_begin, "vision full begin");
+        DeviceBuffer full_end = upload_i32(layout.full_end, "vision full end");
+        DeviceBuffer pixel_sources = upload_i32(layout.pixel_sources, "vision pixel sources");
+        input_copy(input, patches);
+        linear(patch_, nullptr, input, projected, rows);
+        NfnNativeTileGlimmerVisionPrepareDescriptorV1 prepare{
+            .struct_size = sizeof(prepare),
+            .version = NFN_NATIVE_TILE_GLIMMER_VISION_V1,
+            .projected = projected.as<const float>(),
+            .position_table = position_.as<const float>(),
+            .corner_indices = corner_indices.as<const std::int32_t>(),
+            .corner_weights = corner_weights.as<const float>(),
+            .permutation = permutation.as<const std::int32_t>(),
+            .output = hidden.as<float>(),
+            .rows = rows,
+            .width = config_.hidden_size,
+            .position_rows = checked_mul(
+                config_.position_side, config_.position_side, "vision position rows"),
+            .cuda_stream = runtime_->stream(),
+        };
+        call(runtime_->vision_prepare()(&prepare), "Glimmer vision prepare");
+        layer_norm(
+            hidden, pre_norm_weight_, pre_norm_bias_, normalized, rows,
+            config_.hidden_size);
+        std::swap(hidden, normalized);
+
+        for (std::int64_t index = 0; index < config_.num_layers; ++index) {
+            throw_if_cancelled(cancelled);
+            const DeviceVisionLayer& layer = layers_.at(
+                checked_size(index, "vision layer"));
+            layer_norm(
+                hidden, layer.norm1_weight, layer.norm1_bias, normalized,
+                rows, config_.hidden_size);
+            linear(layer.query.weight, &layer.query, normalized, query, rows);
+            linear(layer.key.weight, &layer.key, normalized, key, rows);
+            linear(layer.value.weight, &layer.value, normalized, value, rows);
+            const bool full = (index + 1) % 4 == 0 || index + 1 == config_.num_layers;
+            NfnNativeTileGlimmerVisionAttentionDescriptorV1 attention{
+                .struct_size = sizeof(attention),
+                .version = NFN_NATIVE_TILE_GLIMMER_VISION_V1,
+                .interleaved_rope = config_.interleaved_rope ? 1U : 0U,
+                .reserved0 = 0,
+                .query = query.as<const float>(),
+                .key = key.as<const float>(),
+                .value = value.as<const float>(),
+                .position_width = position_width.as<const std::int32_t>(),
+                .position_height = position_height.as<const std::int32_t>(),
+                .row_begin = (full ? full_begin : window_begin).as<const std::int32_t>(),
+                .row_end = (full ? full_end : window_end).as<const std::int32_t>(),
+                .output = attended.as<float>(),
+                .rows = rows,
+                .heads = config_.num_heads,
+                .head_dim = config_.hidden_size / config_.num_heads,
+                .rope_theta = config_.rope_theta,
+                .reserved1 = 0,
+                .cuda_stream = runtime_->stream(),
+            };
+            call(runtime_->vision_attention()(&attention), "Glimmer vision attention");
+            linear(layer.output.weight, &layer.output, attended, branch, rows);
+            add_inplace(hidden, branch, rows * config_.hidden_size);
+            layer_norm(
+                hidden, layer.norm2_weight, layer.norm2_bias, normalized,
+                rows, config_.hidden_size);
+            linear(layer.fc1.weight, &layer.fc1, normalized, mlp, rows);
+            call(runtime_->gelu()(
+                mlp.as<const float>(), mlp.as<float>(),
+                rows * config_.intermediate_size, runtime_->stream()),
+                "Glimmer vision GELU");
+            linear(layer.fc2.weight, &layer.fc2, mlp, branch, rows);
+            add_inplace(hidden, branch, rows * config_.hidden_size);
+        }
+        layer_norm(
+            hidden, post_norm_weight_, post_norm_bias_, normalized, rows,
+            config_.hidden_size);
+        const std::int64_t merge_area = checked_mul(
+            config_.merge_size, config_.merge_size, "vision merge area");
+        DeviceBuffer merged(runtime_, floats(checked_mul(
+            checked_mul(layout.merged_rows, merge_area, "vision merged rows"),
+            config_.hidden_size, "vision merged"), "vision merged"));
+        NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1 shuffle{
+            .struct_size = sizeof(shuffle),
+            .version = NFN_NATIVE_TILE_GLIMMER_VISION_V1,
+            .reordered_hidden = normalized.as<const float>(),
+            .source_rows = pixel_sources.as<const std::int32_t>(),
+            .output = merged.as<float>(),
+            .merged_rows = layout.merged_rows,
+            .hidden_size = config_.hidden_size,
+            .merge_area = merge_area,
+            .cuda_stream = runtime_->stream(),
+        };
+        call(runtime_->vision_pixel_shuffle()(&shuffle), "Glimmer vision pixel shuffle");
+        DeviceBuffer adapted(runtime_, floats(checked_mul(
+            layout.merged_rows, config_.adapter_size, "vision adapted"),
+            "vision adapted"));
+        DeviceBuffer adapter_output(runtime_, adapted.bytes());
+        linear(adapter_fc1_.weight, &adapter_fc1_, merged, adapted, layout.merged_rows);
+        call(runtime_->gelu()(
+            adapted.as<const float>(), adapted.as<float>(),
+            layout.merged_rows * config_.adapter_size, runtime_->stream()),
+            "Glimmer vision adapter GELU 1");
+        linear(
+            adapter_fc2_.weight, &adapter_fc2_, adapted, adapter_output,
+            layout.merged_rows);
+        call(runtime_->gelu()(
+            adapter_output.as<const float>(), adapter_output.as<float>(),
+            layout.merged_rows * config_.adapter_size, runtime_->stream()),
+            "Glimmer vision adapter GELU 2");
+        DeviceBuffer output(runtime_, floats(checked_mul(
+            layout.merged_rows, config_.output_size, "vision output"),
+            "vision output"));
+        linear(
+            projection_.weight, &projection_, adapter_output, output,
+            layout.merged_rows);
+        call(runtime_->rms()(
+            output.as<const float>(), nullptr, output.as<float>(),
+            layout.merged_rows, config_.output_size, config_.norm_eps, false,
+            runtime_->stream()), "Glimmer vision output RMSNorm");
+        runtime_->synchronize();
+        throw_if_cancelled(cancelled);
+        std::vector<float> host(checked_size(
+            checked_mul(layout.merged_rows, config_.output_size, "vision host output"),
+            "vision host output"));
+        runtime_->copy_d2h(host.data(), output.get(), output.bytes());
+        workspace_bytes_ = static_cast<std::int64_t>(
+            input.bytes() + projected.bytes() + hidden.bytes() + normalized.bytes() +
+            query.bytes() + key.bytes() + value.bytes() + attended.bytes() +
+            branch.bytes() + mlp.bytes() + merged.bytes() + adapted.bytes() +
+            adapter_output.bytes() + output.bytes() + permutation.bytes() +
+            corner_indices.bytes() + corner_weights.bytes() +
+            position_width.bytes() + position_height.bytes() +
+            window_begin.bytes() + window_end.bytes() + full_begin.bytes() +
+            full_end.bytes() + pixel_sources.bytes());
+        return host;
+    }
+
+    std::int64_t weight_bytes() const noexcept { return weight_bytes_; }
+    std::int64_t workspace_bytes() const noexcept { return workspace_bytes_; }
+    std::int64_t launches() const noexcept { return launches_; }
+
+private:
+    struct Layout {
+        std::vector<std::int32_t> permutation;
+        std::vector<std::int32_t> corner_indices;
+        std::vector<float> corner_weights;
+        std::vector<std::int32_t> position_width;
+        std::vector<std::int32_t> position_height;
+        std::vector<std::int32_t> window_begin;
+        std::vector<std::int32_t> window_end;
+        std::vector<std::int32_t> full_begin;
+        std::vector<std::int32_t> full_end;
+        std::vector<std::int32_t> pixel_sources;
+        std::int64_t merged_rows = 0;
+    };
+
+    struct GridRow {
+        std::int64_t temporal;
+        std::int64_t height;
+        std::int64_t width;
+        std::int64_t offset;
+    };
+
+    static std::int32_t i32(std::int64_t value, const char* label) {
+        if (value < 0 || value > std::numeric_limits<std::int32_t>::max()) {
+            throw std::runtime_error(std::string("Glimmer CUDA vision ") + label +
+                                     " exceeds int32");
+        }
+        return static_cast<std::int32_t>(value);
+    }
+
+    Layout make_layout(
+        const std::vector<std::int64_t>& grid_thw,
+        std::int64_t supplied_rows) const {
+        if (grid_thw.empty() || grid_thw.size() % 3 != 0) {
+            throw std::runtime_error("Glimmer CUDA vision grid is invalid");
+        }
+        Layout result;
+        std::vector<GridRow> grid;
+        std::vector<std::int64_t> window_boundaries{0};
+        std::vector<std::int64_t> full_boundaries{0};
+        std::int64_t offset = 0;
+        for (std::size_t media = 0; media < grid_thw.size(); media += 3) {
+            const std::int64_t temporal = grid_thw[media];
+            const std::int64_t height = grid_thw[media + 1];
+            const std::int64_t width = grid_thw[media + 2];
+            if (temporal <= 0 || height <= 0 || width <= 0 ||
+                height % config_.merge_size != 0 ||
+                width % config_.merge_size != 0) {
+                throw std::runtime_error("Glimmer CUDA vision grid is unmergeable");
+            }
+            const std::int64_t spatial = checked_mul(height, width, "vision spatial");
+            grid.push_back({temporal, height, width, offset});
+            offset += checked_mul(temporal, spatial, "vision media rows");
+            full_boundaries.push_back(offset);
+            result.merged_rows += checked_mul(
+                temporal, checked_mul(height / config_.merge_size,
+                                      width / config_.merge_size,
+                                      "vision merged spatial"),
+                "vision merged rows");
+            const std::int64_t window = config_.position_side;
+            for (std::int64_t time = 0; time < temporal; ++time) {
+                for (std::int64_t wh = 0; wh < (height + window - 1) / window; ++wh) {
+                    for (std::int64_t ww = 0; ww < (width + window - 1) / window; ++ww) {
+                        std::int64_t count = 0;
+                        for (std::int64_t lh = 0; lh < window; ++lh) {
+                            const std::int64_t h = wh * window + lh;
+                            if (h >= height) continue;
+                            for (std::int64_t lw = 0; lw < window; ++lw) {
+                                const std::int64_t w = ww * window + lw;
+                                if (w >= width) continue;
+                                result.permutation.push_back(i32(
+                                    grid.back().offset + time * spatial + h * width + w,
+                                    "permutation"));
+                                result.position_width.push_back(i32(w + 1, "width position"));
+                                result.position_height.push_back(i32(h + 1, "height position"));
+                                ++count;
+                            }
+                        }
+                        if (count > 0) window_boundaries.push_back(
+                            window_boundaries.back() + count);
+                    }
+                }
+            }
+        }
+        if (offset != supplied_rows ||
+            result.permutation.size() != checked_size(supplied_rows, "vision rows")) {
+            throw std::runtime_error("Glimmer CUDA vision grid/patch rows differ");
+        }
+        result.corner_indices.assign(
+            checked_size(checked_mul(supplied_rows, 4, "vision corners"),
+                         "vision corners"), -1);
+        result.corner_weights.assign(result.corner_indices.size(), 0.0f);
+        const float side = static_cast<float>(config_.position_side);
+        for (const GridRow& media : grid) {
+            const std::int64_t spatial = media.height * media.width;
+            for (std::int64_t h = 0; h < media.height; ++h) {
+                const float hc = (static_cast<float>(h) + 0.5f) *
+                    side / static_cast<float>(media.height) - 0.5f;
+                const std::int64_t hf = static_cast<std::int64_t>(std::floor(hc));
+                const float hd = hc - static_cast<float>(hf);
+                for (std::int64_t w = 0; w < media.width; ++w) {
+                    const float wc = (static_cast<float>(w) + 0.5f) *
+                        side / static_cast<float>(media.width) - 0.5f;
+                    const std::int64_t wf = static_cast<std::int64_t>(std::floor(wc));
+                    const float wd = wc - static_cast<float>(wf);
+                    const std::int64_t hs[4] = {hf, hf, hf + 1, hf + 1};
+                    const std::int64_t ws[4] = {wf, wf + 1, wf, wf + 1};
+                    const float weights[4] = {
+                        (1.0f-hd)*(1.0f-wd), (1.0f-hd)*wd,
+                        hd*(1.0f-wd), hd*wd};
+                    for (std::int64_t time = 0; time < media.temporal; ++time) {
+                        const std::int64_t row = media.offset + time * spatial +
+                            h * media.width + w;
+                        for (int corner = 0; corner < 4; ++corner) {
+                            const std::size_t target = checked_size(
+                                row * 4 + corner, "vision corner");
+                            result.corner_weights[target] = weights[corner];
+                            if (hs[corner] >= 0 && hs[corner] < config_.position_side &&
+                                ws[corner] >= 0 && ws[corner] < config_.position_side) {
+                                result.corner_indices[target] = i32(
+                                    hs[corner] * config_.position_side + ws[corner],
+                                    "position table row");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        const auto fill_ranges = [&](const std::vector<std::int64_t>& boundaries,
+                                     std::vector<std::int32_t>* begin,
+                                     std::vector<std::int32_t>* end) {
+            begin->resize(checked_size(supplied_rows, "vision range rows"));
+            end->resize(begin->size());
+            for (std::size_t segment = 0; segment + 1 < boundaries.size(); ++segment) {
+                for (std::int64_t row = boundaries[segment];
+                     row < boundaries[segment + 1]; ++row) {
+                    begin->at(checked_size(row, "vision range row")) =
+                        i32(boundaries[segment], "range begin");
+                    end->at(checked_size(row, "vision range row")) =
+                        i32(boundaries[segment + 1], "range end");
+                }
+            }
+        };
+        fill_ranges(window_boundaries, &result.window_begin, &result.window_end);
+        fill_ranges(full_boundaries, &result.full_begin, &result.full_end);
+        std::vector<std::int32_t> inverse(
+            checked_size(supplied_rows, "vision inverse permutation"));
+        for (std::int64_t row = 0; row < supplied_rows; ++row) {
+            inverse.at(static_cast<std::size_t>(result.permutation[row])) = i32(row, "inverse row");
+        }
+        result.pixel_sources.reserve(checked_size(
+            checked_mul(result.merged_rows,
+                        config_.merge_size * config_.merge_size,
+                        "vision pixel source rows"),
+            "vision pixel source rows"));
+        for (const GridRow& media : grid) {
+            const std::int64_t spatial = media.height * media.width;
+            for (std::int64_t time = 0; time < media.temporal; ++time) {
+                for (std::int64_t bh = 0; bh < media.height / config_.merge_size; ++bh) {
+                    for (std::int64_t bw = 0; bw < media.width / config_.merge_size; ++bw) {
+                        for (std::int64_t lh = 0; lh < config_.merge_size; ++lh) {
+                            for (std::int64_t lw = 0; lw < config_.merge_size; ++lw) {
+                                const std::int64_t source = media.offset + time * spatial +
+                                    (bh * config_.merge_size + lh) * media.width +
+                                    bw * config_.merge_size + lw;
+                                result.pixel_sources.push_back(
+                                    inverse.at(checked_size(source, "vision pixel source")));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    DeviceVisionLinear upload_linear(const VisionHostLinear& source) {
+        DeviceVisionLinear result;
+        result.weight = upload_weight(runtime_, source.weight, &weight_bytes_);
+        if (!source.bias.empty()) {
+            result.bias = upload_float_vector(
+                runtime_, source.bias, source.weight.rows, &weight_bytes_,
+                "linear bias");
+            result.has_bias = true;
+        }
+        return result;
+    }
+
+    DeviceBuffer upload_i32(
+        const std::vector<std::int32_t>& source, const char* label) const {
+        if (source.empty()) throw std::runtime_error(std::string(label) + " is empty");
+        DeviceBuffer result(runtime_, source.size() * sizeof(std::int32_t));
+        runtime_->copy_h2d_async(result.get(), source.data(), result.bytes());
+        return result;
+    }
+
+    DeviceBuffer upload_f32(
+        const std::vector<float>& source, const char* label) const {
+        if (source.empty()) throw std::runtime_error(std::string(label) + " is empty");
+        DeviceBuffer result(runtime_, source.size() * sizeof(float));
+        runtime_->copy_h2d_async(result.get(), source.data(), result.bytes());
+        return result;
+    }
+
+    void input_copy(
+        DeviceBuffer& target, const std::vector<float>& source) const {
+        if (target.bytes() != source.size() * sizeof(float)) {
+            throw std::runtime_error("Glimmer CUDA vision input copy extent mismatch");
+        }
+        runtime_->copy_h2d_async(target.get(), source.data(), target.bytes());
+    }
+
+    void call(int status, const char* label) {
+        runtime_->check_tile(status, label);
+        ++launches_;
+    }
+
+    void linear(
+        const DeviceWeight& weight,
+        const DeviceVisionLinear* linear,
+        const DeviceBuffer& input,
+        DeviceBuffer& output,
+        std::int64_t rows) {
+        const float* bias = linear != nullptr && linear->has_bias
+            ? linear->bias.as<const float>() : nullptr;
+        call(runtime_->linear()(
+            &weight.descriptor, input.as<const float>(), bias,
+            output.as<float>(), rows, bias != nullptr), "Glimmer vision packed linear");
+    }
+
+    void layer_norm(
+        const DeviceBuffer& input,
+        const DeviceBuffer& weight,
+        const DeviceBuffer& bias,
+        DeviceBuffer& output,
+        std::int64_t rows,
+        std::int64_t width) {
+        call(runtime_->vision_layer_norm()(
+            input.as<const float>(), weight.as<const float>(),
+            bias.as<const float>(), output.as<float>(), rows, width,
+            config_.norm_eps, runtime_->stream()), "Glimmer vision LayerNorm");
+    }
+
+    void add_inplace(
+        DeviceBuffer& target, const DeviceBuffer& branch,
+        std::int64_t count) {
+        call(runtime_->add()(
+            target.as<const float>(), branch.as<const float>(), target.as<float>(),
+            count, runtime_->stream()), "Glimmer vision residual add");
+    }
+
+    std::shared_ptr<Runtime> runtime_;
+    VisionConfig config_;
+    DeviceWeight patch_;
+    DeviceBuffer position_;
+    DeviceBuffer pre_norm_weight_;
+    DeviceBuffer pre_norm_bias_;
+    DeviceBuffer post_norm_weight_;
+    DeviceBuffer post_norm_bias_;
+    std::vector<DeviceVisionLayer> layers_;
+    DeviceVisionLinear adapter_fc1_;
+    DeviceVisionLinear adapter_fc2_;
+    DeviceVisionLinear projection_;
+    std::int64_t weight_bytes_ = 0;
+    std::int64_t workspace_bytes_ = 0;
+    std::int64_t launches_ = 0;
+};
 
 }  // namespace
 
@@ -759,6 +1353,7 @@ public:
     DeviceWeight lm_head;
     std::vector<DeviceLayer> layers;
     std::vector<DeviceLoraLayer> lora_layers;
+    std::unique_ptr<VisionExecutor> vision;
     DeviceBuffer hidden;
     DeviceBuffer normalized;
     DeviceBuffer residual;
@@ -797,6 +1392,40 @@ void Model::load_lora_adapter(const HostLoraPlan& weights) {
         throw std::runtime_error("Glimmer CUDA model is closed");
     }
     impl_->load_lora(weights);
+}
+
+void Model::load_vision(
+    const VisionConfig& config,
+    const VisionHostWeightPlan& weights) {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (impl_->closed) {
+        throw std::runtime_error("Glimmer CUDA model is closed");
+    }
+    if (impl_->vision) {
+        throw std::runtime_error("Glimmer CUDA vision weights are already loaded");
+    }
+    auto loaded = std::make_unique<VisionExecutor>(impl_->runtime, config, weights);
+    impl_->vision = std::move(loaded);
+}
+
+std::vector<float> Model::encode_vision(
+    const std::vector<float>& packed_patches,
+    const std::vector<std::int64_t>& grid_thw,
+    const std::atomic<bool>& cancelled) {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (impl_->closed || !impl_->vision) {
+        throw std::runtime_error(
+            "Glimmer CUDA vision encoding requires loaded vision weights");
+    }
+    return impl_->vision->encode(packed_patches, grid_thw, cancelled);
+}
+
+bool Model::has_vision() const noexcept {
+    return impl_ && static_cast<bool>(impl_->vision);
+}
+
+std::int64_t Model::vision_weight_bytes() const noexcept {
+    return impl_ && impl_->vision ? impl_->vision->weight_bytes() : 0;
 }
 
 std::shared_ptr<Cache> Model::create_cache() const {
@@ -1355,9 +1984,18 @@ void Model::close() noexcept {
     impl_->closed = true;
 }
 
-std::int64_t Model::resident_weight_bytes() const noexcept { return impl_->weight_bytes; }
-std::int64_t Model::workspace_bytes() const noexcept { return impl_->workspace; }
-std::int64_t Model::kernel_launches() const noexcept { return impl_->launches; }
+std::int64_t Model::resident_weight_bytes() const noexcept {
+    return impl_->weight_bytes +
+        (impl_->vision ? impl_->vision->weight_bytes() : 0);
+}
+std::int64_t Model::workspace_bytes() const noexcept {
+    return impl_->workspace +
+        (impl_->vision ? impl_->vision->workspace_bytes() : 0);
+}
+std::int64_t Model::kernel_launches() const noexcept {
+    return impl_->launches +
+        (impl_->vision ? impl_->vision->launches() : 0);
+}
 int Model::cuda_device() const noexcept { return impl_->runtime->device(); }
 const std::string& Model::tile_ops_library() const noexcept { return impl_->runtime->tile_path(); }
 const std::string& Model::cuda_runtime_library() const noexcept { return impl_->runtime->cuda_path(); }

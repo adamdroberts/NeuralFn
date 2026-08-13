@@ -80,12 +80,13 @@ the target distribution. The load policy is `off`, `auto`, or `required`;
 `required` fails before mutation when the companion, cache mode, device
 backend, or digest binding is unavailable.
 
-Full-BF16 artifacts can expose embedded CPU vision for images and decoded
-videos. Official packed bundles can attach the CPU `mmproj` for still images.
-The packed temporal projection cannot represent two distinct frames, and the
-current vision tower has no whole-model CUDA runner, so `video=false` for
-mmproj and `vision_cuda=false` everywhere. A CUDA load that requests mmproj
-fails before creating the model handle instead of running vision on CPU.
+Full-BF16 artifacts expose embedded CPU or whole-model CUDA vision for images
+and decoded videos. Official packed bundles can attach `mmproj` for CPU or CUDA
+still images. The packed temporal projection cannot represent two distinct
+frames, so `video=false` remains exact for mmproj. CUDA vision requires the
+versioned preparation/LayerNorm/2-D-RoPE-attention/pixel-shuffle ABI; weights
+are attached atomically before sessions and request-time failure never falls
+back to CPU.
 
 This remains a topology-specific foundation rather than an all-family runtime.
 `nfn migrate graph-to-native` accepts either a graph-compatible native dense-v5
@@ -844,7 +845,9 @@ result continuation is ordinary text generation and may use ordinary sampling
 controls, but requires disabled truncation.
 General/parallel/hosted tools, nested/array schemas, constrained streaming or
 background work, Chat Completions tools, Responses multimedia, audio/files,
-server video, CUDA vision, and hosted resources remain explicitly unsupported.
+server video, and hosted resources remain explicitly unsupported. Bounded Chat
+Completions base64 images may use an authenticated Glimmer CPU or whole-model
+CUDA vision artifact.
 See the
 [REST contract](../rest-api/native-inference-serving.md) and
 [server architecture](../server/native-inference-serving.md).

@@ -288,6 +288,10 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `RewardForwardStage` | `reward_forward` | Frozen reward-model forward for PPO scoring |
 | `PPORolloutSourceStage` | `ppo_rollout_source` | Rollout-buffer source for PPO inner-loop batches |
 | `GAEComputeStage` | `gae_compute` | Generalized advantage estimation helper |
+| `DFlashAttentionStage` | `dflash_attention` | Context-plus-block attention; distillation graphs may supply an explicit boolean/additive multi-anchor mask |
+| `MuseGlimmerVisionTowerStage` | `muse_glimmer_vision_tower` | Exact patch projection, learned position interpolation, 2-D RoPE and full/window vision tower |
+| `MuseGlimmerPerceptionNormStage` | `muse_glimmer_perception_norm` | Scaleless RMS normalization after the vision projector |
+| `MuseGlimmerMediaScatterStage` | `muse_glimmer_media_scatter` | Replace authenticated media placeholder positions with projected vision rows |
 | `RandMapAdapterStage` | `randmap_adapter` | Random-map adapter (fixed random proj + learnable) |
 | `MambaStage` | `mamba` | Mamba SSM block |
 | `ReshapeHeadsStage` | `reshape_heads` | Reshape tensor to multi-head format |
@@ -348,6 +352,44 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `RoutedAttentionExpertsStage` | `routed_attention_experts` | Attention-capable experts applied to the full hidden sequence |
 | `AttentionlessDecoderStage` | `attentionless_decoder` | Legacy decoder stage retained for compatibility |
 | `SoftmaxDistillationLossStage` | `softmax_distillation_loss` | Distillation loss for experimental semantic workflows |
+
+---
+
+## DFlashDistillationTrainer
+
+```python
+class DFlashDistillationTrainer:
+    def __init__(
+        self,
+        assistant_graph: NeuronGraph,
+        target_model: nn.Module,
+        distillation_spec: MuseGlimmerDFlashDistillationSpec,
+        config: TorchTrainConfig | None = None,
+        *,
+        move_target_to_device: bool = True,
+    ) -> None
+```
+
+Trains only the Muse Glimmer DFlash assistant. The HF-style target must expose
+input/output embeddings and return logits plus hidden states; every target
+parameter is frozen and excluded from the optimizer. `train(input_ids, ...)`
+samples valid random anchors, captures target layers `[1,13,25,37,49]`, builds
+the explicit multi-anchor block mask, and applies D-PACE or static decay plus
+optional self-logit distillation.
+
+`save_training_checkpoint(path)` stores assistant/optimizer state, graph and
+recipe lineage, RNG state, shuffled data order and cursor. Resume must match
+all of them. `evaluate_greedy_acceptance(prompt, ...)` reports proposed,
+accepted, block and generated-token statistics against the frozen target.
+`export_native_assistant(output_root)` emits the canonical 58-tensor BF16
+resident assistant only for production geometry and pinned lineage; it never
+copies target embeddings or the shared target head.
+
+`dflash_dpace_position_weights(confidences, alpha, valid_mask=None)` is the
+public detached weighting helper. `DFlashDistillationMetrics` records loss,
+accuracy, weighted token count and valid block count per step. The recipe is a
+versioned NeuralFn contract and is not represented as Meta's unpublished
+released-assistant provenance.
 
 ---
 

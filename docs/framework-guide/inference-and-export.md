@@ -109,9 +109,10 @@ nfn infer \
 CUDA `auto` budgets current free VRAM, configured context/session cache,
 enabled companions, staging, workspace, and reserve before choosing BF16,
 Dynamic, or 17GB in quality order. Explicit precision never downgrades. CPU
-`auto` selects the authenticated primary. Full-BF16 and packed-mmproj vision
-are CPU-only; a CUDA request with mmproj fails before load because
-`vision_cuda=false`.
+`auto` selects the authenticated primary. Full-BF16 vision runs images/videos
+on CPU or whole-model CUDA; packed mmproj runs still images on either backend
+and remains `video=false`. CUDA companion attachment requires vision ABI v1
+and fails before sessions if any kernel is missing—there is no CPU fallback.
 
 When comparing the trained MoA choice with the authored graph, use
 `load_native_moa_graph_runtime()` from
@@ -219,8 +220,8 @@ artifact proof, binding ABI, and cache mode before the socket can bind. The
 server keeps one model resident, creates an isolated session per request, and
 bounds admission around one generation worker. It implements Models and
 bounded Chat Completions, including genuine token SSE ending in `[DONE]`.
-Chat is text by default; a jointly proven CPU Muse Glimmer vision artifact can
-also accept bounded base64 image data URLs.
+Chat is text by default; a jointly proven CPU or whole-model CUDA Muse Glimmer
+vision artifact can also accept bounded base64 image data URLs.
 With `--state-db`, the same isolated server mounts the bounded text Responses
 and Conversations subset, scope-bound local compaction, durable background
 jobs, and semantic Responses SSE.

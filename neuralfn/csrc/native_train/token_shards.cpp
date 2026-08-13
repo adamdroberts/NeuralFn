@@ -326,6 +326,265 @@ StructuredSftFile read_structured_sft_file(const fs::path& path) {
     };
 }
 
+StructuredPreferenceFile read_structured_preference_file(const fs::path& path) {
+    const std::uintmax_t bytes = fs::file_size(path);
+    if (bytes < kStructuredPreferenceV1HeaderBytes) {
+        throw std::runtime_error(
+            "structured preference file is smaller than its header: " + path.string());
+    }
+    std::ifstream input(path, std::ios::binary);
+    std::array<unsigned char, kStructuredPreferenceV1HeaderBytes> header{};
+    input.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+    if (input.gcount() != static_cast<std::streamsize>(header.size())) {
+        throw std::runtime_error("short structured preference header: " + path.string());
+    }
+    constexpr std::array<unsigned char, 8> kMagic = {'N', 'F', 'N', 'P', 'R', 'F', '1', 0};
+    if (!std::equal(kMagic.begin(), kMagic.end(), header.begin()) ||
+        read_le32(header.data() + 8) != kStructuredPreferenceV1Version ||
+        read_le32(header.data() + 12) != kStructuredPreferenceV1HeaderBytes ||
+        read_le32(header.data() + 16) != kTokenShardLittleEndianMarker ||
+        read_le32(header.data() + 20) != 0U) {
+        throw std::runtime_error(
+            "invalid structured preference magic/version/endian/flags: " + path.string());
+    }
+    const std::uint64_t records = read_le64(header.data() + 24);
+    const std::uint32_t sequence_length = read_le32(header.data() + 32);
+    const std::uint32_t vocab_size = read_le32(header.data() + 36);
+    const std::uint32_t pad_token_id = read_le32(header.data() + 40);
+    if (records == 0 || sequence_length == 0 || vocab_size == 0 ||
+        pad_token_id >= vocab_size) {
+        throw std::runtime_error(
+            "invalid structured preference record geometry: " + path.string());
+    }
+    const std::uint64_t branch_bytes = static_cast<std::uint64_t>(sequence_length) * 16U;
+    const std::uint64_t record_bytes = branch_bytes * 2U;
+    if (records >
+            (std::numeric_limits<std::uintmax_t>::max() -
+             kStructuredPreferenceV1HeaderBytes) /
+                record_bytes ||
+        bytes != kStructuredPreferenceV1HeaderBytes + records * record_bytes) {
+        throw std::runtime_error(
+            "structured preference byte size does not match its record table: " +
+            path.string());
+    }
+    const std::string tokenizer_sha256 = fixed_header_string(
+        header, 48, 65, "tokenizer_sha256");
+    const std::string chat_template_sha256 = fixed_header_string(
+        header, 113, 65, "chat_template_sha256");
+    const std::string tokenizer_revision = fixed_header_string(
+        header, 178, 96, "tokenizer_revision");
+    const std::string split = fixed_header_string(header, 274, 32, "split");
+    const std::string objective = fixed_header_string(header, 306, 32, "objective");
+    if (!is_lower_hex_sha256(tokenizer_sha256) ||
+        !is_lower_hex_sha256(chat_template_sha256) || tokenizer_revision.empty() ||
+        (split != "train" && split != "validation" && split != "test") ||
+        objective != "preference") {
+        throw std::runtime_error(
+            "invalid structured preference lineage/split/objective metadata: " +
+            path.string());
+    }
+    for (std::size_t index = 338; index < header.size(); ++index) {
+        if (header[index] != 0U) {
+            throw std::runtime_error(
+                "structured preference reserved header bytes must be zero: " +
+                path.string());
+        }
+    }
+
+    const auto validate_branch = [&](const unsigned char* base, const char* branch) {
+        const unsigned char* target_bytes = base + sequence_length * 4U;
+        const unsigned char* mask_bytes = target_bytes + sequence_length * 4U;
+        const unsigned char* segment_bytes = mask_bytes + sequence_length * 4U;
+        double mask_sum = 0.0;
+        std::int32_t previous_segment = 0;
+        for (std::uint32_t token = 0; token < sequence_length; ++token) {
+            const std::uint32_t input_id = read_le32(base + token * 4U);
+            const std::int32_t target_id = read_le_i32(target_bytes + token * 4U);
+            const float mask = read_le_f32(mask_bytes + token * 4U);
+            const std::int32_t segment = read_le_i32(segment_bytes + token * 4U);
+            if (input_id >= vocab_size ||
+                (target_id != -100 &&
+                 (target_id < 0 || static_cast<std::uint32_t>(target_id) >= vocab_size)) ||
+                !std::isfinite(mask) || mask < 0.0f ||
+                (target_id == -100 && mask != 0.0f) || segment < 0 ||
+                (token == 0 && segment != 0) ||
+                (token > 0 && segment != previous_segment &&
+                 segment != previous_segment + 1)) {
+                throw std::runtime_error(
+                    std::string("invalid structured preference ") + branch +
+                    " record payload: " + path.string());
+            }
+            previous_segment = segment;
+            mask_sum += mask;
+        }
+        if (!(mask_sum > 0.0) || !std::isfinite(mask_sum)) {
+            throw std::runtime_error(
+                std::string("structured preference ") + branch +
+                " record has an empty loss mask: " + path.string());
+        }
+    };
+
+    constexpr std::uint64_t kChunkRecords = 32;
+    std::vector<unsigned char> payload(static_cast<std::size_t>(
+        std::min<std::uint64_t>(records, kChunkRecords) * record_bytes));
+    std::uint64_t remaining = records;
+    while (remaining > 0) {
+        const std::uint64_t count = std::min<std::uint64_t>(remaining, kChunkRecords);
+        const std::size_t count_bytes = static_cast<std::size_t>(count * record_bytes);
+        input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(count_bytes));
+        if (input.gcount() != static_cast<std::streamsize>(count_bytes)) {
+            throw std::runtime_error("short structured preference payload: " + path.string());
+        }
+        for (std::uint64_t record = 0; record < count; ++record) {
+            const unsigned char* base = payload.data() + record * record_bytes;
+            validate_branch(base, "chosen");
+            validate_branch(base + branch_bytes, "rejected");
+        }
+        remaining -= count;
+    }
+    return StructuredPreferenceFile{
+        .path = path,
+        .bytes = bytes,
+        .records = records,
+        .sequence_length = sequence_length,
+        .tokenizer_vocab_size = vocab_size,
+        .pad_token_id = pad_token_id,
+        .tokenizer_sha256 = tokenizer_sha256,
+        .chat_template_sha256 = chat_template_sha256,
+        .tokenizer_revision = tokenizer_revision,
+        .split = split,
+    };
+}
+
+StructuredPpoPromptFile read_structured_ppo_prompt_file(const fs::path& path) {
+    const std::uintmax_t bytes = fs::file_size(path);
+    if (bytes < kStructuredPpoPromptV1HeaderBytes) {
+        throw std::runtime_error(
+            "structured PPO prompt file is smaller than its header: " +
+            path.string());
+    }
+    std::ifstream input(path, std::ios::binary);
+    std::array<unsigned char, kStructuredPpoPromptV1HeaderBytes> header{};
+    input.read(
+        reinterpret_cast<char*>(header.data()),
+        static_cast<std::streamsize>(header.size()));
+    if (input.gcount() != static_cast<std::streamsize>(header.size())) {
+        throw std::runtime_error(
+            "short structured PPO prompt header: " + path.string());
+    }
+    constexpr std::array<unsigned char, 8> kMagic = {
+        'N', 'F', 'N', 'P', 'P', 'O', '1', 0};
+    if (!std::equal(kMagic.begin(), kMagic.end(), header.begin()) ||
+        read_le32(header.data() + 8) != kStructuredPpoPromptV1Version ||
+        read_le32(header.data() + 12) != kStructuredPpoPromptV1HeaderBytes ||
+        read_le32(header.data() + 16) != kTokenShardLittleEndianMarker ||
+        read_le32(header.data() + 20) != 0U) {
+        throw std::runtime_error(
+            "invalid structured PPO prompt magic/version/endian/flags: " +
+            path.string());
+    }
+    const std::uint64_t records = read_le64(header.data() + 24);
+    const std::uint32_t sequence_length = read_le32(header.data() + 32);
+    const std::uint32_t vocab_size = read_le32(header.data() + 36);
+    const std::uint32_t pad_token_id = read_le32(header.data() + 40);
+    if (records == 0 || sequence_length <= 1 || vocab_size == 0 ||
+        pad_token_id >= vocab_size) {
+        throw std::runtime_error(
+            "invalid structured PPO prompt geometry: " + path.string());
+    }
+    const std::uint64_t record_bytes =
+        static_cast<std::uint64_t>(sequence_length) * 8U;
+    if (records >
+            (std::numeric_limits<std::uintmax_t>::max() -
+             kStructuredPpoPromptV1HeaderBytes) /
+                record_bytes ||
+        bytes != kStructuredPpoPromptV1HeaderBytes + records * record_bytes) {
+        throw std::runtime_error(
+            "structured PPO prompt byte size does not match its record table: " +
+            path.string());
+    }
+    const std::string tokenizer_sha256 = fixed_header_string(
+        header, 48, 65, "tokenizer_sha256");
+    const std::string chat_template_sha256 = fixed_header_string(
+        header, 113, 65, "chat_template_sha256");
+    const std::string tokenizer_revision = fixed_header_string(
+        header, 178, 96, "tokenizer_revision");
+    const std::string split = fixed_header_string(header, 274, 32, "split");
+    const std::string objective = fixed_header_string(
+        header, 306, 32, "objective");
+    if (!is_lower_hex_sha256(tokenizer_sha256) ||
+        !is_lower_hex_sha256(chat_template_sha256) ||
+        tokenizer_revision.empty() ||
+        (split != "train" && split != "validation" && split != "test") ||
+        objective != "ppo_prompt") {
+        throw std::runtime_error(
+            "invalid structured PPO prompt lineage/split/objective metadata: " +
+            path.string());
+    }
+    for (std::size_t index = 338; index < header.size(); ++index) {
+        if (header[index] != 0U) {
+            throw std::runtime_error(
+                "structured PPO prompt reserved header bytes must be zero: " +
+                path.string());
+        }
+    }
+    constexpr std::uint64_t kChunkRecords = 64;
+    std::vector<unsigned char> payload(static_cast<std::size_t>(
+        std::min<std::uint64_t>(records, kChunkRecords) * record_bytes));
+    std::uint64_t remaining = records;
+    while (remaining > 0) {
+        const std::uint64_t count =
+            std::min<std::uint64_t>(remaining, kChunkRecords);
+        const std::size_t count_bytes =
+            static_cast<std::size_t>(count * record_bytes);
+        input.read(
+            reinterpret_cast<char*>(payload.data()),
+            static_cast<std::streamsize>(count_bytes));
+        if (input.gcount() != static_cast<std::streamsize>(count_bytes)) {
+            throw std::runtime_error(
+                "short structured PPO prompt payload: " + path.string());
+        }
+        for (std::uint64_t record = 0; record < count; ++record) {
+            const unsigned char* base = payload.data() + record * record_bytes;
+            const unsigned char* mask_bytes = base + sequence_length * 4U;
+            bool saw_padding = false;
+            std::uint32_t prompt_length = 0;
+            for (std::uint32_t token = 0; token < sequence_length; ++token) {
+                const std::uint32_t input_id = read_le32(base + token * 4U);
+                const float mask = read_le_f32(mask_bytes + token * 4U);
+                if (input_id >= vocab_size || !std::isfinite(mask) ||
+                    (mask != 0.0f && mask != 1.0f) ||
+                    (saw_padding && mask != 0.0f) ||
+                    (mask == 0.0f && input_id != pad_token_id)) {
+                    throw std::runtime_error(
+                        "invalid structured PPO prompt payload: " +
+                        path.string());
+                }
+                if (mask == 0.0f) saw_padding = true;
+                else ++prompt_length;
+            }
+            if (prompt_length == 0 || prompt_length >= sequence_length) {
+                throw std::runtime_error(
+                    "structured PPO prompt must leave a completion slot: " +
+                    path.string());
+            }
+        }
+        remaining -= count;
+    }
+    return StructuredPpoPromptFile{
+        .path = path,
+        .bytes = bytes,
+        .records = records,
+        .sequence_length = sequence_length,
+        .tokenizer_vocab_size = vocab_size,
+        .pad_token_id = pad_token_id,
+        .tokenizer_sha256 = tokenizer_sha256,
+        .chat_template_sha256 = chat_template_sha256,
+        .tokenizer_revision = tokenizer_revision,
+        .split = split,
+    };
+}
+
 TokenShardFile read_shard_file(const fs::path& path) {
     const std::uintmax_t bytes = fs::file_size(path);
     {
@@ -455,6 +714,42 @@ std::vector<StructuredSftFile> sorted_structured_sft_files(
     return files;
 }
 
+std::vector<StructuredPreferenceFile> sorted_structured_preference_files(
+    const fs::path& dataset_path,
+    const std::string& prefix) {
+    std::vector<StructuredPreferenceFile> files;
+    if (!fs::is_directory(dataset_path)) return files;
+    for (const fs::directory_entry& entry : fs::directory_iterator(dataset_path)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".preference" ||
+            entry.path().filename().string().rfind(prefix, 0) != 0) {
+            continue;
+        }
+        files.push_back(read_structured_preference_file(entry.path()));
+    }
+    std::sort(files.begin(), files.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.path < rhs.path;
+    });
+    return files;
+}
+
+std::vector<StructuredPpoPromptFile> sorted_structured_ppo_prompt_files(
+    const fs::path& dataset_path,
+    const std::string& prefix) {
+    std::vector<StructuredPpoPromptFile> files;
+    if (!fs::is_directory(dataset_path)) return files;
+    for (const fs::directory_entry& entry : fs::directory_iterator(dataset_path)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".ppo_prompt" ||
+            entry.path().filename().string().rfind(prefix, 0) != 0) {
+            continue;
+        }
+        files.push_back(read_structured_ppo_prompt_file(entry.path()));
+    }
+    std::sort(files.begin(), files.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.path < rhs.path;
+    });
+    return files;
+}
+
 std::vector<TokenShardFile> sorted_shards(const fs::path& dataset_path, const std::string& prefix) {
     return sorted_shards(dataset_path, std::vector<std::string>{prefix});
 }
@@ -527,6 +822,12 @@ bool directory_has_native_byte_bins(const fs::path& dataset_path) {
 
 bool directory_has_structured_sft_files(const fs::path& dataset_path) {
     return !sorted_structured_sft_files(dataset_path, "sft_train_").empty();
+}
+
+bool directory_has_structured_preference_files(const fs::path& dataset_path) {
+    return !sorted_structured_preference_files(
+                dataset_path, "preference_train_")
+                .empty();
 }
 
 fs::path inferred_validation_path(const fs::path& train_path) {
@@ -1195,6 +1496,278 @@ std::int64_t SequentialStructuredSftBatchSampler::total_batches() const {
     return static_cast<std::int64_t>(records / static_cast<std::uint64_t>(batch_size_));
 }
 
+SequentialStructuredPreferenceBatchSampler::SequentialStructuredPreferenceBatchSampler(
+    std::vector<StructuredPreferenceFile> files,
+    std::int64_t batch_size)
+    : files_(std::move(files)), batch_size_(checked_positive(batch_size, "batch_size")) {
+    if (files_.empty()) {
+        throw std::runtime_error(
+            "structured preference sampler requires at least one file");
+    }
+    sequence_length_ = files_.front().sequence_length;
+    for (const auto& file : files_) {
+        if (file.sequence_length != sequence_length_ || file.records == 0) {
+            throw std::runtime_error(
+                "structured preference files must share one nonempty sequence length");
+        }
+    }
+}
+
+bool SequentialStructuredPreferenceBatchSampler::next(StructuredPreferenceBatch& out) {
+    out.batch_size = batch_size_;
+    out.seq_len = sequence_length_;
+    const std::size_t rows = static_cast<std::size_t>(batch_size_) * sequence_length_;
+    out.chosen_input_ids.resize(rows);
+    out.chosen_targets.resize(rows);
+    out.chosen_loss_mask.resize(rows);
+    out.chosen_sequence_ids.resize(rows);
+    out.rejected_input_ids.resize(rows);
+    out.rejected_targets.resize(rows);
+    out.rejected_loss_mask.resize(rows);
+    out.rejected_sequence_ids.resize(rows);
+    std::int64_t produced = 0;
+    const std::uint64_t branch_bytes =
+        static_cast<std::uint64_t>(sequence_length_) * 16U;
+    const std::uint64_t record_bytes = branch_bytes * 2U;
+    while (produced < batch_size_ && file_index_ < files_.size()) {
+        const StructuredPreferenceFile& file = files_[file_index_];
+        if (local_record_index_ >= file.records) {
+            ++file_index_;
+            local_record_index_ = 0;
+            continue;
+        }
+        const std::uint64_t available = file.records - local_record_index_;
+        const std::uint64_t wanted = static_cast<std::uint64_t>(batch_size_ - produced);
+        const std::uint64_t count = std::min(available, wanted);
+        const std::uint64_t byte_offset = kStructuredPreferenceV1HeaderBytes +
+            local_record_index_ * record_bytes;
+        const std::uint64_t byte_count = count * record_bytes;
+        if (byte_offset > static_cast<std::uint64_t>(
+                              std::numeric_limits<std::streamoff>::max()) ||
+            byte_count > static_cast<std::uint64_t>(
+                             std::numeric_limits<std::streamsize>::max())) {
+            throw std::runtime_error(
+                "structured preference batch offset exceeds stream limits");
+        }
+        scratch_.resize(static_cast<std::size_t>(byte_count));
+        std::ifstream input(file.path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error(
+                "failed to open structured preference file: " + file.path.string());
+        }
+        input.seekg(static_cast<std::streamoff>(byte_offset), std::ios::beg);
+        input.read(
+            reinterpret_cast<char*>(scratch_.data()),
+            static_cast<std::streamsize>(byte_count));
+        if (input.gcount() != static_cast<std::streamsize>(byte_count)) {
+            throw std::runtime_error(
+                "short structured preference batch read: " + file.path.string());
+        }
+        for (std::uint64_t record = 0; record < count; ++record) {
+            const std::size_t destination =
+                static_cast<std::size_t>(produced +
+                                         static_cast<std::int64_t>(record)) *
+                sequence_length_;
+            const auto decode_branch = [&](const std::uint8_t* base,
+                                           std::vector<std::uint32_t>& input_ids,
+                                           std::vector<std::int32_t>& targets,
+                                           std::vector<float>& loss_mask,
+                                           std::vector<std::int32_t>& sequence_ids) {
+                const std::uint8_t* target = base + sequence_length_ * 4U;
+                const std::uint8_t* mask = target + sequence_length_ * 4U;
+                const std::uint8_t* segment = mask + sequence_length_ * 4U;
+                for (std::uint32_t token = 0; token < sequence_length_; ++token) {
+                    input_ids[destination + token] = read_le32(base + token * 4U);
+                    targets[destination + token] = read_le_i32(target + token * 4U);
+                    loss_mask[destination + token] = read_le_f32(mask + token * 4U);
+                    sequence_ids[destination + token] = read_le_i32(segment + token * 4U);
+                }
+            };
+            const std::uint8_t* base = scratch_.data() + record * record_bytes;
+            decode_branch(
+                base,
+                out.chosen_input_ids,
+                out.chosen_targets,
+                out.chosen_loss_mask,
+                out.chosen_sequence_ids);
+            decode_branch(
+                base + branch_bytes,
+                out.rejected_input_ids,
+                out.rejected_targets,
+                out.rejected_loss_mask,
+                out.rejected_sequence_ids);
+        }
+        produced += static_cast<std::int64_t>(count);
+        local_record_index_ += count;
+    }
+    if (produced != batch_size_) {
+        out.chosen_input_ids.clear();
+        out.chosen_targets.clear();
+        out.chosen_loss_mask.clear();
+        out.chosen_sequence_ids.clear();
+        out.rejected_input_ids.clear();
+        out.rejected_targets.clear();
+        out.rejected_loss_mask.clear();
+        out.rejected_sequence_ids.clear();
+        return false;
+    }
+    return true;
+}
+
+bool SequentialStructuredPreferenceBatchSampler::seek_batch(
+    std::int64_t batch_index) {
+    if (batch_index < 0 || total_batches() <= 0) return false;
+    std::uint64_t records = static_cast<std::uint64_t>(
+        batch_index % total_batches()) * static_cast<std::uint64_t>(batch_size_);
+    file_index_ = 0;
+    local_record_index_ = 0;
+    while (file_index_ < files_.size()) {
+        if (records < files_[file_index_].records) {
+            local_record_index_ = records;
+            return true;
+        }
+        records -= files_[file_index_].records;
+        ++file_index_;
+    }
+    reset();
+    return records == 0;
+}
+
+void SequentialStructuredPreferenceBatchSampler::reset() {
+    file_index_ = 0;
+    local_record_index_ = 0;
+}
+
+std::int64_t SequentialStructuredPreferenceBatchSampler::total_batches() const {
+    std::uint64_t records = 0;
+    for (const auto& file : files_) records += file.records;
+    return static_cast<std::int64_t>(
+        records / static_cast<std::uint64_t>(batch_size_));
+}
+
+SequentialStructuredPpoPromptBatchSampler::
+SequentialStructuredPpoPromptBatchSampler(
+    std::vector<StructuredPpoPromptFile> files,
+    std::int64_t batch_size)
+    : files_(std::move(files)),
+      batch_size_(checked_positive(batch_size, "batch_size")) {
+    if (files_.empty()) {
+        throw std::runtime_error(
+            "structured PPO prompt sampler requires at least one file");
+    }
+    sequence_length_ = files_.front().sequence_length;
+    for (const auto& file : files_) {
+        if (file.sequence_length != sequence_length_ || file.records == 0) {
+            throw std::runtime_error(
+                "structured PPO prompt files must share one nonempty sequence length");
+        }
+    }
+}
+
+bool SequentialStructuredPpoPromptBatchSampler::next(
+    StructuredPpoPromptBatch& out) {
+    out.batch_size = batch_size_;
+    out.seq_len = sequence_length_;
+    const std::size_t rows =
+        static_cast<std::size_t>(batch_size_) * sequence_length_;
+    out.input_ids.resize(rows);
+    out.attention_mask.resize(rows);
+    std::int64_t produced = 0;
+    const std::uint64_t record_bytes =
+        static_cast<std::uint64_t>(sequence_length_) * 8U;
+    while (produced < batch_size_ && file_index_ < files_.size()) {
+        const StructuredPpoPromptFile& file = files_[file_index_];
+        if (local_record_index_ >= file.records) {
+            ++file_index_;
+            local_record_index_ = 0;
+            continue;
+        }
+        const std::uint64_t available = file.records - local_record_index_;
+        const std::uint64_t wanted =
+            static_cast<std::uint64_t>(batch_size_ - produced);
+        const std::uint64_t count = std::min(available, wanted);
+        const std::uint64_t byte_offset = kStructuredPpoPromptV1HeaderBytes +
+            local_record_index_ * record_bytes;
+        const std::uint64_t byte_count = count * record_bytes;
+        if (byte_offset > static_cast<std::uint64_t>(
+                              std::numeric_limits<std::streamoff>::max()) ||
+            byte_count > static_cast<std::uint64_t>(
+                             std::numeric_limits<std::streamsize>::max())) {
+            throw std::runtime_error(
+                "structured PPO prompt batch offset exceeds stream limits");
+        }
+        scratch_.resize(static_cast<std::size_t>(byte_count));
+        std::ifstream input(file.path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error(
+                "failed to open structured PPO prompt file: " +
+                file.path.string());
+        }
+        input.seekg(static_cast<std::streamoff>(byte_offset), std::ios::beg);
+        input.read(
+            reinterpret_cast<char*>(scratch_.data()),
+            static_cast<std::streamsize>(byte_count));
+        if (input.gcount() != static_cast<std::streamsize>(byte_count)) {
+            throw std::runtime_error(
+                "short structured PPO prompt batch read: " +
+                file.path.string());
+        }
+        for (std::uint64_t record = 0; record < count; ++record) {
+            const std::size_t destination =
+                static_cast<std::size_t>(produced +
+                                         static_cast<std::int64_t>(record)) *
+                sequence_length_;
+            const std::uint8_t* base = scratch_.data() + record * record_bytes;
+            const std::uint8_t* mask = base + sequence_length_ * 4U;
+            for (std::uint32_t token = 0; token < sequence_length_; ++token) {
+                out.input_ids[destination + token] =
+                    read_le32(base + token * 4U);
+                out.attention_mask[destination + token] =
+                    read_le_f32(mask + token * 4U);
+            }
+        }
+        produced += static_cast<std::int64_t>(count);
+        local_record_index_ += count;
+    }
+    if (produced != batch_size_) {
+        out.input_ids.clear();
+        out.attention_mask.clear();
+        return false;
+    }
+    return true;
+}
+
+bool SequentialStructuredPpoPromptBatchSampler::seek_batch(
+    std::int64_t batch_index) {
+    if (batch_index < 0 || total_batches() <= 0) return false;
+    std::uint64_t records = static_cast<std::uint64_t>(
+        batch_index % total_batches()) * static_cast<std::uint64_t>(batch_size_);
+    file_index_ = 0;
+    local_record_index_ = 0;
+    while (file_index_ < files_.size()) {
+        if (records < files_[file_index_].records) {
+            local_record_index_ = records;
+            return true;
+        }
+        records -= files_[file_index_].records;
+        ++file_index_;
+    }
+    reset();
+    return records == 0;
+}
+
+void SequentialStructuredPpoPromptBatchSampler::reset() {
+    file_index_ = 0;
+    local_record_index_ = 0;
+}
+
+std::int64_t SequentialStructuredPpoPromptBatchSampler::total_batches() const {
+    std::uint64_t records = 0;
+    for (const auto& file : files_) records += file.records;
+    return static_cast<std::int64_t>(
+        records / static_cast<std::uint64_t>(batch_size_));
+}
+
 SequentialByteBatchSampler::SequentialByteBatchSampler(
     std::vector<TokenShardFile> shards,
     std::int64_t seq_len,
@@ -1320,7 +1893,8 @@ fs::path resolve_dataset_path(const std::string& alias_or_path) {
     const fs::path cached_alias = native_datasets_dir() / alias_or_path;
     if (fs::is_regular_file(cached_alias) || directory_has_native_token_bins(cached_alias) ||
         directory_has_native_byte_bins(cached_alias) ||
-        directory_has_structured_sft_files(cached_alias)) {
+        directory_has_structured_sft_files(cached_alias) ||
+        directory_has_structured_preference_files(cached_alias)) {
         return cached_alias;
     }
     if (is_tinystories_alias(alias_or_path)) {
@@ -1437,6 +2011,169 @@ StructuredSftDataset resolve_structured_sft_records(
     for (const auto& file : dataset.val_files) {
         if (&dataset.val_files != &dataset.train_files && file.split != "validation" && file.split != "train") {
             throw std::runtime_error("structured SFT validation file has invalid split metadata");
+        }
+        bind(file);
+        dataset.val_records += file.records;
+    }
+    return dataset;
+}
+
+StructuredPreferenceDataset resolve_structured_preference_records(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation) {
+    StructuredPreferenceDataset dataset;
+    dataset.dataset_path = resolve_dataset_path(alias_or_path);
+    if (fs::is_regular_file(dataset.dataset_path)) {
+        StructuredPreferenceFile file =
+            read_structured_preference_file(dataset.dataset_path);
+        if (file.split != "train") {
+            throw std::runtime_error(
+                "direct structured preference dataset file must declare split=train");
+        }
+        dataset.train_files.push_back(std::move(file));
+    } else if (fs::is_directory(dataset.dataset_path)) {
+        dataset.train_files = sorted_structured_preference_files(
+            dataset.dataset_path, "preference_train_");
+        if (require_validation) {
+            dataset.val_files = sorted_structured_preference_files(
+                dataset.dataset_path, "preference_val_");
+            auto alternate = sorted_structured_preference_files(
+                dataset.dataset_path, "preference_validation_");
+            dataset.val_files.insert(
+                dataset.val_files.end(),
+                std::make_move_iterator(alternate.begin()),
+                std::make_move_iterator(alternate.end()));
+            std::sort(
+                dataset.val_files.begin(),
+                dataset.val_files.end(),
+                [](const auto& lhs, const auto& rhs) { return lhs.path < rhs.path; });
+        }
+    } else {
+        throw std::runtime_error(
+            "structured preference dataset path not found: " +
+            dataset.dataset_path.string());
+    }
+    if (dataset.train_files.empty()) {
+        throw std::runtime_error(
+            "no native structured preference records found "
+            "(expected preference_train_*.preference)");
+    }
+    if (require_validation && dataset.val_files.empty()) {
+        if (!allow_train_as_val) {
+            throw std::runtime_error(
+                "no native structured preference validation records found "
+                "(expected preference_val_*.preference)");
+        }
+        dataset.val_files = dataset.train_files;
+    }
+    const auto bind = [&](const StructuredPreferenceFile& file) {
+        const auto& first = dataset.train_files.front();
+        if (file.sequence_length != first.sequence_length ||
+            file.tokenizer_vocab_size != first.tokenizer_vocab_size ||
+            file.pad_token_id != first.pad_token_id ||
+            file.tokenizer_sha256 != first.tokenizer_sha256 ||
+            file.chat_template_sha256 != first.chat_template_sha256 ||
+            file.tokenizer_revision != first.tokenizer_revision) {
+            throw std::runtime_error(
+                "structured preference files do not share one exact "
+                "tokenizer/template/geometry lineage");
+        }
+    };
+    for (const auto& file : dataset.train_files) {
+        if (file.split != "train") {
+            throw std::runtime_error(
+                "structured preference train filename has non-train split metadata");
+        }
+        bind(file);
+        dataset.train_records += file.records;
+    }
+    for (const auto& file : dataset.val_files) {
+        if (file.split != "validation" && file.split != "train") {
+            throw std::runtime_error(
+                "structured preference validation file has invalid split metadata");
+        }
+        bind(file);
+        dataset.val_records += file.records;
+    }
+    return dataset;
+}
+
+StructuredPpoPromptDataset resolve_structured_ppo_prompt_records(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation) {
+    StructuredPpoPromptDataset dataset;
+    dataset.dataset_path = resolve_dataset_path(alias_or_path);
+    if (fs::is_regular_file(dataset.dataset_path)) {
+        StructuredPpoPromptFile file =
+            read_structured_ppo_prompt_file(dataset.dataset_path);
+        if (file.split != "train") {
+            throw std::runtime_error(
+                "direct structured PPO prompt file must declare split=train");
+        }
+        dataset.train_files.push_back(std::move(file));
+    } else if (fs::is_directory(dataset.dataset_path)) {
+        dataset.train_files = sorted_structured_ppo_prompt_files(
+            dataset.dataset_path, "ppo_prompt_train_");
+        if (require_validation) {
+            dataset.val_files = sorted_structured_ppo_prompt_files(
+                dataset.dataset_path, "ppo_prompt_val_");
+            auto alternate = sorted_structured_ppo_prompt_files(
+                dataset.dataset_path, "ppo_prompt_validation_");
+            dataset.val_files.insert(
+                dataset.val_files.end(),
+                std::make_move_iterator(alternate.begin()),
+                std::make_move_iterator(alternate.end()));
+            std::sort(
+                dataset.val_files.begin(), dataset.val_files.end(),
+                [](const auto& lhs, const auto& rhs) {
+                    return lhs.path < rhs.path;
+                });
+        }
+    } else {
+        throw std::runtime_error(
+            "structured PPO prompt dataset path not found: " +
+            dataset.dataset_path.string());
+    }
+    if (dataset.train_files.empty()) {
+        throw std::runtime_error(
+            "no native structured PPO prompts found "
+            "(expected ppo_prompt_train_*.ppo_prompt)");
+    }
+    if (require_validation && dataset.val_files.empty()) {
+        if (!allow_train_as_val) {
+            throw std::runtime_error(
+                "no native structured PPO validation prompts found "
+                "(expected ppo_prompt_val_*.ppo_prompt)");
+        }
+        dataset.val_files = dataset.train_files;
+    }
+    const auto bind = [&](const StructuredPpoPromptFile& file) {
+        const auto& first = dataset.train_files.front();
+        if (file.sequence_length != first.sequence_length ||
+            file.tokenizer_vocab_size != first.tokenizer_vocab_size ||
+            file.pad_token_id != first.pad_token_id ||
+            file.tokenizer_sha256 != first.tokenizer_sha256 ||
+            file.chat_template_sha256 != first.chat_template_sha256 ||
+            file.tokenizer_revision != first.tokenizer_revision) {
+            throw std::runtime_error(
+                "structured PPO prompt files do not share one exact "
+                "tokenizer/template/geometry lineage");
+        }
+    };
+    for (const auto& file : dataset.train_files) {
+        if (file.split != "train") {
+            throw std::runtime_error(
+                "structured PPO train filename has non-train split metadata");
+        }
+        bind(file);
+        dataset.train_records += file.records;
+    }
+    for (const auto& file : dataset.val_files) {
+        if (file.split != "validation" && file.split != "train") {
+            throw std::runtime_error(
+                "structured PPO validation file has invalid split metadata");
         }
         bind(file);
         dataset.val_records += file.records;

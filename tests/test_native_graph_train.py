@@ -249,6 +249,158 @@ def test_production_muse_glimmer_full_sft_routes_with_lineage_arguments(
     assert plan.trainer_arguments[template + 1] == "b" * 64
 
 
+def test_production_muse_glimmer_dpo_routes_reference_and_loss_contract(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config({"preset": "muse_glimmer"})
+    spec.template.objective = "dpo"
+    spec.finetune = FineTuneSpec(
+        objective="dpo",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        ref_checkpoint="/models/reference.bf16",
+        ref_checkpoint_sha256="c" * 64,
+        beta=0.2,
+        dpo_loss_type="hinge",
+        dpo_label_smoothing=0.1,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_native_dpo", model_spec=spec)
+    path = tmp_path / "muse-glimmer-dpo.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--objective") + 1] == "dpo"
+    assert arguments[arguments.index("--reference-checkpoint") + 1] == (
+        "/models/reference.bf16"
+    )
+    assert arguments[arguments.index("--reference-checkpoint-sha256") + 1] == (
+        "c" * 64
+    )
+    assert float(arguments[arguments.index("--dpo-beta") + 1]) == pytest.approx(0.2)
+    assert float(
+        arguments[arguments.index("--dpo-label-smoothing") + 1]
+    ) == pytest.approx(0.1)
+    assert arguments[arguments.index("--dpo-loss-type") + 1] == "hinge"
+
+    spec.finetune.ref_checkpoint_sha256 = ""
+    rejected_path = tmp_path / "muse-glimmer-dpo-unpinned.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(name="muse_glimmer_native_dpo_unpinned", model_spec=spec),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
+
+
+def test_production_muse_glimmer_reward_model_routes_masked_pair_contract(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config({"preset": "muse_glimmer"})
+    spec.template.objective = "reward_model"
+    spec.finetune = FineTuneSpec(
+        objective="reward_model",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_native_reward", model_spec=spec)
+    path = tmp_path / "muse-glimmer-reward.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--objective") + 1] == "reward_model"
+    assert arguments[arguments.index("--chat-template-sha256") + 1] == "b" * 64
+    operations = set(plan.compatibility_report.capability_proof["module_types"])
+    assert {"masked_reward_head", "preference_bce_loss"} <= operations
+
+    spec.finetune.chat_template_sha256 = ""
+    rejected_path = tmp_path / "muse-glimmer-reward-unpinned.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(
+            name="muse_glimmer_native_reward_unpinned", model_spec=spec
+        ),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
+
+
+def test_production_muse_glimmer_ppo_routes_online_rollout_contract(
+    tmp_path: Path,
+) -> None:
+    spec = build_model_spec_from_config({"preset": "muse_glimmer"})
+    spec.template.objective = "ppo"
+    spec.finetune = FineTuneSpec(
+        objective="ppo",
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        ref_checkpoint="/models/reference.bf16",
+        ref_checkpoint_sha256="c" * 64,
+        reward_checkpoint="/models/reward-checkpoint",
+        reward_checkpoint_sha256="d" * 64,
+        kl_coef=0.07,
+        ppo_clip=0.15,
+        ppo_vf_coef=0.6,
+        ppo_ent_coef=0.01,
+        rollout_length=32,
+        ppo_epochs_per_rollout=3,
+        ppo_minibatch_size=2,
+        gae_gamma=0.99,
+        gae_lambda=0.9,
+    )
+    graph = build_gpt_root_graph(name="muse_glimmer_native_ppo", model_spec=spec)
+    path = tmp_path / "muse-glimmer-ppo.json"
+    _write_graph(path, graph)
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--objective") + 1] == "ppo"
+    assert arguments[arguments.index("--reference-checkpoint") + 1] == (
+        "/models/reference.bf16"
+    )
+    assert arguments[arguments.index("--reward-checkpoint") + 1] == (
+        "/models/reward-checkpoint"
+    )
+    assert arguments[arguments.index("--reward-checkpoint-sha256") + 1] == (
+        "d" * 64
+    )
+    assert float(arguments[arguments.index("--kl-coef") + 1]) == pytest.approx(0.07)
+    assert arguments[arguments.index("--rollout-length") + 1] == "32"
+    assert arguments[arguments.index("--ppo-epochs-per-rollout") + 1] == "3"
+    assert arguments[arguments.index("--ppo-minibatch-size") + 1] == "2"
+    operations = set(plan.compatibility_report.capability_proof["module_types"])
+    assert {
+        "ppo_rollout_source",
+        "policy_logits_value",
+        "token_logp_entropy",
+        "masked_ppo_clipped_loss",
+    } <= operations
+
+    spec.finetune.reward_checkpoint_sha256 = ""
+    rejected_path = tmp_path / "muse-glimmer-ppo-unpinned.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(
+            name="muse_glimmer_native_ppo_unpinned", model_spec=spec
+        ),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
+
+
 def test_production_muse_glimmer_native_lora_routes_exact_adapter_contract(
     tmp_path: Path,
 ) -> None:
@@ -350,6 +502,72 @@ def test_production_muse_glimmer_native_qlora_routes_exact_nf4_contract(
         rejected_path,
         build_gpt_root_graph(
             name="muse_glimmer_native_qlora_invalid", model_spec=spec
+        ),
+    )
+    rejected = plan_native_graph_training(rejected_path)
+    assert rejected.execution_ready is False
+    assert rejected.training_selector == ""
+
+
+@pytest.mark.parametrize(
+    ("profile", "digest"),
+    [
+        (
+            "k-quant-17gb",
+            "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e",
+        ),
+        (
+            "k-quant-dynamic",
+            "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38",
+        ),
+    ],
+)
+def test_production_muse_glimmer_native_kquant_lora_routes_packed_profile(
+    tmp_path: Path, profile: str, digest: str
+) -> None:
+    spec = build_model_spec_from_config(
+        {
+            "preset": "muse_glimmer",
+            "adapter_type": "lora",
+            "lora_targets": ["q_proj", "v_proj", "down_proj"],
+            "lora_rank": 4,
+            "lora_alpha": 8.0,
+        }
+    )
+    spec.template.objective = "sft"
+    spec.finetune = FineTuneSpec(
+        objective="sft",
+        base_checkpoint=f"/models/{profile}.gguf",
+        base_checkpoint_sha256=digest,
+        base_weight_precision=profile,
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        adapter_only_save=True,
+    )
+    path = tmp_path / f"muse-glimmer-{profile}-lora.json"
+    _write_graph(
+        path,
+        build_gpt_root_graph(
+            name=f"muse_glimmer_native_{profile}_lora", model_spec=spec
+        ),
+    )
+
+    plan = plan_native_graph_training(path)
+
+    assert plan.execution_ready is True
+    assert plan.training_selector == "muse_glimmer"
+    assert plan.training_issues == ()
+    arguments = plan.trainer_arguments
+    assert arguments[arguments.index("--adapter") + 1] == "lora"
+    assert arguments[arguments.index("--kquant-profile") + 1] == profile
+    assert "--qlora-group-size" not in arguments
+
+    spec.finetune.base_checkpoint_sha256 = "f" * 64
+    rejected_path = tmp_path / f"muse-glimmer-{profile}-wrong-digest.json"
+    _write_graph(
+        rejected_path,
+        build_gpt_root_graph(
+            name=f"muse_glimmer_native_{profile}_wrong", model_spec=spec
         ),
     )
     rejected = plan_native_graph_training(rejected_path)

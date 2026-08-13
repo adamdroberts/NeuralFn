@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+import math
 from typing import Any, Literal
 
 from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
@@ -196,12 +197,18 @@ class FineTuneSpec:
     objective: str = "pretrain"  # "pretrain" | "sft" | "dpo" | "ppo" | "reward_model"
     base_checkpoint: str = ""
     base_checkpoint_sha256: str = ""
+    # Checkpoint storage profile for native post-training. K-Quant profiles
+    # keep the official GGUF bytes immutable and train LoRA parameters only;
+    # they are not aliases for NF4 QLoRA.
+    base_weight_precision: str = "bf16"  # "bf16" | "k-quant-17gb" | "k-quant-dynamic"
     tokenizer_sha256: str = ""
     chat_template_sha256: str = ""
     ref_graph_path: str = ""
     ref_checkpoint: str = ""
+    ref_checkpoint_sha256: str = ""
     reward_graph_path: str = ""
     reward_checkpoint: str = ""
+    reward_checkpoint_sha256: str = ""
     resume_checkpoint: str = ""
     adapter_only_save: bool = False
     # DPO knobs
@@ -227,8 +234,20 @@ class FineTuneSpec:
                 f"Unsupported fine-tuning objective {self.objective!r}; "
                 f"expected one of {sorted(allowed_objectives)}"
             )
+        self.base_weight_precision = str(self.base_weight_precision).strip().lower()
+        if self.base_weight_precision not in {
+            "bf16",
+            "k-quant-17gb",
+            "k-quant-dynamic",
+        }:
+            raise ValueError(
+                "FineTuneSpec.base_weight_precision must be 'bf16', "
+                "'k-quant-17gb', or 'k-quant-dynamic'"
+            )
         for field_name in (
             "base_checkpoint_sha256",
+            "ref_checkpoint_sha256",
+            "reward_checkpoint_sha256",
             "tokenizer_sha256",
             "chat_template_sha256",
         ):
@@ -348,6 +367,66 @@ class MuseGlimmerDFlashSpec:
         if normalized != tuple(sorted(set(normalized))) or not normalized:
             raise ValueError("DFlash target_layer_ids must be sorted and unique")
         self.target_layer_ids = normalized
+
+
+@dataclass
+class MuseGlimmerDFlashDistillationSpec:
+    """Versioned training contract for a target-bound DFlash assistant.
+
+    The stock Meta assistant publishes its architecture and inference contract,
+    but not the recipe used to train the released weights.  NeuralFn therefore
+    records an explicit, reproducible recipe instead of implying bit-for-bit
+    provenance.  Version 1 follows the random-anchor, self-logit-distillation,
+    and D-PACE formulation pinned in the implementation documentation.
+    """
+
+    recipe: str = "neuralfn.muse_glimmer_dflash_distill.v1"
+    recipe_revision: str = "686da8d893536688e86adae41aa628aa740a1a35"
+    target_checkpoint_sha256: str = ""
+    target_config_sha256: str = ""
+    tokenizer_sha256: str = ""
+    chat_template_sha256: str = ""
+    num_anchors: int = 512
+    loss_objective: str = "dpace"  # "dpace" | "decay"
+    dpace_alpha: float = 0.5
+    loss_decay_factor: float = 7.0
+    self_logit_distillation: bool = True
+    seed: int = 20_260_813
+
+    def __post_init__(self) -> None:
+        if self.recipe != "neuralfn.muse_glimmer_dflash_distill.v1":
+            raise ValueError("Unsupported Muse Glimmer DFlash distillation recipe")
+        if (
+            len(self.recipe_revision) != 40
+            or any(character not in "0123456789abcdef" for character in self.recipe_revision)
+        ):
+            raise ValueError("DFlash recipe_revision must be a lowercase Git SHA")
+        for field_name in (
+            "target_checkpoint_sha256",
+            "target_config_sha256",
+            "tokenizer_sha256",
+            "chat_template_sha256",
+        ):
+            digest = str(getattr(self, field_name)).strip().lower()
+            if digest and (
+                len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise ValueError(
+                    f"{field_name} must be empty or a lowercase 64-character SHA-256"
+                )
+            setattr(self, field_name, digest)
+        self.loss_objective = str(self.loss_objective).strip().lower()
+        if self.loss_objective not in {"dpace", "decay"}:
+            raise ValueError("DFlash loss_objective must be 'dpace' or 'decay'")
+        if self.num_anchors <= 0:
+            raise ValueError("DFlash num_anchors must be positive")
+        if not 0.0 < self.dpace_alpha <= 1.0:
+            raise ValueError("DFlash dpace_alpha must be in (0, 1]")
+        if not math.isfinite(self.loss_decay_factor) or self.loss_decay_factor < 0.0:
+            raise ValueError("DFlash loss_decay_factor must be finite and non-negative")
+        if self.seed < 0:
+            raise ValueError("DFlash seed must be non-negative")
 
 
 @dataclass

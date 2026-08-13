@@ -2876,7 +2876,7 @@ PyObject* resident_inference_capabilities(PyObject*, PyObject*) {
         PyDict_SetItemString(result.get(), "vision", Py_True) < 0 ||
         PyDict_SetItemString(result.get(), "video", Py_True) < 0 ||
         PyDict_SetItemString(result.get(), "vision_cpu", Py_True) < 0 ||
-        PyDict_SetItemString(result.get(), "vision_cuda", Py_False) < 0 ||
+        PyDict_SetItemString(result.get(), "vision_cuda", Py_True) < 0 ||
         PyDict_SetItemString(result.get(), "media_encoder_abi", media_abi.get()) < 0) {
         return nullptr;
     }
@@ -3177,7 +3177,8 @@ PyObject* load_companion(PyObject*, PyObject* args) {
                 "output_width", 6656,
                 "resident_weight_bytes",
                 static_cast<long long>(handle->glimmer->vision_weight_bytes()),
-                "whole_model_cuda", Py_False);
+                "whole_model_cuda",
+                handle->glimmer->vision_whole_model_cuda() ? Py_True : Py_False);
         }
         if (handle->glimmer_assistant) {
             throw std::runtime_error("DFlash companion is already loaded for this target");
@@ -4170,7 +4171,10 @@ PyObject* model_stats(PyObject*, PyObject* args) {
                 result, "vision_loaded", handle->glimmer->has_vision() ? Py_True : Py_False) < 0 ||
             PyDict_SetItemString(
                 result, "vision_resident_weight_bytes", vision_weight_bytes.get()) < 0 ||
-            PyDict_SetItemString(result, "vision_cuda", Py_False) < 0) {
+            PyDict_SetItemString(
+                result, "vision_cuda",
+                handle->glimmer->vision_whole_model_cuda()
+                    ? Py_True : Py_False) < 0) {
             Py_DECREF(result);
             return nullptr;
         }

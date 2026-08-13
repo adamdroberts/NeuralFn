@@ -5,6 +5,7 @@
 #include <cuda_bf16.h>
 #include <cooperative_groups.h>
 #include <cuda_runtime_api.h>
+#include <math_constants.h>
 #include <mma.h>
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 #include "llmc/tk/attention_sm120.cuh"
@@ -86,6 +87,8 @@ static_assert(
 namespace {
 
 constexpr int kTileSize = 1024;
+constexpr int kPackedGemvThreads = 256;
+constexpr int kGqaKeysPerTile = 8;
 constexpr int kOptimizerTileSize = NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE;
 constexpr int kAttentionValueChunkSize = 64;
 constexpr int kGpt2AttentionHeads = 12;
@@ -1275,20 +1278,41 @@ __global__ void linear_packed_weight_float32_kernel(
     float* __restrict__ output,
     std::int64_t rows,
     bool has_bias) {
-  const std::int64_t index =
-      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t index = static_cast<std::int64_t>(blockIdx.x);
   const std::int64_t count = rows * descriptor.output_dim;
   if (index >= count) {
     return;
   }
   const std::int64_t input_row = index / descriptor.output_dim;
   const std::int64_t output_col = index % descriptor.output_dim;
-  float value = has_bias ? bias[output_col] : 0.0f;
-  for (std::int64_t input_col = 0; input_col < descriptor.input_dim; ++input_col) {
-    value += input[input_row * descriptor.input_dim + input_col] *
-        packed_weight_value_device(descriptor, output_col, input_col);
+  float value = 0.0f;
+  for (std::int64_t input_col = threadIdx.x; input_col < descriptor.input_dim;
+       input_col += blockDim.x) {
+    value = fmaf(
+        input[input_row * descriptor.input_dim + input_col],
+        packed_weight_value_device(descriptor, output_col, input_col),
+        value);
   }
-  output[index] = value;
+  constexpr unsigned int full_warp = 0xffffffffU;
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    value += __shfl_down_sync(full_warp, value, offset);
+  }
+  __shared__ float warp_sums[kPackedGemvThreads / 32];
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+  if (lane == 0) {
+    warp_sums[warp] = value;
+  }
+  __syncthreads();
+  if (warp == 0) {
+    value = lane < blockDim.x / warpSize ? warp_sums[lane] : 0.0f;
+    for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+      value += __shfl_down_sync(full_warp, value, offset);
+    }
+    if (lane == 0) {
+      output[index] = value + (has_bias ? bias[output_col] : 0.0f);
+    }
+  }
 }
 
 __global__ void linear_backward_input_packed_weight_float32_kernel(
@@ -1414,13 +1438,15 @@ __global__ void glimmer_positioned_rope_float32_v1_kernel(
 
 __global__ void glimmer_gqa_decode_float32_v1_kernel(
     NfnNativeTileGlimmerGqaDecodeDescriptorV1 descriptor) {
-  __shared__ float reductions[256];
+  __shared__ float tile_scores[kGqaKeysPerTile];
+  __shared__ float tile_weights[kGqaKeysPerTile];
   __shared__ float shared_maximum;
   __shared__ float shared_denominator;
   __shared__ float shared_alpha;
-  __shared__ float shared_beta;
   const std::int64_t query_head = blockIdx.x;
   const std::int64_t dim = threadIdx.x;
+  const int warp = threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
   if (query_head >= descriptor.query_heads) {
     return;
   }
@@ -1433,47 +1459,75 @@ __global__ void glimmer_gqa_decode_float32_v1_kernel(
     shared_denominator = 0.0f;
   }
   __syncthreads();
-  for (std::int64_t key_position = descriptor.first_key_position;
-       key_position <= descriptor.position;
-       ++key_position) {
-    const bool current = key_position == descriptor.position;
-    const std::int64_t slot = key_position % descriptor.cache_capacity;
-    const std::int64_t cache_index =
-        slot * descriptor.cache_row_stride + kv_head * descriptor.head_dim + dim;
-    float key_value = 0.0f;
-    float value_value = 0.0f;
-    if (dim < descriptor.head_dim) {
-      if (current) {
-        key_value = descriptor.current_key[kv_head * descriptor.head_dim + dim];
-        value_value = descriptor.current_value[kv_head * descriptor.head_dim + dim];
-      } else {
-        key_value = __bfloat162float(
-            reinterpret_cast<const __nv_bfloat16*>(descriptor.key_cache_bf16)[cache_index]);
-        value_value = __bfloat162float(
-            reinterpret_cast<const __nv_bfloat16*>(descriptor.value_cache_bf16)[cache_index]);
+  for (std::int64_t tile_begin = descriptor.first_key_position;
+       tile_begin <= descriptor.position;
+       tile_begin += kGqaKeysPerTile) {
+    const std::int64_t warp_key_position = tile_begin + warp;
+    float dot = 0.0f;
+    if (warp_key_position <= descriptor.position) {
+      const bool current = warp_key_position == descriptor.position;
+      const std::int64_t slot = warp_key_position % descriptor.cache_capacity;
+      const std::int64_t cache_row =
+          slot * descriptor.cache_row_stride + kv_head * descriptor.head_dim;
+      for (std::int64_t component = lane;
+           component < descriptor.head_dim;
+           component += 32) {
+        const float key_value = current
+            ? descriptor.current_key[kv_head * descriptor.head_dim + component]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.key_cache_bf16)[cache_row + component]);
+        dot = fmaf(query[component], key_value, dot);
       }
-      reductions[threadIdx.x] = query[dim] * key_value;
-    } else {
-      reductions[threadIdx.x] = 0.0f;
+    }
+    for (int offset = 16; offset > 0; offset /= 2) {
+      dot += __shfl_down_sync(0xffffffffu, dot, offset);
+    }
+    if (lane == 0) {
+      tile_scores[warp] = warp_key_position <= descriptor.position
+          ? dot * descriptor.scale
+          : -CUDART_INF_F;
     }
     __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-        reductions[threadIdx.x] += reductions[threadIdx.x + stride];
-      }
-      __syncthreads();
-    }
     if (threadIdx.x == 0) {
-      const float score = reductions[0] * descriptor.scale;
-      const float next_maximum = fmaxf(shared_maximum, score);
+      float tile_maximum = -CUDART_INF_F;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        tile_maximum = fmaxf(tile_maximum, tile_scores[key]);
+      }
+      const float next_maximum = fmaxf(shared_maximum, tile_maximum);
       shared_alpha = expf(shared_maximum - next_maximum);
-      shared_beta = expf(score - next_maximum);
-      shared_denominator = shared_denominator * shared_alpha + shared_beta;
+      float tile_denominator = 0.0f;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        const float weight = tile_scores[key] == -CUDART_INF_F
+            ? 0.0f
+            : expf(tile_scores[key] - next_maximum);
+        tile_weights[key] = weight;
+        tile_denominator += weight;
+      }
+      shared_denominator =
+          shared_denominator * shared_alpha + tile_denominator;
       shared_maximum = next_maximum;
     }
     __syncthreads();
     if (dim < descriptor.head_dim) {
-      accumulated = accumulated * shared_alpha + value_value * shared_beta;
+      accumulated *= shared_alpha;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        const std::int64_t key_position = tile_begin + key;
+        if (key_position > descriptor.position) {
+          break;
+        }
+        const bool current = key_position == descriptor.position;
+        const std::int64_t slot = key_position % descriptor.cache_capacity;
+        const std::int64_t cache_index =
+            slot * descriptor.cache_row_stride +
+            kv_head * descriptor.head_dim + dim;
+        const float value = current
+            ? descriptor.current_value[kv_head * descriptor.head_dim + dim]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.value_cache_bf16)[cache_index]);
+        accumulated = fmaf(tile_weights[key], value, accumulated);
+      }
     }
     __syncthreads();
   }
@@ -1501,15 +1555,17 @@ __global__ void glimmer_cache_commit_bf16_v1_kernel(
 
 __global__ void dflash_block_attention_float32_v1_kernel(
     NfnNativeTileDFlashBlockAttentionDescriptorV1 descriptor) {
-  __shared__ float reductions[256];
+  __shared__ float tile_scores[kGqaKeysPerTile];
+  __shared__ float tile_weights[kGqaKeysPerTile];
   __shared__ float shared_maximum;
   __shared__ float shared_denominator;
   __shared__ float shared_alpha;
-  __shared__ float shared_beta;
   const std::int64_t flat_head = blockIdx.x;
   const std::int64_t query_row = flat_head / descriptor.query_heads;
   const std::int64_t query_head = flat_head % descriptor.query_heads;
   const std::int64_t dim = threadIdx.x;
+  const int warp = threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
   if (query_row >= descriptor.query_rows) {
     return;
   }
@@ -1533,50 +1589,85 @@ __global__ void dflash_block_attention_float32_v1_kernel(
     shared_denominator = 0.0f;
   }
   __syncthreads();
-  for (std::int64_t key_position = first_key_position;
-       key_position <= last_key_position;
-       ++key_position) {
-    const bool block_row = key_position >= descriptor.context_length;
-    const std::int64_t source_row = block_row
-        ? key_position - descriptor.context_length
-        : key_position % descriptor.cache_capacity;
-    const std::int64_t source_index = block_row
-        ? (source_row * descriptor.kv_heads + kv_head) * descriptor.head_dim + dim
-        : source_row * descriptor.cache_row_stride + kv_head * descriptor.head_dim + dim;
-    float key_value = 0.0f;
-    float value_value = 0.0f;
-    if (dim < descriptor.head_dim) {
-      if (block_row) {
-        key_value = descriptor.block_key[source_index];
-        value_value = descriptor.block_value[source_index];
-      } else {
-        key_value = __bfloat162float(
-            reinterpret_cast<const __nv_bfloat16*>(descriptor.key_cache_bf16)[source_index]);
-        value_value = __bfloat162float(
-            reinterpret_cast<const __nv_bfloat16*>(descriptor.value_cache_bf16)[source_index]);
+  for (std::int64_t tile_begin = first_key_position;
+       tile_begin <= last_key_position;
+       tile_begin += kGqaKeysPerTile) {
+    const std::int64_t warp_key_position = tile_begin + warp;
+    float dot = 0.0f;
+    if (warp_key_position <= last_key_position) {
+      const bool block_row =
+          warp_key_position >= descriptor.context_length;
+      const std::int64_t source_row = block_row
+          ? warp_key_position - descriptor.context_length
+          : warp_key_position % descriptor.cache_capacity;
+      for (std::int64_t component = lane;
+           component < descriptor.head_dim;
+           component += 32) {
+        const std::int64_t source_index = block_row
+            ? (source_row * descriptor.kv_heads + kv_head) *
+                  descriptor.head_dim + component
+            : source_row * descriptor.cache_row_stride +
+                  kv_head * descriptor.head_dim + component;
+        const float key_value = block_row
+            ? descriptor.block_key[source_index]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.key_cache_bf16)[source_index]);
+        dot = fmaf(query[component], key_value, dot);
       }
-      reductions[threadIdx.x] = query[dim] * key_value;
-    } else {
-      reductions[threadIdx.x] = 0.0f;
+    }
+    for (int offset = 16; offset > 0; offset /= 2) {
+      dot += __shfl_down_sync(0xffffffffu, dot, offset);
+    }
+    if (lane == 0) {
+      tile_scores[warp] = warp_key_position <= last_key_position
+          ? dot * descriptor.scale
+          : -CUDART_INF_F;
     }
     __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-        reductions[threadIdx.x] += reductions[threadIdx.x + stride];
-      }
-      __syncthreads();
-    }
     if (threadIdx.x == 0) {
-      const float score = reductions[0] * descriptor.scale;
-      const float next_maximum = fmaxf(shared_maximum, score);
+      float tile_maximum = -CUDART_INF_F;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        tile_maximum = fmaxf(tile_maximum, tile_scores[key]);
+      }
+      const float next_maximum = fmaxf(shared_maximum, tile_maximum);
       shared_alpha = expf(shared_maximum - next_maximum);
-      shared_beta = expf(score - next_maximum);
-      shared_denominator = shared_denominator * shared_alpha + shared_beta;
+      float tile_denominator = 0.0f;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        const float weight = tile_scores[key] == -CUDART_INF_F
+            ? 0.0f
+            : expf(tile_scores[key] - next_maximum);
+        tile_weights[key] = weight;
+        tile_denominator += weight;
+      }
+      shared_denominator =
+          shared_denominator * shared_alpha + tile_denominator;
       shared_maximum = next_maximum;
     }
     __syncthreads();
     if (dim < descriptor.head_dim) {
-      accumulated = accumulated * shared_alpha + value_value * shared_beta;
+      accumulated *= shared_alpha;
+      for (int key = 0; key < kGqaKeysPerTile; ++key) {
+        const std::int64_t key_position = tile_begin + key;
+        if (key_position > last_key_position) {
+          break;
+        }
+        const bool block_row = key_position >= descriptor.context_length;
+        const std::int64_t source_row = block_row
+            ? key_position - descriptor.context_length
+            : key_position % descriptor.cache_capacity;
+        const std::int64_t source_index = block_row
+            ? (source_row * descriptor.kv_heads + kv_head) *
+                  descriptor.head_dim + dim
+            : source_row * descriptor.cache_row_stride +
+                  kv_head * descriptor.head_dim + dim;
+        const float value = block_row
+            ? descriptor.block_value[source_index]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.value_cache_bf16)[source_index]);
+        accumulated = fmaf(tile_weights[key], value, accumulated);
+      }
     }
     __syncthreads();
   }
@@ -1584,6 +1675,190 @@ __global__ void dflash_block_attention_float32_v1_kernel(
     descriptor.output[
         (query_row * descriptor.query_heads + query_head) * descriptor.head_dim + dim] =
         accumulated / shared_denominator;
+  }
+}
+
+__global__ void glimmer_vision_prepare_float32_v1_kernel(
+    NfnNativeTileGlimmerVisionPrepareDescriptorV1 descriptor) {
+  const std::int64_t total = descriptor.rows * descriptor.width;
+  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t output_row = index / descriptor.width;
+    const std::int64_t dim = index % descriptor.width;
+    const std::int32_t source_row = descriptor.permutation[output_row];
+    float value = descriptor.projected[static_cast<std::int64_t>(source_row) * descriptor.width + dim];
+    for (int corner = 0; corner < 4; ++corner) {
+      const std::int64_t metadata = static_cast<std::int64_t>(source_row) * 4 + corner;
+      const std::int32_t table_row = descriptor.corner_indices[metadata];
+      if (table_row >= 0 && table_row < descriptor.position_rows) {
+        value += descriptor.corner_weights[metadata] *
+            descriptor.position_table[static_cast<std::int64_t>(table_row) * descriptor.width + dim];
+      }
+    }
+    descriptor.output[index] = value;
+  }
+}
+
+__global__ void glimmer_vision_layer_norm_float32_v1_kernel(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps) {
+  const std::int64_t row = blockIdx.x;
+  if (row >= rows) return;
+  __shared__ float sums[256];
+  __shared__ float squares[256];
+  __shared__ float mean;
+  __shared__ float inverse;
+  float local_sum = 0.0f;
+  float local_square = 0.0f;
+  for (std::int64_t dim = threadIdx.x; dim < width; dim += blockDim.x) {
+    const float value = input[row * width + dim];
+    local_sum += value;
+    local_square += value * value;
+  }
+  sums[threadIdx.x] = local_sum;
+  squares[threadIdx.x] = local_square;
+  __syncthreads();
+  for (unsigned stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      sums[threadIdx.x] += sums[threadIdx.x + stride];
+      squares[threadIdx.x] += squares[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    mean = sums[0] / static_cast<float>(width);
+    const float variance = fmaxf(
+        0.0f, squares[0] / static_cast<float>(width) - mean * mean);
+    inverse = rsqrtf(variance + eps);
+  }
+  __syncthreads();
+  for (std::int64_t dim = threadIdx.x; dim < width; dim += blockDim.x) {
+    output[row * width + dim] =
+        (input[row * width + dim] - mean) * inverse * weight[dim] + bias[dim];
+  }
+}
+
+__device__ float glimmer_vision_rope_component(
+    const float* values,
+    std::int64_t row,
+    std::int64_t head,
+    std::int64_t dim,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    const std::int32_t* position_width,
+    const std::int32_t* position_height,
+    float theta,
+    bool interleaved) {
+  const std::int64_t width = heads * head_dim;
+  const float* data = values + row * width + head * head_dim;
+  const std::int64_t spatial_dim = head_dim / 2;
+  const std::int64_t frequency_count = spatial_dim / 2;
+  if (interleaved) {
+    const std::int64_t pair = dim / 2;
+    const bool width_axis = pair < frequency_count;
+    const float position = static_cast<float>(
+        width_axis ? position_width[row] : position_height[row]);
+    const std::int64_t frequency = pair % frequency_count;
+    const float angle = position * powf(
+        theta, -static_cast<float>(frequency * 2) / static_cast<float>(spatial_dim));
+    const float cosine = cosf(angle);
+    const float sine = sinf(angle);
+    const std::int64_t first_dim = pair * 2;
+    const float first = data[first_dim];
+    const float second = data[first_dim + 1];
+    return (dim & 1) == 0
+        ? first * cosine - second * sine
+        : second * cosine + first * sine;
+  }
+  const std::int64_t frequency = dim % frequency_count;
+  const bool width_axis = dim < frequency_count ||
+      (dim >= spatial_dim && dim < spatial_dim + frequency_count);
+  const float position = static_cast<float>(
+      width_axis ? position_width[row] : position_height[row]);
+  const float angle = position * powf(
+      theta, -static_cast<float>(frequency * 2) / static_cast<float>(spatial_dim));
+  const std::int64_t paired = dim < head_dim / 2
+      ? dim + head_dim / 2 : dim - head_dim / 2;
+  const float rotated = dim < head_dim / 2 ? -data[paired] : data[paired];
+  return data[dim] * cosf(angle) + rotated * sinf(angle);
+}
+
+__global__ void glimmer_vision_attention_float32_v1_kernel(
+    NfnNativeTileGlimmerVisionAttentionDescriptorV1 descriptor) {
+  const std::int64_t lane = blockIdx.x;
+  const std::int64_t row = lane / descriptor.heads;
+  const std::int64_t head = lane % descriptor.heads;
+  const std::int64_t dim = threadIdx.x;
+  if (row >= descriptor.rows || dim >= descriptor.head_dim) return;
+  __shared__ float products[256];
+  __shared__ float running_max;
+  __shared__ float running_sum;
+  __shared__ float alpha;
+  __shared__ float beta;
+  const std::int32_t begin = descriptor.row_begin[row];
+  const std::int32_t end = descriptor.row_end[row];
+  if (begin < 0 || end <= begin || end > descriptor.rows) return;
+  const bool interleaved = descriptor.interleaved_rope != 0;
+  const float query = glimmer_vision_rope_component(
+      descriptor.query, row, head, dim, descriptor.heads, descriptor.head_dim,
+      descriptor.position_width, descriptor.position_height,
+      descriptor.rope_theta, interleaved);
+  if (threadIdx.x == 0) {
+    running_max = -CUDART_INF_F;
+    running_sum = 0.0f;
+  }
+  __syncthreads();
+  float accumulator = 0.0f;
+  const std::int64_t value_offset = head * descriptor.head_dim + dim;
+  const std::int64_t row_width = descriptor.heads * descriptor.head_dim;
+  for (std::int32_t key_row = begin; key_row < end; ++key_row) {
+    const float key = glimmer_vision_rope_component(
+        descriptor.key, key_row, head, dim, descriptor.heads,
+        descriptor.head_dim, descriptor.position_width,
+        descriptor.position_height, descriptor.rope_theta, interleaved);
+    products[threadIdx.x] = query * key;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+      float dot = 0.0f;
+      for (std::int64_t component = 0; component < descriptor.head_dim; ++component) {
+        dot += products[component];
+      }
+      const float score = dot * rsqrtf(static_cast<float>(descriptor.head_dim));
+      const float updated_max = fmaxf(running_max, score);
+      alpha = expf(running_max - updated_max);
+      beta = expf(score - updated_max);
+      running_sum = running_sum * alpha + beta;
+      running_max = updated_max;
+    }
+    __syncthreads();
+    accumulator = accumulator * alpha + beta *
+        descriptor.value[static_cast<std::int64_t>(key_row) * row_width + value_offset];
+    __syncthreads();
+  }
+  descriptor.output[row * row_width + value_offset] = accumulator / running_sum;
+}
+
+__global__ void glimmer_vision_pixel_shuffle_float32_v1_kernel(
+    NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1 descriptor) {
+  const std::int64_t merged_width = descriptor.hidden_size * descriptor.merge_area;
+  const std::int64_t total = descriptor.merged_rows * merged_width;
+  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t merged_row = index / merged_width;
+    const std::int64_t within = index % merged_width;
+    const std::int64_t dim = within / descriptor.merge_area;
+    const std::int64_t slot = within % descriptor.merge_area;
+    const std::int32_t source =
+        descriptor.source_rows[merged_row * descriptor.merge_area + slot];
+    descriptor.output[index] = descriptor.reordered_hidden[
+        static_cast<std::int64_t>(source) * descriptor.hidden_size + dim];
   }
 }
 
@@ -1956,6 +2231,439 @@ __global__ void glimmer_masked_cross_entropy_i32_float32_v1_kernel(
       descriptor.grad_transformed_logits[row * descriptor.vocab_size + col] =
           descriptor.grad_scale * mask * (probability - (col == target ? 1.0f : 0.0f));
     }
+  }
+}
+
+__global__ void sequence_logp_i32_float32_forward_v1_kernel(
+    NfnNativeTileSequenceLogpDescriptorV1 descriptor) {
+  const std::int64_t example = blockIdx.x;
+  if (example >= descriptor.batch_size || threadIdx.x != 0) return;
+  double sequence_logp = 0.0;
+  for (std::int64_t step = 0; step < descriptor.sequence_length; ++step) {
+    const std::int64_t row = example * descriptor.sequence_length + step;
+    const std::int32_t target = descriptor.targets[row];
+    const float mask = descriptor.loss_mask[row];
+    if (target == descriptor.ignore_index || !(mask > 0.0f)) continue;
+    if (target < 0 || target >= descriptor.vocab_size || !isfinite(mask)) {
+      descriptor.sequence_logp[example] = CUDART_NAN_F;
+      return;
+    }
+    const float* logits = descriptor.transformed_logits + row * descriptor.vocab_size;
+    float maximum = -CUDART_INF_F;
+    for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+      maximum = fmaxf(maximum, logits[col]);
+    double denominator = 0.0;
+    for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+      denominator += exp(static_cast<double>(logits[col] - maximum));
+    const double selected = static_cast<double>(logits[target] - maximum) - log(denominator);
+    sequence_logp += static_cast<double>(mask) * selected;
+  }
+  descriptor.sequence_logp[example] = static_cast<float>(sequence_logp);
+}
+
+__global__ void sequence_logp_i32_float32_backward_v1_kernel(
+    NfnNativeTileSequenceLogpDescriptorV1 descriptor) {
+  const std::int64_t row = blockIdx.x;
+  const std::int64_t rows = descriptor.batch_size * descriptor.sequence_length;
+  if (row >= rows || threadIdx.x != 0) return;
+  const std::int32_t target = descriptor.targets[row];
+  const float mask = descriptor.loss_mask[row];
+  float* grad = descriptor.grad_transformed_logits + row * descriptor.vocab_size;
+  if (target == descriptor.ignore_index || !(mask > 0.0f) || target < 0 ||
+      target >= descriptor.vocab_size || !isfinite(mask)) {
+    for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) grad[col] = 0.0f;
+    return;
+  }
+  const float* logits = descriptor.transformed_logits + row * descriptor.vocab_size;
+  float maximum = -CUDART_INF_F;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    maximum = fmaxf(maximum, logits[col]);
+  double denominator = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    denominator += exp(static_cast<double>(logits[col] - maximum));
+  const float upstream =
+      descriptor.grad_sequence_logp[row / descriptor.sequence_length] * mask;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) {
+    const float probability = static_cast<float>(
+        exp(static_cast<double>(logits[col] - maximum)) / denominator);
+    grad[col] = upstream * ((col == target ? 1.0f : 0.0f) - probability);
+  }
+}
+
+__device__ __forceinline__ float glimmer_softplus_device(float value) {
+  return fmaxf(value, 0.0f) + log1pf(expf(-fabsf(value)));
+}
+
+__global__ void dpo_pairwise_loss_float32_forward_v1_kernel(
+    NfnNativeTileDpoPairwiseDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= descriptor.examples) return;
+  const float chosen_ratio =
+      descriptor.policy_logp_chosen[index] - descriptor.reference_logp_chosen[index];
+  const float rejected_ratio =
+      descriptor.policy_logp_rejected[index] - descriptor.reference_logp_rejected[index];
+  const float logit = descriptor.beta * (chosen_ratio - rejected_ratio);
+  float loss = 0.0f;
+  if (descriptor.loss_type == NFN_NATIVE_TILE_DPO_LOSS_HINGE) {
+    loss = fmaxf(0.0f, 1.0f - logit);
+  } else if (descriptor.loss_type == NFN_NATIVE_TILE_DPO_LOSS_IPO) {
+    const float target = 1.0f / (2.0f * fmaxf(descriptor.beta, 1.0e-8f));
+    const float delta = logit - target;
+    loss = delta * delta;
+  } else {
+    loss = (1.0f - descriptor.label_smoothing) * glimmer_softplus_device(-logit) +
+        descriptor.label_smoothing * glimmer_softplus_device(logit);
+  }
+  descriptor.row_loss[index] = loss;
+  descriptor.chosen_reward[index] = descriptor.beta * chosen_ratio;
+  descriptor.rejected_reward[index] = descriptor.beta * rejected_ratio;
+}
+
+__global__ void dpo_pairwise_loss_float32_backward_v1_kernel(
+    NfnNativeTileDpoPairwiseDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= descriptor.examples) return;
+  const float chosen_ratio =
+      descriptor.policy_logp_chosen[index] - descriptor.reference_logp_chosen[index];
+  const float rejected_ratio =
+      descriptor.policy_logp_rejected[index] - descriptor.reference_logp_rejected[index];
+  const float logit = descriptor.beta * (chosen_ratio - rejected_ratio);
+  float derivative = 0.0f;
+  if (descriptor.loss_type == NFN_NATIVE_TILE_DPO_LOSS_HINGE) {
+    derivative = logit < 1.0f ? -1.0f : 0.0f;
+  } else if (descriptor.loss_type == NFN_NATIVE_TILE_DPO_LOSS_IPO) {
+    const float target = 1.0f / (2.0f * fmaxf(descriptor.beta, 1.0e-8f));
+    derivative = 2.0f * (logit - target);
+  } else {
+    derivative = 1.0f / (1.0f + expf(-logit)) -
+        (1.0f - descriptor.label_smoothing);
+  }
+  const float gradient = descriptor.grad_scale * descriptor.beta * derivative;
+  descriptor.grad_policy_logp_chosen[index] = gradient;
+  descriptor.grad_policy_logp_rejected[index] = -gradient;
+}
+
+__global__ void masked_reward_head_float32_forward_v1_kernel(
+    NfnNativeTileMaskedRewardHeadDescriptorV1 descriptor) {
+  const std::int64_t example = blockIdx.x;
+  if (example >= descriptor.batch_size || threadIdx.x != 0) return;
+  std::int32_t selected = -1;
+  for (std::int64_t position = 0; position < descriptor.sequence_length; ++position) {
+    const float mask = descriptor.sequence_mask[
+        example * descriptor.sequence_length + position];
+    if (!isfinite(mask) || mask < 0.0f) {
+      descriptor.selected_positions[example] = -1;
+      descriptor.reward[example] = CUDART_NAN_F;
+      return;
+    }
+    if (mask > 0.0f) selected = static_cast<std::int32_t>(position);
+  }
+  descriptor.selected_positions[example] = selected;
+  if (selected < 0) {
+    descriptor.reward[example] = CUDART_NAN_F;
+    return;
+  }
+  const float* hidden = descriptor.hidden +
+      (example * descriptor.sequence_length + selected) * descriptor.hidden_size;
+  double reward = 0.0;
+  for (std::int64_t col = 0; col < descriptor.hidden_size; ++col) {
+    reward += static_cast<double>(hidden[col]) *
+        packed_weight_value_device(*descriptor.weight, 0, col);
+  }
+  descriptor.reward[example] = static_cast<float>(reward);
+}
+
+__global__ void masked_reward_head_grad_hidden_float32_v1_kernel(
+    NfnNativeTileMaskedRewardHeadDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = descriptor.batch_size * descriptor.sequence_length *
+      descriptor.hidden_size;
+  if (index >= count) return;
+  const std::int64_t row = index / descriptor.hidden_size;
+  const std::int64_t col = index % descriptor.hidden_size;
+  const std::int64_t example = row / descriptor.sequence_length;
+  const std::int64_t position = row % descriptor.sequence_length;
+  descriptor.grad_hidden[index] =
+      position == descriptor.selected_positions[example]
+      ? descriptor.grad_reward[example] *
+            packed_weight_value_device(*descriptor.weight, 0, col)
+      : 0.0f;
+}
+
+__global__ void masked_reward_head_grad_weight_float32_v1_kernel(
+    NfnNativeTileMaskedRewardHeadDescriptorV1 descriptor) {
+  const std::int64_t col =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (col >= descriptor.hidden_size) return;
+  double gradient = 0.0;
+  for (std::int64_t example = 0; example < descriptor.batch_size; ++example) {
+    const std::int32_t position = descriptor.selected_positions[example];
+    if (position < 0 || position >= descriptor.sequence_length) continue;
+    gradient += static_cast<double>(descriptor.grad_reward[example]) *
+        descriptor.hidden[
+            (example * descriptor.sequence_length + position) *
+                descriptor.hidden_size +
+            col];
+  }
+  descriptor.grad_weight[col] = static_cast<float>(gradient);
+}
+
+__global__ void preference_bce_loss_float32_forward_v1_kernel(
+    NfnNativeTilePreferenceBceDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= descriptor.examples) return;
+  const float difference =
+      descriptor.reward_chosen[index] - descriptor.reward_rejected[index];
+  descriptor.row_loss[index] = glimmer_softplus_device(-difference);
+}
+
+__global__ void preference_bce_loss_float32_backward_v1_kernel(
+    NfnNativeTilePreferenceBceDescriptorV1 descriptor) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= descriptor.examples) return;
+  const float difference =
+      descriptor.reward_chosen[index] - descriptor.reward_rejected[index];
+  const float gradient = descriptor.grad_scale *
+      (1.0f / (1.0f + expf(-difference)) - 1.0f);
+  descriptor.grad_reward_chosen[index] = gradient;
+  descriptor.grad_reward_rejected[index] = -gradient;
+}
+
+__global__ void token_logp_entropy_i32_float32_forward_v1_kernel(
+    NfnNativeTileTokenLogpEntropyDescriptorV1 descriptor) {
+  const std::int64_t row = blockIdx.x;
+  if (row >= descriptor.rows || threadIdx.x != 0) return;
+  const std::int32_t target = descriptor.targets[row];
+  const float mask = descriptor.loss_mask[row];
+  if (target == descriptor.ignore_index || !(mask > 0.0f)) {
+    descriptor.token_logp[row] = 0.0f;
+    descriptor.token_entropy[row] = 0.0f;
+    return;
+  }
+  if (target < 0 || target >= descriptor.vocab_size || !isfinite(mask)) {
+    descriptor.token_logp[row] = CUDART_NAN_F;
+    descriptor.token_entropy[row] = CUDART_NAN_F;
+    return;
+  }
+  const float* logits =
+      descriptor.transformed_logits + row * descriptor.vocab_size;
+  float maximum = -CUDART_INF_F;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    maximum = fmaxf(maximum, logits[col]);
+  double denominator = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    denominator += exp(static_cast<double>(logits[col] - maximum));
+  const double log_denominator = log(denominator);
+  double entropy = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) {
+    const double log_probability =
+        static_cast<double>(logits[col] - maximum) - log_denominator;
+    const double probability = exp(log_probability);
+    entropy -= probability * log_probability;
+  }
+  descriptor.token_logp[row] = mask * static_cast<float>(
+      static_cast<double>(logits[target] - maximum) - log_denominator);
+  descriptor.token_entropy[row] = mask * static_cast<float>(entropy);
+}
+
+__global__ void token_logp_entropy_i32_float32_backward_v1_kernel(
+    NfnNativeTileTokenLogpEntropyDescriptorV1 descriptor) {
+  const std::int64_t row = blockIdx.x;
+  if (row >= descriptor.rows || threadIdx.x != 0) return;
+  const std::int32_t target = descriptor.targets[row];
+  const float mask = descriptor.loss_mask[row];
+  float* gradient =
+      descriptor.grad_transformed_logits + row * descriptor.vocab_size;
+  if (target == descriptor.ignore_index || !(mask > 0.0f) || target < 0 ||
+      target >= descriptor.vocab_size || !isfinite(mask)) {
+    for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+      gradient[col] = 0.0f;
+    return;
+  }
+  const float* logits =
+      descriptor.transformed_logits + row * descriptor.vocab_size;
+  float maximum = -CUDART_INF_F;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    maximum = fmaxf(maximum, logits[col]);
+  double denominator = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col)
+    denominator += exp(static_cast<double>(logits[col] - maximum));
+  const double log_denominator = log(denominator);
+  double entropy = 0.0;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) {
+    const double log_probability =
+        static_cast<double>(logits[col] - maximum) - log_denominator;
+    const double probability = exp(log_probability);
+    entropy -= probability * log_probability;
+  }
+  const float logp_upstream = descriptor.grad_token_logp[row] * mask;
+  const float entropy_upstream = descriptor.grad_token_entropy[row] * mask;
+  for (std::int64_t col = 0; col < descriptor.vocab_size; ++col) {
+    const double log_probability =
+        static_cast<double>(logits[col] - maximum) - log_denominator;
+    const float probability = static_cast<float>(exp(log_probability));
+    const float logp_gradient =
+        (col == target ? 1.0f : 0.0f) - probability;
+    const float entropy_gradient = -probability *
+        (static_cast<float>(log_probability) + static_cast<float>(entropy));
+    gradient[col] = logp_upstream * logp_gradient +
+        entropy_upstream * entropy_gradient;
+  }
+}
+
+__device__ bool masked_ppo_statistics_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    double* denominator,
+    double* advantage_mean,
+    double* advantage_variance) {
+  double count = 0.0;
+  double sum = 0.0;
+  for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+    const float mask = descriptor.loss_mask[row];
+    if (!isfinite(mask) || mask < 0.0f ||
+        !isfinite(descriptor.advantages[row])) return false;
+    count += mask;
+    sum += static_cast<double>(mask) * descriptor.advantages[row];
+  }
+  if (!(count > 0.0) || !isfinite(count)) return false;
+  const double mean = sum / count;
+  double variance = 0.0;
+  if ((descriptor.flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0) {
+    for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+      const double delta = descriptor.advantages[row] - mean;
+      variance += descriptor.loss_mask[row] * delta * delta;
+    }
+    variance /= count;
+  }
+  *denominator = count;
+  *advantage_mean = mean;
+  *advantage_variance = variance;
+  return isfinite(variance) && variance >= 0.0;
+}
+
+__global__ void masked_ppo_loss_float32_forward_v1_kernel(
+    NfnNativeTileMaskedPpoLossDescriptorV1 descriptor) {
+  if (blockIdx.x != 0 || threadIdx.x != 0) return;
+  double denominator = 0.0, mean = 0.0, variance = 0.0;
+  if (!masked_ppo_statistics_v1(
+          descriptor, &denominator, &mean, &variance)) {
+    *descriptor.policy_loss = CUDART_NAN_F;
+    *descriptor.value_loss = CUDART_NAN_F;
+    *descriptor.entropy_bonus = CUDART_NAN_F;
+    *descriptor.total_loss = CUDART_NAN_F;
+    return;
+  }
+  const double inv_std =
+      (descriptor.flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0
+      ? 1.0 / sqrt(variance + descriptor.epsilon)
+      : 1.0;
+  double policy_sum = 0.0, value_sum = 0.0, entropy_sum = 0.0;
+  for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+    const float mask = descriptor.loss_mask[row];
+    if (!(mask > 0.0f)) continue;
+    const double advantage =
+        (descriptor.advantages[row] -
+         ((descriptor.flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0
+              ? mean
+              : 0.0)) *
+        inv_std;
+    const double ratio = exp(static_cast<double>(
+        descriptor.logp_new[row] - descriptor.logp_old[row]));
+    const double ratio_clipped = fmin(
+        1.0 + descriptor.clip_range,
+        fmax(1.0 - descriptor.clip_range, ratio));
+    policy_sum -= static_cast<double>(mask) *
+        fmin(ratio * advantage, ratio_clipped * advantage);
+    const double delta =
+        descriptor.value_new[row] - descriptor.value_old[row];
+    const double clipped_delta = fmin(
+        static_cast<double>(descriptor.clip_range),
+        fmax(-static_cast<double>(descriptor.clip_range), delta));
+    const double value_clipped = descriptor.value_old[row] + clipped_delta;
+    const double raw_error =
+        descriptor.value_new[row] - descriptor.returns[row];
+    const double clipped_error = value_clipped - descriptor.returns[row];
+    value_sum += 0.5 * static_cast<double>(mask) *
+        fmax(raw_error * raw_error, clipped_error * clipped_error);
+    entropy_sum += static_cast<double>(mask) * descriptor.entropy[row];
+  }
+  const float policy = static_cast<float>(policy_sum / denominator);
+  const float value = static_cast<float>(value_sum / denominator);
+  const float entropy = static_cast<float>(entropy_sum / denominator);
+  *descriptor.policy_loss = policy;
+  *descriptor.value_loss = value;
+  *descriptor.entropy_bonus = entropy;
+  *descriptor.total_loss = policy + descriptor.value_coefficient * value -
+      descriptor.entropy_coefficient * entropy;
+}
+
+__global__ void masked_ppo_loss_float32_backward_v1_kernel(
+    NfnNativeTileMaskedPpoLossDescriptorV1 descriptor) {
+  if (blockIdx.x != 0 || threadIdx.x != 0) return;
+  double denominator = 0.0, mean = 0.0, variance = 0.0;
+  if (!masked_ppo_statistics_v1(
+          descriptor, &denominator, &mean, &variance)) {
+    for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+      descriptor.grad_logp_new[row] = CUDART_NAN_F;
+      descriptor.grad_value_new[row] = CUDART_NAN_F;
+      descriptor.grad_entropy[row] = CUDART_NAN_F;
+    }
+    return;
+  }
+  const double inv_std =
+      (descriptor.flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0
+      ? 1.0 / sqrt(variance + descriptor.epsilon)
+      : 1.0;
+  for (std::int64_t row = 0; row < descriptor.rows; ++row) {
+    const double mask = descriptor.loss_mask[row];
+    if (!(mask > 0.0)) {
+      descriptor.grad_logp_new[row] = 0.0f;
+      descriptor.grad_value_new[row] = 0.0f;
+      descriptor.grad_entropy[row] = 0.0f;
+      continue;
+    }
+    const double advantage =
+        (descriptor.advantages[row] -
+         ((descriptor.flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0
+              ? mean
+              : 0.0)) *
+        inv_std;
+    const double ratio = exp(static_cast<double>(
+        descriptor.logp_new[row] - descriptor.logp_old[row]));
+    const bool policy_active = advantage >= 0.0
+        ? ratio <= 1.0 + descriptor.clip_range
+        : ratio >= 1.0 - descriptor.clip_range;
+    descriptor.grad_logp_new[row] = policy_active
+        ? static_cast<float>(-mask * advantage * ratio / denominator)
+        : 0.0f;
+
+    const double delta =
+        descriptor.value_new[row] - descriptor.value_old[row];
+    const double clipped_delta = fmin(
+        static_cast<double>(descriptor.clip_range),
+        fmax(-static_cast<double>(descriptor.clip_range), delta));
+    const double value_clipped = descriptor.value_old[row] + clipped_delta;
+    const double raw_error =
+        descriptor.value_new[row] - descriptor.returns[row];
+    const double clipped_error = value_clipped - descriptor.returns[row];
+    const double raw_square = raw_error * raw_error;
+    const double clipped_square = clipped_error * clipped_error;
+    double value_gradient = 0.0;
+    if (raw_square >= clipped_square) {
+      value_gradient = raw_error;
+    } else if (delta >= -descriptor.clip_range &&
+               delta <= descriptor.clip_range) {
+      value_gradient = clipped_error;
+    }
+    descriptor.grad_value_new[row] = static_cast<float>(
+        descriptor.value_coefficient * mask * value_gradient / denominator);
+    descriptor.grad_entropy[row] = static_cast<float>(
+        -descriptor.entropy_coefficient * mask / denominator);
   }
 }
 
@@ -24842,8 +25550,8 @@ void launch_linear_packed_weight_float32_v1(
     bool has_bias,
     cudaStream_t stream) {
   const std::int64_t count = rows * descriptor.output_dim;
-  const int blocks = static_cast<int>((count + kTileSize - 1) / kTileSize);
-  linear_packed_weight_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+  const int blocks = static_cast<int>(count);
+  linear_packed_weight_float32_kernel<<<blocks, kPackedGemvThreads, 0, stream>>>(
       descriptor, input, bias, output, rows, has_bias);
 }
 
@@ -24935,6 +25643,49 @@ void launch_dflash_block_attention_float32_v1(
   const std::int64_t rows = descriptor.query_rows * descriptor.query_heads;
   dflash_block_attention_float32_v1_kernel<<<
       static_cast<int>(rows), 256, 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t count = descriptor.rows * descriptor.width;
+  const int blocks = static_cast<int>(std::min<std::int64_t>(
+      65535, (count + kTileSize - 1) / kTileSize));
+  glimmer_vision_prepare_float32_v1_kernel<<<blocks, kTileSize, 0, stream>>>(
+      descriptor);
+}
+
+void launch_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    cudaStream_t stream) {
+  glimmer_vision_layer_norm_float32_v1_kernel<<<
+      static_cast<unsigned>(rows), 256, 0, stream>>>(
+      input, weight, bias, output, rows, width, eps);
+}
+
+void launch_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  glimmer_vision_attention_float32_v1_kernel<<<
+      static_cast<unsigned>(descriptor.rows * descriptor.heads),
+      static_cast<unsigned>(descriptor.head_dim), 0, stream>>>(descriptor);
+}
+
+void launch_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t count =
+      descriptor.merged_rows * descriptor.hidden_size * descriptor.merge_area;
+  const int blocks = static_cast<int>(std::min<std::int64_t>(
+      65535, (count + kTileSize - 1) / kTileSize));
+  glimmer_vision_pixel_shuffle_float32_v1_kernel<<<
+      blocks, kTileSize, 0, stream>>>(descriptor);
 }
 
 void launch_glimmer_sigmoid_gate_float32_v1(
@@ -25042,6 +25793,106 @@ void launch_glimmer_masked_cross_entropy_i32_float32_v1(
     cudaStream_t stream) {
   glimmer_masked_cross_entropy_i32_float32_v1_kernel<<<
       static_cast<unsigned int>(descriptor.rows), 1, 0, stream>>>(descriptor);
+}
+
+void launch_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  sequence_logp_i32_float32_forward_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.batch_size), 1, 0, stream>>>(descriptor);
+}
+
+void launch_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t rows = descriptor.batch_size * descriptor.sequence_length;
+  sequence_logp_i32_float32_backward_v1_kernel<<<
+      static_cast<unsigned int>(rows), 1, 0, stream>>>(descriptor);
+}
+
+void launch_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((descriptor.examples + kThreads - 1) / kThreads);
+  dpo_pairwise_loss_float32_forward_v1_kernel<<<blocks, kThreads, 0, stream>>>(
+      descriptor);
+}
+
+void launch_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((descriptor.examples + kThreads - 1) / kThreads);
+  dpo_pairwise_loss_float32_backward_v1_kernel<<<blocks, kThreads, 0, stream>>>(
+      descriptor);
+}
+
+void launch_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  masked_reward_head_float32_forward_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.batch_size), 1, 0, stream>>>(descriptor);
+}
+
+void launch_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const std::int64_t hidden_count = descriptor.batch_size *
+      descriptor.sequence_length * descriptor.hidden_size;
+  const int hidden_blocks =
+      static_cast<int>((hidden_count + kThreads - 1) / kThreads);
+  const int weight_blocks =
+      static_cast<int>((descriptor.hidden_size + kThreads - 1) / kThreads);
+  masked_reward_head_grad_hidden_float32_v1_kernel<<<
+      hidden_blocks, kThreads, 0, stream>>>(descriptor);
+  masked_reward_head_grad_weight_float32_v1_kernel<<<
+      weight_blocks, kThreads, 0, stream>>>(descriptor);
+}
+
+void launch_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((descriptor.examples + kThreads - 1) / kThreads);
+  preference_bce_loss_float32_forward_v1_kernel<<<blocks, kThreads, 0, stream>>>(
+      descriptor);
+}
+
+void launch_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((descriptor.examples + kThreads - 1) / kThreads);
+  preference_bce_loss_float32_backward_v1_kernel<<<blocks, kThreads, 0, stream>>>(
+      descriptor);
+}
+
+void launch_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  token_logp_entropy_i32_float32_forward_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.rows), 1, 0, stream>>>(descriptor);
+}
+
+void launch_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  token_logp_entropy_i32_float32_backward_v1_kernel<<<
+      static_cast<unsigned int>(descriptor.rows), 1, 0, stream>>>(descriptor);
+}
+
+void launch_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  masked_ppo_loss_float32_forward_v1_kernel<<<1, 1, 0, stream>>>(descriptor);
+}
+
+void launch_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  masked_ppo_loss_float32_backward_v1_kernel<<<1, 1, 0, stream>>>(descriptor);
 }
 
 void launch_token_embedding_backward_weight_i32_float32(

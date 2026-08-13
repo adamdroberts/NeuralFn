@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import hashlib
+import json
 import math
+import os
+from pathlib import Path
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import numpy as np
 import torch
@@ -14,6 +18,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from .graph import NeuronGraph
 from .neuron import decode_module_state_dict, encode_module_state_dict
+from .config import MuseGlimmerDFlashDistillationSpec
 from .semantic import NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
 
 
@@ -1921,6 +1926,7 @@ class DFlashAttentionStage(nn.Module):
         accepted_context: Tensor,
         context_position_ids: Tensor,
         block_position_ids: Tensor,
+        attention_mask: Tensor | None = None,
     ) -> Tensor:
         if block_hidden.ndim != 3 or accepted_context.ndim != 3:
             raise ValueError("DFlash hidden inputs must be [batch, sequence, hidden]")
@@ -1960,14 +1966,36 @@ class DFlashAttentionStage(nn.Module):
             ),
             dim=-2,
         )
-        key_positions = torch.cat((context_positions, block_positions), dim=-1)
-        distance = key_positions.unsqueeze(1) - block_positions.unsqueeze(-1)
-        allowed = (distance >= -self.window_size) & (distance <= self.window_size)
-        mask = torch.zeros(
-            (batch, 1, block_rows, context_rows + block_rows),
-            dtype=query.dtype,
-            device=query.device,
-        ).masked_fill(~allowed.unsqueeze(1).to(device=query.device), float("-inf"))
+        expected_mask_shape = (batch, 1, block_rows, context_rows + block_rows)
+        if attention_mask is None:
+            key_positions = torch.cat((context_positions, block_positions), dim=-1)
+            distance = key_positions.unsqueeze(1) - block_positions.unsqueeze(-1)
+            allowed = (distance >= -self.window_size) & (distance <= self.window_size)
+            mask = torch.zeros(
+                expected_mask_shape,
+                dtype=query.dtype,
+                device=query.device,
+            ).masked_fill(~allowed.unsqueeze(1).to(device=query.device), float("-inf"))
+        else:
+            if tuple(attention_mask.shape) != expected_mask_shape:
+                raise ValueError(
+                    "DFlash training attention mask must be "
+                    f"{expected_mask_shape}, got {tuple(attention_mask.shape)}"
+                )
+            if attention_mask.device != query.device:
+                raise ValueError("DFlash attention mask must be on the hidden-state device")
+            if attention_mask.dtype == torch.bool:
+                mask = torch.zeros(
+                    expected_mask_shape,
+                    dtype=query.dtype,
+                    device=query.device,
+                ).masked_fill(~attention_mask, torch.finfo(query.dtype).min)
+            elif not attention_mask.is_floating_point():
+                raise ValueError("DFlash attention mask must be boolean or floating point")
+            else:
+                mask = attention_mask.to(dtype=query.dtype)
+                if bool(torch.isnan(mask).any().item()) or bool(torch.isposinf(mask).any().item()):
+                    raise ValueError("DFlash attention mask contains NaN or positive infinity")
         output = F.scaled_dot_product_attention(
             query,
             key,
@@ -7158,6 +7186,1126 @@ class TTTLinearStage(nn.Module):
         # For now, we implement a simplified version that adds a sequence-dependent residual.
         ttt_out = self.ttt_up(torch.tanh(self.ttt_down(x)))
         return F.linear(x, self.weight) + ttt_out
+
+
+# ---------------------------------------------------------------------------
+# Muse Glimmer DFlash distillation
+# ---------------------------------------------------------------------------
+
+
+def dflash_dpace_position_weights(
+    confidences: Tensor,
+    alpha: float,
+    valid_mask: Tensor | None = None,
+) -> Tensor:
+    """Return detached D-PACE weights for one or more draft blocks.
+
+    This is the suffix-sum of cumulative, asymmetrically smoothed target-token
+    confidences.  Invalid positions are multiplicative no-ops and contribute
+    no continuation value.  The result is detached by construction so the
+    objective only reshapes credit assignment.
+    """
+
+    if not 0.0 < float(alpha) <= 1.0:
+        raise ValueError("DFlash D-PACE alpha must be in (0, 1]")
+    if confidences.ndim < 1 or confidences.size(-1) <= 0:
+        raise ValueError("DFlash confidences must have a non-empty position axis")
+    if not confidences.is_floating_point():
+        raise ValueError("DFlash confidences must be floating point")
+    if valid_mask is not None and valid_mask.shape != confidences.shape:
+        raise ValueError("DFlash D-PACE valid mask must match confidences")
+    with torch.no_grad():
+        work = confidences.float()
+        if bool(torch.isnan(work).any().item()) or bool(
+            ((work < 0.0) | (work > 1.0)).any().item()
+        ):
+            raise ValueError("DFlash confidences must be finite probabilities")
+        smoothed = float(alpha) + (1.0 - float(alpha)) * work
+        keep: Tensor | None = None
+        if valid_mask is not None:
+            keep = valid_mask.to(torch.bool)
+            smoothed = torch.where(keep, smoothed, torch.ones_like(smoothed))
+        cumulative = torch.cumprod(smoothed, dim=-1)
+        if keep is not None:
+            cumulative = cumulative * keep.to(cumulative.dtype)
+        inclusive = torch.cumsum(cumulative, dim=-1)
+        weights = inclusive[..., -1:] - inclusive + cumulative
+        return weights.to(dtype=confidences.dtype).detach()
+
+
+@dataclass(frozen=True)
+class DFlashDistillationMetrics:
+    loss: float
+    accuracy: float
+    weighted_tokens: float
+    valid_blocks: int
+
+
+class DFlashDistillationTrainer:
+    """Train only the Muse Glimmer DFlash assistant against a frozen target.
+
+    The target supplies raw token embeddings, hidden-state taps, and the shared
+    LM head.  Training samples random valid anchors, predicts all 15 future
+    positions in parallel, and applies either detached D-PACE weights or the
+    static block-position decay objective.  The target is never placed in an
+    optimizer and checkpoints bind the exact target/config/tokenizer/template
+    digests plus the pinned recipe revision.
+
+    ``target_model`` follows the Hugging Face causal-LM interface: it must
+    implement ``get_input_embeddings()``, expose an output embedding/head, and
+    return ``logits`` plus ``hidden_states`` when asked for them.
+    """
+
+    _CHECKPOINT_FORMAT = "neuralfn.muse_glimmer_dflash_distillation.v1"
+
+    def __init__(
+        self,
+        assistant_graph: NeuronGraph,
+        target_model: nn.Module,
+        distillation_spec: MuseGlimmerDFlashDistillationSpec,
+        config: TorchTrainConfig | None = None,
+        *,
+        move_target_to_device: bool = True,
+    ) -> None:
+        self.graph = assistant_graph
+        self.target_model = target_model
+        self.spec = distillation_spec
+        self.config = config or TorchTrainConfig()
+        self.move_target_to_device = bool(move_target_to_device)
+        self.loss_history: list[float] = []
+        self.accuracy_history: list[float] = []
+        self.metrics_history: list[DFlashDistillationMetrics] = []
+        self.last_global_step = 0
+        self._stop = False
+        self._compiled: CompiledTorchGraph | None = None
+        self._run_graph: nn.Module | None = None
+        self._optimizer: torch.optim.Optimizer | None = None
+        self._data_generator: torch.Generator | None = None
+        self._anchor_generator: torch.Generator | None = None
+        self._data_order: Tensor | None = None
+        self._data_cursor = 0
+        self._dataset_size = 0
+
+        dflash = assistant_graph.torch_config.get("dflash_spec")
+        recipe = assistant_graph.torch_config.get("dflash_distillation")
+        if not isinstance(dflash, Mapping) or dflash.get("training_attention_mask") is not True:
+            raise ValueError(
+                "DFlashDistillationTrainer requires the explicit distillation graph"
+            )
+        if not isinstance(recipe, Mapping) or dict(recipe) != asdict(distillation_spec):
+            raise ValueError(
+                "DFlash graph and trainer must carry the identical distillation recipe"
+            )
+        required_roles = [
+            "target_hidden_taps",
+            "raw_noise_embeddings",
+            "context_position_ids",
+            "block_position_ids",
+            "attention_mask",
+        ]
+        if TorchTrainer._flatten_input_roles(assistant_graph) != required_roles:
+            raise ValueError("DFlash distillation graph input contract is invalid")
+        self.block_size = int(dflash.get("block_size", 0))
+        self.mask_token_id = int(dflash.get("mask_token_id", -1))
+        self.target_layer_ids = tuple(
+            int(value) for value in dflash.get("target_layer_ids", ())
+        )
+        if (
+            self.block_size < 2
+            or self.mask_token_id < 0
+            or not self.target_layer_ids
+            or tuple(sorted(set(self.target_layer_ids))) != self.target_layer_ids
+        ):
+            raise ValueError("DFlash graph has an invalid assistant contract")
+        missing_lineage = [
+            name
+            for name in (
+                "target_checkpoint_sha256",
+                "target_config_sha256",
+                "tokenizer_sha256",
+                "chat_template_sha256",
+            )
+            if not getattr(distillation_spec, name)
+        ]
+        if missing_lineage:
+            raise ValueError(
+                "DFlash distillation requires complete target lineage: "
+                + ", ".join(missing_lineage)
+            )
+        for parameter in self.target_model.parameters():
+            parameter.requires_grad_(False)
+
+    def stop(self) -> None:
+        self._stop = True
+
+    @property
+    def last_compiled_graph(self) -> CompiledTorchGraph | None:
+        return self._compiled
+
+    def _target_parts(self) -> tuple[nn.Module, nn.Module]:
+        embedding_getter = getattr(self.target_model, "get_input_embeddings", None)
+        output_getter = getattr(self.target_model, "get_output_embeddings", None)
+        embedding = embedding_getter() if callable(embedding_getter) else None
+        output_head = output_getter() if callable(output_getter) else None
+        if output_head is None:
+            output_head = getattr(self.target_model, "lm_head", None)
+        if not isinstance(embedding, nn.Module) or not isinstance(output_head, nn.Module):
+            raise ValueError(
+                "DFlash target must expose input embeddings and a shared output head"
+            )
+        return embedding, output_head
+
+    @staticmethod
+    def _output_field(outputs: Any, name: str) -> Any:
+        if isinstance(outputs, Mapping):
+            return outputs.get(name)
+        return getattr(outputs, name, None)
+
+    def _target_forward(
+        self,
+        input_ids: Tensor,
+        attention_mask: Tensor | None,
+    ) -> tuple[Tensor, Tensor]:
+        kwargs: dict[str, Any] = {
+            "input_ids": input_ids,
+            "output_hidden_states": True,
+            "use_cache": False,
+            "return_dict": True,
+        }
+        if attention_mask is not None:
+            kwargs["attention_mask"] = attention_mask
+        outputs = self.target_model(**kwargs)
+        logits = self._output_field(outputs, "logits")
+        hidden_states = self._output_field(outputs, "hidden_states")
+        if not isinstance(logits, Tensor) or not isinstance(
+            hidden_states, (tuple, list)
+        ):
+            raise ValueError("DFlash target did not return logits and hidden states")
+        if logits.ndim != 3 or logits.shape[:2] != input_ids.shape:
+            raise ValueError("DFlash target logits do not match input token geometry")
+        selected: list[Tensor] = []
+        for layer in self.target_layer_ids:
+            offset = layer + 1
+            if offset >= len(hidden_states) or not isinstance(hidden_states[offset], Tensor):
+                raise ValueError("DFlash target hidden-state tap is unavailable")
+            hidden = hidden_states[offset]
+            if hidden.ndim != 3 or hidden.shape[:2] != input_ids.shape:
+                raise ValueError("DFlash target hidden-state tap geometry is invalid")
+            selected.append(hidden)
+        return torch.cat(selected, dim=-1).detach(), logits.detach()
+
+    def _sample_anchor_positions(
+        self,
+        sequence_length: int,
+        loss_mask: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        if self._anchor_generator is None:
+            raise RuntimeError("DFlash anchor generator is not initialized")
+        maximum_anchor = max(sequence_length - self.block_size, 0)
+        valid = loss_mask[:, : maximum_anchor + 1] > 0.5
+        valid_counts = valid.sum(dim=1)
+        maximum_blocks = min(
+            int(self.spec.num_anchors),
+            int(valid_counts.max().item()) - 1,
+        )
+        if maximum_blocks <= 0:
+            anchors = torch.zeros(
+                loss_mask.size(0), 1, dtype=torch.long, device=loss_mask.device
+            )
+            keep = torch.zeros_like(anchors, dtype=torch.bool)
+            return anchors, keep
+        indices = torch.arange(
+            maximum_anchor + 1, device=loss_mask.device
+        ).unsqueeze(0).expand(loss_mask.size(0), -1)
+        sentinel = torch.full_like(indices, sequence_length + 1)
+        masked_indices = torch.where(valid, indices, sentinel)
+        random_values = torch.rand(
+            (loss_mask.size(0), maximum_anchor + 1),
+            device=loss_mask.device,
+            generator=self._anchor_generator,
+        )
+        random_values = torch.where(
+            valid, random_values, torch.full_like(random_values, 2.0)
+        )
+        sorted_indices = random_values.argsort(dim=1)
+        anchors = torch.gather(masked_indices, 1, sorted_indices)[:, :maximum_blocks]
+        anchors = anchors.sort(dim=1).values
+        keep = torch.arange(
+            maximum_blocks, device=loss_mask.device
+        ).unsqueeze(0) < valid_counts.unsqueeze(1).clamp(max=maximum_blocks)
+        return torch.where(keep, anchors, torch.zeros_like(anchors)), keep
+
+    def _build_draft_inputs(
+        self,
+        input_ids: Tensor,
+        target_hidden: Tensor,
+        anchors: Tensor,
+        block_keep: Tensor,
+        embedding: nn.Module,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        batch, sequence_length = input_ids.shape
+        blocks = anchors.size(1)
+        query_rows = blocks * self.block_size
+        noise_ids = torch.full(
+            (batch, query_rows),
+            self.mask_token_id,
+            dtype=torch.long,
+            device=input_ids.device,
+        )
+        starts = torch.arange(blocks, device=input_ids.device) * self.block_size
+        anchor_tokens = torch.gather(
+            input_ids, 1, anchors.clamp(0, sequence_length - 1)
+        )
+        batch_indices = torch.arange(batch, device=input_ids.device).unsqueeze(1)
+        noise_ids[batch_indices, starts.unsqueeze(0)] = torch.where(
+            block_keep,
+            anchor_tokens,
+            torch.full_like(anchor_tokens, self.mask_token_id),
+        )
+        with torch.no_grad():
+            noise_embeddings = embedding(noise_ids)
+        context_positions = torch.arange(
+            sequence_length, device=input_ids.device
+        ).unsqueeze(0).expand(batch, -1)
+        offsets = torch.arange(
+            self.block_size, device=input_ids.device
+        ).view(1, 1, -1)
+        block_positions = (anchors.unsqueeze(-1) + offsets).reshape(batch, -1)
+
+        kv_length = sequence_length + query_rows
+        q_indices = torch.arange(query_rows, device=input_ids.device).view(1, 1, -1, 1)
+        kv_indices = torch.arange(kv_length, device=input_ids.device).view(1, 1, 1, -1)
+        q_block_ids = q_indices // self.block_size
+        anchor_expanded = anchors.view(batch, 1, blocks, 1).repeat_interleave(
+            self.block_size, dim=2
+        )
+        visible_context = (kv_indices < sequence_length) & (
+            kv_indices < anchor_expanded
+        )
+        window = int(
+            self.graph.torch_config.get("template_spec", {})
+            .get("dflash", {})
+            .get("sliding_window", 0)
+            or 0
+        )
+        if window <= 0:
+            window = self._assistant_window_size()
+        query_positions = anchor_expanded + (q_indices % self.block_size)
+        visible_context &= kv_indices > query_positions - window
+        is_draft = kv_indices >= sequence_length
+        kv_block_ids = (kv_indices - sequence_length) // self.block_size
+        visible_draft = is_draft & (q_block_ids == kv_block_ids)
+        valid_block = block_keep.view(batch, 1, blocks, 1).repeat_interleave(
+            self.block_size, dim=2
+        )
+        visible = (visible_context | visible_draft) & valid_block
+        attention_mask = torch.zeros(
+            (batch, 1, query_rows, kv_length),
+            dtype=noise_embeddings.dtype,
+            device=input_ids.device,
+        )
+        attention_mask.masked_fill_(
+            ~visible, torch.finfo(noise_embeddings.dtype).min
+        )
+        return noise_embeddings, context_positions, block_positions, attention_mask
+
+    def _assistant_window_size(self) -> int:
+        try:
+            attention = self.graph.variant_library[
+                "muse_glimmer_dflash_attention"
+            ]["default"]
+            return int(
+                attention.nodes["dflash_attention"].neuron_def.module_config[
+                    "window_size"
+                ]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("DFlash graph does not expose its attention window") from exc
+
+    def _compute_loss(
+        self,
+        draft_logits: Tensor,
+        input_ids: Tensor,
+        anchors: Tensor,
+        block_keep: Tensor,
+        loss_mask: Tensor,
+        teacher_logits: Tensor | None,
+    ) -> tuple[Tensor, DFlashDistillationMetrics]:
+        batch, sequence_length = input_ids.shape
+        blocks = anchors.size(1)
+        if tuple(draft_logits.shape[:2]) != (
+            batch,
+            blocks * self.block_size,
+        ):
+            raise ValueError("DFlash draft logits do not match sampled blocks")
+        offsets = torch.arange(
+            self.block_size, device=input_ids.device
+        ).view(1, 1, -1)
+        label_indices = anchors.unsqueeze(-1) + offsets
+        valid_label = label_indices < sequence_length
+        safe_indices = label_indices.clamp(max=sequence_length - 1)
+        target_ids = torch.gather(
+            input_ids.unsqueeze(1).expand(-1, blocks, -1),
+            2,
+            safe_indices,
+        )
+        weights = block_keep.unsqueeze(-1).expand(
+            -1, -1, self.block_size
+        ).float()
+        weights *= valid_label.float()
+        position = torch.arange(
+            self.block_size, device=input_ids.device
+        ).view(1, 1, -1)
+        weights *= (position > 0).float()
+        weights *= torch.gather(
+            loss_mask.unsqueeze(1).expand(-1, blocks, -1),
+            2,
+            safe_indices,
+        )
+        binary_evaluation_mask = weights.reshape(-1).clone()
+        flat_logits = draft_logits.reshape(-1, draft_logits.size(-1)).float()
+        flat_targets = target_ids.reshape(-1)
+        hard_ce = F.cross_entropy(flat_logits, flat_targets, reduction="none")
+        if self.spec.loss_objective == "dpace" and self.block_size > 1:
+            with torch.no_grad():
+                confidence = torch.exp(
+                    -hard_ce.detach().reshape(batch, blocks, self.block_size)[
+                        ..., 1:
+                    ]
+                )
+                position_weights = torch.ones_like(weights)
+                position_weights[..., 1:] = dflash_dpace_position_weights(
+                    confidence,
+                    self.spec.dpace_alpha,
+                    valid_mask=weights[..., 1:],
+                )
+            weights *= position_weights
+        elif self.spec.loss_decay_factor > 0.0:
+            decay = torch.exp(
+                -(position - 1).clamp(min=0).float()
+                / float(self.spec.loss_decay_factor)
+            )
+            weights *= decay
+        flat_weights = weights.reshape(-1)
+        denominator = flat_weights.sum() + 1.0e-6
+        if float(denominator.detach().item()) > 1.0:
+            if teacher_logits is not None:
+                teacher_indices = (safe_indices - 1).clamp(min=0)
+                gathered_teacher = torch.gather(
+                    teacher_logits.unsqueeze(1).expand(-1, blocks, -1, -1),
+                    2,
+                    teacher_indices.unsqueeze(-1).expand(
+                        -1, -1, -1, teacher_logits.size(-1)
+                    ),
+                )
+                target_distribution = torch.softmax(
+                    gathered_teacher.reshape(-1, teacher_logits.size(-1)).float(),
+                    dim=-1,
+                ).detach()
+                per_token = -(
+                    target_distribution * F.log_softmax(flat_logits, dim=-1)
+                ).sum(dim=-1)
+            else:
+                per_token = hard_ce
+            loss = (per_token * flat_weights).sum() / denominator
+            with torch.no_grad():
+                correct = (flat_logits.argmax(dim=-1) == flat_targets) & (
+                    binary_evaluation_mask > 0.5
+                )
+                accuracy = float(
+                    (
+                        correct.sum().float()
+                        / (binary_evaluation_mask.gt(0.5).sum() + 1.0e-6)
+                    ).item()
+                )
+        else:
+            loss = flat_logits.sum() * 0.0
+            accuracy = 0.0
+        metrics = DFlashDistillationMetrics(
+            loss=float(loss.detach().item()),
+            accuracy=accuracy,
+            weighted_tokens=float(flat_weights.sum().detach().item()),
+            valid_blocks=int(block_keep.sum().detach().item()),
+        )
+        return loss, metrics
+
+    def _next_batch_indices(self, dataset_size: int) -> Tensor:
+        if self._data_generator is None:
+            raise RuntimeError("DFlash data generator is not initialized")
+        batch_size = int(self.config.batch_size)
+        if dataset_size < batch_size:
+            raise ValueError("DFlash dataset is smaller than the configured batch size")
+        if (
+            self._data_order is None
+            or self._data_order.numel() != dataset_size
+            or self._data_cursor + batch_size > dataset_size
+        ):
+            self._data_order = torch.randperm(
+                dataset_size, generator=self._data_generator
+            )
+            self._data_cursor = 0
+        result = self._data_order[
+            self._data_cursor : self._data_cursor + batch_size
+        ]
+        self._data_cursor += batch_size
+        return result
+
+    def _initialize_runtime(self, device: torch.device) -> tuple[nn.Module, nn.Module]:
+        if self.move_target_to_device:
+            self.target_model.to(device)
+        self.target_model.eval()
+        embedding, output_head = self._target_parts()
+        compiled = CompiledTorchGraph(
+            self.graph,
+            kernel_backend=self.config.kernel_backend,
+            tile_cuda_strict=self.config.tile_cuda_strict,
+            tile_cuda_report_path=self.config.tile_cuda_report_path,
+        ).to(device)
+        run_graph: nn.Module = compiled
+        if self.config.compile:
+            run_graph = torch.compile(compiled)
+        parameters = [parameter for parameter in compiled.parameters() if parameter.requires_grad]
+        if not parameters:
+            raise ValueError("DFlash assistant graph has no trainable parameters")
+        if str(self.config.optimizer_profile).strip().lower() not in ADAMW_OPTIMIZER_PROFILES:
+            raise ValueError("DFlash distillation currently requires the AdamW optimizer profile")
+        optimizer = torch.optim.AdamW(
+            parameters,
+            lr=float(self.config.learning_rate),
+            betas=(float(self.config.beta1), float(self.config.beta2)),
+            eps=float(self.config.adam_eps),
+            weight_decay=float(self.config.weight_decay),
+        )
+        self._compiled = compiled
+        self._run_graph = run_graph
+        self._optimizer = optimizer
+        return embedding, output_head
+
+    def train(
+        self,
+        input_ids: Tensor,
+        *,
+        loss_mask: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        labels: Tensor | None = None,
+        resume_from_checkpoint: str | Path | None = None,
+        on_step: Callable[[dict[str, Any]], None] | None = None,
+    ) -> list[float]:
+        if input_ids.ndim != 2 or input_ids.size(0) <= 0:
+            raise ValueError("DFlash input_ids must be a non-empty [batch, sequence] tensor")
+        if input_ids.is_floating_point():
+            raise ValueError("DFlash input_ids must contain integer token IDs")
+        input_ids = input_ids.to(dtype=torch.long, device="cpu")
+        examples, sequence_length = input_ids.shape
+        if sequence_length % self.block_size != 0:
+            raise ValueError("DFlash sequence length must be divisible by block_size")
+        mask = torch.ones((examples, sequence_length), dtype=torch.float32)
+        if loss_mask is not None:
+            if loss_mask.shape != input_ids.shape:
+                raise ValueError("DFlash loss_mask must match input_ids")
+            mask *= loss_mask.to(dtype=torch.float32, device="cpu")
+        input_attention = torch.ones_like(mask, dtype=torch.long)
+        if attention_mask is not None:
+            if attention_mask.shape != input_ids.shape:
+                raise ValueError("DFlash attention_mask must match input_ids")
+            input_attention = attention_mask.to(dtype=torch.long, device="cpu")
+            if bool(((input_attention != 0) & (input_attention != 1)).any().item()):
+                raise ValueError("DFlash attention_mask must be binary")
+            mask *= input_attention.float()
+        if labels is not None:
+            if labels.shape != input_ids.shape:
+                raise ValueError("DFlash labels must match input_ids")
+            mask *= labels.to(device="cpu").ne(-100).float()
+        if not bool(torch.isfinite(mask).all().item()) or bool((mask < 0).any().item()):
+            raise ValueError("DFlash loss_mask must be finite and non-negative")
+        if not bool((mask.sum(dim=-1) > 1).any().item()):
+            raise ValueError("DFlash dataset contains no sequence with usable anchors")
+
+        device_name = str(self.config.device or "cuda").lower()
+        if device_name == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("DFlash distillation is configured for CUDA, but CUDA is unavailable")
+        device = torch.device(device_name)
+        embedding, output_head = self._initialize_runtime(device)
+        assert self._compiled is not None and self._run_graph is not None
+        assert self._optimizer is not None
+        self._data_generator = torch.Generator(device="cpu")
+        self._data_generator.manual_seed(int(self.spec.seed))
+        self._anchor_generator = torch.Generator(device=device)
+        self._anchor_generator.manual_seed(int(self.spec.seed) ^ 0xDFA55157)
+        self._dataset_size = int(examples)
+        self._data_order = None
+        self._data_cursor = 0
+        self.last_global_step = 0
+        self.loss_history = []
+        self.accuracy_history = []
+        self.metrics_history = []
+        if resume_from_checkpoint is not None:
+            self._load_training_checkpoint(Path(resume_from_checkpoint), device)
+
+        steps_per_epoch = max(examples // int(self.config.batch_size), 1)
+        total_steps = int(
+            self.config.max_steps
+            if self.config.max_steps is not None
+            else self.config.epochs * steps_per_epoch
+        )
+        if total_steps < self.last_global_step:
+            raise ValueError("DFlash max_steps precedes the resumed global step")
+        amp_dtype, _amp_name, use_amp = resolve_amp_settings(self.config.amp_dtype)
+        use_amp = bool(use_amp and device.type == "cuda")
+        self._stop = False
+        for global_step in range(self.last_global_step, total_steps):
+            if self._stop:
+                break
+            indices = self._next_batch_indices(examples)
+            batch_ids = input_ids.index_select(0, indices).to(device)
+            batch_mask = mask.index_select(0, indices).to(device)
+            batch_attention = input_attention.index_select(0, indices).to(device)
+            self._optimizer.zero_grad(set_to_none=True)
+            with torch.no_grad():
+                target_hidden, target_logits = self._target_forward(
+                    batch_ids, batch_attention
+                )
+                anchors, block_keep = self._sample_anchor_positions(
+                    sequence_length, batch_mask
+                )
+                (
+                    noise_embeddings,
+                    context_positions,
+                    block_positions,
+                    draft_attention_mask,
+                ) = self._build_draft_inputs(
+                    batch_ids,
+                    target_hidden,
+                    anchors,
+                    block_keep,
+                    embedding,
+                )
+            with torch.autocast(
+                device_type=device.type,
+                dtype=amp_dtype,
+                enabled=use_amp,
+            ):
+                assistant_hidden = self._run_graph(
+                    target_hidden,
+                    noise_embeddings,
+                    context_positions,
+                    block_positions,
+                    draft_attention_mask,
+                )[0]
+                draft_logits = output_head(assistant_hidden)
+                loss, metrics = self._compute_loss(
+                    draft_logits,
+                    batch_ids,
+                    anchors,
+                    block_keep,
+                    batch_mask,
+                    target_logits if self.spec.self_logit_distillation else None,
+                )
+            if not bool(torch.isfinite(loss.detach()).item()):
+                raise RuntimeError("DFlash distillation loss is not finite")
+            loss.backward()
+            if self.config.grad_clip_norm > 0.0:
+                norm = torch.nn.utils.clip_grad_norm_(
+                    self._compiled.parameters(), float(self.config.grad_clip_norm)
+                )
+                if not bool(torch.isfinite(norm).item()):
+                    raise RuntimeError("DFlash assistant gradient norm is not finite")
+            self._optimizer.step()
+            self.last_global_step = global_step + 1
+            self.loss_history.append(metrics.loss)
+            self.accuracy_history.append(metrics.accuracy)
+            self.metrics_history.append(metrics)
+            if on_step is not None:
+                on_step(
+                    {
+                        "step": self.last_global_step,
+                        "loss": metrics.loss,
+                        "accuracy": metrics.accuracy,
+                        "weighted_tokens": metrics.weighted_tokens,
+                        "valid_blocks": metrics.valid_blocks,
+                    }
+                )
+        return list(self.loss_history)
+
+    def _checkpoint_payload(self) -> dict[str, Any]:
+        if (
+            self._compiled is None
+            or self._optimizer is None
+            or self._data_generator is None
+            or self._anchor_generator is None
+            or self._data_order is None
+        ):
+            raise RuntimeError("No DFlash training state is available")
+        from .inference import _graph_topology_sha256
+
+        return {
+            "format": self._CHECKPOINT_FORMAT,
+            "graph_topology_sha256": _graph_topology_sha256(self.graph),
+            "recipe": asdict(self.spec),
+            "dflash_spec": dict(self.graph.torch_config["dflash_spec"]),
+            "assistant_state_dict": self._compiled.state_dict(),
+            "optimizer_state_dict": self._optimizer.state_dict(),
+            "global_step": int(self.last_global_step),
+            "loss_history": list(self.loss_history),
+            "accuracy_history": list(self.accuracy_history),
+            "data_generator_state": self._data_generator.get_state(),
+            "anchor_generator_state": self._anchor_generator.get_state(),
+            "data_order": self._data_order.clone(),
+            "data_cursor": int(self._data_cursor),
+            "dataset_size": int(self._dataset_size),
+            "torch_rng_state": torch.get_rng_state(),
+            "cuda_rng_state_all": (
+                torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+            ),
+        }
+
+    def save_training_checkpoint(self, path: str | Path) -> str:
+        destination = Path(path).expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise FileExistsError(
+                f"Refusing to overwrite DFlash training checkpoint: {destination}"
+            )
+        temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+        try:
+            torch.save(self._checkpoint_payload(), temporary)
+            os.replace(temporary, destination)
+        finally:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+        digest = hashlib.sha256()
+        with destination.open("rb") as stream:
+            while chunk := stream.read(8 * 1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _native_assistant_state_key(source_name: str) -> str:
+        fixed = {
+            "encoder.fc.weight": "node_modules.context_projection.proj.weight",
+            "encoder.output_norm_enc.weight": "node_modules.context_norm.weight",
+            "norm.weight": "node_modules.output_norm.weight",
+        }
+        if source_name in fixed:
+            return fixed[source_name]
+        if not source_name.startswith("layers."):
+            raise ValueError(f"Unsupported DFlash assistant tensor {source_name!r}")
+        parts = source_name.split(".", 2)
+        if len(parts) != 3 or not parts[1].isdigit():
+            raise ValueError(f"Malformed DFlash assistant tensor {source_name!r}")
+        prefix = f"node_modules.layers_{parts[1]}.node_modules."
+        suffixes = {
+            "self_attn.q_proj.weight": "self_attn.node_modules.dflash_attention.q_proj.weight",
+            "self_attn.k_proj.weight": "self_attn.node_modules.dflash_attention.k_proj.weight",
+            "self_attn.v_proj.weight": "self_attn.node_modules.dflash_attention.v_proj.weight",
+            "self_attn.o_proj.weight": "self_attn.node_modules.o_proj.proj.weight",
+            "self_attn.q_norm.weight": "self_attn.node_modules.dflash_attention.q_norm",
+            "self_attn.k_norm.weight": "self_attn.node_modules.dflash_attention.k_norm",
+            "mlp.gate_proj.weight": "mlp.node_modules.gate_proj.proj.weight",
+            "mlp.up_proj.weight": "mlp.node_modules.up_proj.proj.weight",
+            "mlp.down_proj.weight": "mlp.node_modules.down_proj.proj.weight",
+            "post_attention_layernorm.weight": "post_attention_layernorm.weight",
+            "input_layernorm.weight": "input_layernorm.weight",
+        }
+        try:
+            return prefix + suffixes[parts[2]]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported DFlash assistant tensor {source_name!r}"
+            ) from exc
+
+    def export_native_assistant(self, output_root: str | Path):
+        """Export an exact production assistant artifact for resident attach.
+
+        Export is intentionally unavailable for tiny/custom geometries and for
+        non-official tokenizer/config lineages.  Every tensor is converted one
+        at a time to canonical little-endian BF16; target weights, embedding,
+        and LM head are never copied into the assistant artifact.
+        """
+
+        if self._compiled is None:
+            raise RuntimeError("No trained DFlash assistant is available to export")
+        from .native_chat import (
+            MUSE_GLIMMER_ATEM_TEMPLATE_SHA256,
+            MUSE_GLIMMER_TOKENIZER_CONFIG_SHA256,
+            MUSE_GLIMMER_TOKENIZER_SHA256,
+        )
+        from .native_muse_glimmer_checkpoint import (
+            ASSISTANT_FORMAT,
+            ASSISTANT_PARAMETER_COUNT,
+            ASSISTANT_PAYLOAD_BYTES,
+            MAIN_CONFIG_SHA256,
+            ConvertedMuseGlimmerCheckpoint,
+            muse_glimmer_assistant_tensor_contracts,
+        )
+
+        dflash = dict(self.graph.torch_config["dflash_spec"])
+        if dflash != {
+            "block_size": 16,
+            "proposal_tokens": 15,
+            "mask_token_id": 201818,
+            "target_layer_ids": [1, 13, 25, 37, 49],
+            "shared_target_embedding": True,
+            "shared_target_lm_head": True,
+            "training_attention_mask": True,
+        }:
+            raise ValueError("Native DFlash export requires the production assistant geometry")
+        if (
+            self.spec.target_config_sha256 != MAIN_CONFIG_SHA256
+            or self.spec.tokenizer_sha256 != MUSE_GLIMMER_TOKENIZER_SHA256
+            or self.spec.chat_template_sha256 != MUSE_GLIMMER_ATEM_TEMPLATE_SHA256
+        ):
+            raise ValueError(
+                "Native DFlash export requires the pinned Muse Glimmer config/tokenizer/template"
+            )
+        contracts = muse_glimmer_assistant_tensor_contracts()
+        if len(contracts) != 58:
+            raise RuntimeError("Native DFlash tensor contract is not canonical")
+        state = self._compiled.state_dict()
+        expected_keys = {
+            self._native_assistant_state_key(contract.source_name)
+            for contract in contracts
+        }
+        if set(state) != expected_keys:
+            raise ValueError(
+                "DFlash assistant state has missing or unexpected tensors: "
+                f"missing={sorted(expected_keys - set(state))[:8]}, "
+                f"unexpected={sorted(set(state) - expected_keys)[:8]}"
+            )
+
+        root = Path(output_root).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        artifact = root / "muse-glimmer-dflash.bf16"
+        metadata_path = root / "checkpoint.json"
+        done_path = root / "DONE"
+        if any(path.exists() for path in (artifact, metadata_path, done_path)):
+            raise FileExistsError("Refusing to overwrite a native DFlash export")
+        nonce = f"{os.getpid()}.{time.time_ns()}"
+        artifact_tmp = root / f".{artifact.name}.{nonce}.tmp"
+        metadata_tmp = root / f".{metadata_path.name}.{nonce}.tmp"
+        done_tmp = root / f".{done_path.name}.{nonce}.tmp"
+        artifact_digest = hashlib.sha256()
+        tensor_rows: list[dict[str, Any]] = []
+        offset = 0
+        parameter_count = 0
+        try:
+            with artifact_tmp.open("xb") as stream:
+                for contract in contracts:
+                    key = self._native_assistant_state_key(contract.source_name)
+                    tensor = state[key]
+                    if tuple(tensor.shape) != tuple(contract.shape):
+                        raise ValueError(
+                            f"DFlash tensor {contract.source_name!r} has shape "
+                            f"{tuple(tensor.shape)}, expected {contract.shape}"
+                        )
+                    bits = (
+                        tensor.detach()
+                        .to(device="cpu", dtype=torch.bfloat16)
+                        .contiguous()
+                        .view(torch.uint16)
+                        .numpy()
+                        .astype("<u2", copy=False)
+                        .tobytes(order="C")
+                    )
+                    tensor_digest = hashlib.sha256(bits).hexdigest()
+                    stream.write(bits)
+                    artifact_digest.update(bits)
+                    tensor_rows.append(
+                        {
+                            "name": contract.native_name,
+                            "source_name": contract.source_name,
+                            "component": "assistant",
+                            "dtype": "bfloat16",
+                            "byte_order": "little",
+                            "layout": "row_major",
+                            "parameterization": contract.parameterization,
+                            "shape": list(contract.shape),
+                            "offset": offset,
+                            "nbytes": len(bits),
+                            "sha256": tensor_digest,
+                            "source_shard": "trained-assistant-state",
+                            "source_data_offset": 0,
+                        }
+                    )
+                    offset += len(bits)
+                    parameter_count += tensor.numel()
+                stream.flush()
+                os.fsync(stream.fileno())
+            if (
+                parameter_count != ASSISTANT_PARAMETER_COUNT
+                or offset != ASSISTANT_PAYLOAD_BYTES
+            ):
+                raise RuntimeError("Native DFlash export byte count is not canonical")
+            artifact_sha = artifact_digest.hexdigest()
+            metadata = {
+                "schema": "neuralfn.native_muse_glimmer_checkpoint",
+                "version": 1,
+                "format": ASSISTANT_FORMAT,
+                "component": "assistant",
+                "artifact": {
+                    "artifact_path": artifact.name,
+                    "target_nbytes": offset,
+                    "target_sha256": artifact_sha,
+                    "dtype": "bfloat16",
+                    "byte_order": "little",
+                    "layout": "canonical_contiguous_row_major",
+                },
+                "geometry": {
+                    "block_size": 16,
+                    "context_length": 131072,
+                    "hidden_size": 6656,
+                    "intermediate_size": 19968,
+                    "layers": 5,
+                    "head_dim": 128,
+                    "query_heads": 32,
+                    "kv_heads": 8,
+                    "sliding_window": 2048,
+                    "rope_theta": 500000.0,
+                    "target_layer_ids_zero_based": [1, 13, 25, 37, 49],
+                    "mask_token_id": 201818,
+                },
+                "tensors": tensor_rows,
+                "source_provenance": {
+                    "repository": "neuralfn-trained-muse-glimmer-dflash",
+                    "revision": self.spec.recipe_revision,
+                    "conversion": {
+                        "implementation": "DFlashDistillationTrainer.export_native_assistant",
+                        "version": 1,
+                        "payload_transform": "assistant-state-to-bfloat16-canonical-order",
+                    },
+                    "distillation_recipe": asdict(self.spec),
+                    "meta_released_training_recipe_claimed": False,
+                },
+                "tokenizer": {
+                    "tokenizer_sha256": MUSE_GLIMMER_TOKENIZER_SHA256,
+                    "tokenizer_config_sha256": MUSE_GLIMMER_TOKENIZER_CONFIG_SHA256,
+                    "chat_template_sha256": MUSE_GLIMMER_ATEM_TEMPLATE_SHA256,
+                    "vocab_size": 202048,
+                },
+                "capabilities": {
+                    "checkpoint_import": True,
+                    "resident_cpu": True,
+                    "resident_cuda": True,
+                    "speculative_decoding": True,
+                    "vision": False,
+                    "video": False,
+                },
+                "target_compatibility": {
+                    "allowed_target_checkpoint_sha256": [
+                        self.spec.target_checkpoint_sha256
+                    ],
+                    "target_layer_ids_zero_based": [1, 13, 25, 37, 49],
+                    "block_size": 16,
+                    "mask_token_id": 201818,
+                    "shared_lm_head": True,
+                    "tokenizer_sha256": MUSE_GLIMMER_TOKENIZER_SHA256,
+                    "target_config_sha256": MAIN_CONFIG_SHA256,
+                },
+            }
+            metadata_bytes = (
+                json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=False)
+                + "\n"
+            ).encode("utf-8")
+            metadata_sha = hashlib.sha256(metadata_bytes).hexdigest()
+            with metadata_tmp.open("xb") as stream:
+                stream.write(metadata_bytes)
+                stream.flush()
+                os.fsync(stream.fileno())
+            done = {
+                "schema": "neuralfn.native_muse_glimmer_checkpoint.done",
+                "version": 1,
+                "metadata_sha256": metadata_sha,
+                "artifact_sha256": artifact_sha,
+                "artifact_nbytes": offset,
+            }
+            with done_tmp.open("x", encoding="utf-8", newline="\n") as stream:
+                json.dump(done, stream, sort_keys=True, separators=(",", ":"))
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(artifact_tmp, artifact)
+            os.replace(metadata_tmp, metadata_path)
+            os.replace(done_tmp, done_path)
+            return ConvertedMuseGlimmerCheckpoint(
+                metadata_path=metadata_path,
+                artifact_path=artifact,
+                done_path=done_path,
+                format=ASSISTANT_FORMAT,
+                component="assistant",
+                nbytes=offset,
+                sha256=artifact_sha,
+                tensor_count=len(contracts),
+            )
+        finally:
+            for temporary in (artifact_tmp, metadata_tmp, done_tmp):
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+
+    def _load_training_checkpoint(
+        self, path: Path, device: torch.device
+    ) -> None:
+        if not path.is_file():
+            raise ValueError("DFlash resume checkpoint does not exist")
+        payload = torch.load(path, map_location=device, weights_only=True)
+        if not isinstance(payload, Mapping) or payload.get("format") != self._CHECKPOINT_FORMAT:
+            raise ValueError("DFlash resume checkpoint format is unsupported")
+        from .inference import _graph_topology_sha256
+
+        if (
+            payload.get("graph_topology_sha256") != _graph_topology_sha256(self.graph)
+            or payload.get("recipe") != asdict(self.spec)
+            or payload.get("dflash_spec")
+            != dict(self.graph.torch_config["dflash_spec"])
+            or int(payload.get("dataset_size", -1)) != self._dataset_size
+        ):
+            raise ValueError("DFlash resume topology, lineage, or dataset mismatch")
+        assert self._compiled is not None and self._optimizer is not None
+        self._compiled.load_state_dict(payload["assistant_state_dict"], strict=True)
+        self._optimizer.load_state_dict(payload["optimizer_state_dict"])
+        self.last_global_step = int(payload["global_step"])
+        self.loss_history = [float(value) for value in payload.get("loss_history", [])]
+        self.accuracy_history = [
+            float(value) for value in payload.get("accuracy_history", [])
+        ]
+        assert self._data_generator is not None and self._anchor_generator is not None
+        self._data_generator.set_state(payload["data_generator_state"].cpu())
+        self._anchor_generator.set_state(payload["anchor_generator_state"].cpu())
+        order = payload["data_order"].to(dtype=torch.long, device="cpu")
+        if order.numel() != self._dataset_size or not torch.equal(
+            order.sort().values, torch.arange(self._dataset_size)
+        ):
+            raise ValueError("DFlash resume data order is invalid")
+        self._data_order = order
+        self._data_cursor = int(payload["data_cursor"])
+        if self._data_cursor < 0 or self._data_cursor > self._dataset_size:
+            raise ValueError("DFlash resume data cursor is invalid")
+        torch.set_rng_state(payload["torch_rng_state"].cpu())
+        cuda_state = payload.get("cuda_rng_state_all")
+        if cuda_state is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(cuda_state)
+
+    @torch.no_grad()
+    def evaluate_greedy_acceptance(
+        self,
+        prompt: Tensor,
+        *,
+        max_new_tokens: int = 64,
+        eos_token_ids: tuple[int, ...] = (200001, 200008),
+    ) -> dict[str, Any]:
+        """Run an exact target-conditioned greedy acceptance audit (batch 1)."""
+
+        if self._compiled is None:
+            raise RuntimeError("Train or initialize the DFlash trainer before evaluation")
+        if prompt.ndim != 2 or prompt.size(0) != 1 or prompt.size(1) <= 0:
+            raise ValueError("DFlash acceptance evaluation requires prompt [1, sequence]")
+        if max_new_tokens <= 0:
+            raise ValueError("DFlash max_new_tokens must be positive")
+        device = next(self._compiled.parameters()).device
+        tokens = prompt.to(dtype=torch.long, device=device)
+        embedding, output_head = self._target_parts()
+        self._compiled.eval()
+        proposed = 0
+        accepted = 0
+        blocks = 0
+        generated: list[int] = []
+        eos = {int(value) for value in eos_token_ids}
+        while len(generated) < max_new_tokens:
+            attention = torch.ones_like(tokens, dtype=torch.long)
+            target_hidden, target_logits = self._target_forward(tokens, attention)
+            anchor = target_logits[:, -1].argmax(dim=-1)
+            noise_ids = torch.full(
+                (1, self.block_size),
+                self.mask_token_id,
+                dtype=torch.long,
+                device=device,
+            )
+            noise_ids[:, 0] = anchor
+            noise = embedding(noise_ids)
+            context_length = tokens.size(1)
+            context_positions = torch.arange(
+                context_length, device=device
+            ).unsqueeze(0)
+            block_positions = torch.arange(
+                context_length,
+                context_length + self.block_size,
+                device=device,
+            ).unsqueeze(0)
+            kv_positions = torch.arange(
+                context_length + self.block_size, device=device
+            ).view(1, 1, 1, -1)
+            query_positions = block_positions.view(1, 1, self.block_size, 1)
+            is_context = kv_positions < context_length
+            visible = (~is_context) | (
+                kv_positions > query_positions - self._assistant_window_size()
+            )
+            draft_mask = torch.zeros(
+                (1, 1, self.block_size, context_length + self.block_size),
+                dtype=noise.dtype,
+                device=device,
+            ).masked_fill(~visible, torch.finfo(noise.dtype).min)
+            assistant_hidden = self._compiled(
+                target_hidden,
+                noise,
+                context_positions,
+                block_positions,
+                draft_mask,
+            )[0]
+            proposals = output_head(assistant_hidden[:, 1:]).argmax(dim=-1)
+            verification_input = torch.cat((tokens, anchor[:, None], proposals), dim=1)
+            verification_logits = self._target_forward(
+                verification_input, torch.ones_like(verification_input)
+            )[1]
+            start = context_length - 1
+            verification = verification_logits[:, start:].argmax(dim=-1)[0]
+            if verification.numel() != self.block_size + 1:
+                raise RuntimeError("DFlash target verification returned the wrong extent")
+            if int(verification[0].item()) != int(anchor.item()):
+                raise RuntimeError("DFlash target anchor changed during verification")
+            match_count = 0
+            for index in range(self.block_size - 1):
+                if int(proposals[0, index].item()) != int(verification[index + 1].item()):
+                    break
+                match_count += 1
+            remaining = max_new_tokens - len(generated)
+            proposed += min(self.block_size - 1, max(remaining - 1, 0))
+            accepted += min(match_count, max(remaining - 1, 0))
+            commit: list[int] = [int(anchor.item())]
+            commit.extend(
+                int(value)
+                for value in proposals[0, :match_count].tolist()
+            )
+            if match_count == self.block_size - 1:
+                commit.append(int(verification[self.block_size].item()))
+            else:
+                commit.append(int(verification[match_count + 1].item()))
+            commit = commit[:remaining]
+            for token in commit:
+                generated.append(token)
+                if token in eos or len(generated) >= max_new_tokens:
+                    break
+            tokens = torch.cat(
+                (
+                    prompt.to(dtype=torch.long, device=device),
+                    torch.tensor(generated, dtype=torch.long, device=device).unsqueeze(0),
+                ),
+                dim=1,
+            )
+            blocks += 1
+            if generated and generated[-1] in eos:
+                break
+        self._compiled.train()
+        return {
+            "token_ids": generated,
+            "blocks": blocks,
+            "proposed_tokens": proposed,
+            "accepted_tokens": accepted,
+            "mean_accepted_per_block": accepted / max(blocks, 1),
+            "acceptance_rate": accepted / max(proposed, 1),
+        }
 
 
 # ---------------------------------------------------------------------------

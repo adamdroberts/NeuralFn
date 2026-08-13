@@ -12,6 +12,10 @@ inline constexpr std::uint32_t kTokenShardV2HeaderBytes = 512;
 inline constexpr std::uint32_t kTokenShardLittleEndianMarker = 0x01020304U;
 inline constexpr std::uint32_t kStructuredSftV1Version = 1;
 inline constexpr std::uint32_t kStructuredSftV1HeaderBytes = 512;
+inline constexpr std::uint32_t kStructuredPreferenceV1Version = 1;
+inline constexpr std::uint32_t kStructuredPreferenceV1HeaderBytes = 512;
+inline constexpr std::uint32_t kStructuredPpoPromptV1Version = 1;
+inline constexpr std::uint32_t kStructuredPpoPromptV1HeaderBytes = 512;
 
 enum class TokenShardDType : std::uint32_t {
     legacy_uint16_le = 1,
@@ -137,6 +141,117 @@ private:
     std::vector<std::uint8_t> scratch_;
 };
 
+// Fixed-width preference records.  Each record contains a complete chosen SFT
+// branch followed by a complete rejected SFT branch; each branch uses the
+// exact four-array layout documented by StructuredSftFile.  Keeping masks and
+// packed-example boundaries branch-local makes DPO and reward training
+// deterministic and prevents prompt/padding tokens from entering sequence
+// scores.
+struct StructuredPreferenceFile {
+    std::filesystem::path path;
+    std::uintmax_t bytes = 0;
+    std::uint64_t records = 0;
+    std::uint32_t sequence_length = 0;
+    std::uint32_t tokenizer_vocab_size = 0;
+    std::uint32_t pad_token_id = 0;
+    std::string tokenizer_sha256;
+    std::string chat_template_sha256;
+    std::string tokenizer_revision;
+    std::string split;
+};
+
+struct StructuredPreferenceDataset {
+    std::filesystem::path dataset_path;
+    std::vector<StructuredPreferenceFile> train_files;
+    std::vector<StructuredPreferenceFile> val_files;
+    std::uint64_t train_records = 0;
+    std::uint64_t val_records = 0;
+};
+
+struct StructuredPreferenceBatch {
+    std::int64_t batch_size = 0;
+    std::int64_t seq_len = 0;
+    std::vector<std::uint32_t> chosen_input_ids;
+    std::vector<std::int32_t> chosen_targets;
+    std::vector<float> chosen_loss_mask;
+    std::vector<std::int32_t> chosen_sequence_ids;
+    std::vector<std::uint32_t> rejected_input_ids;
+    std::vector<std::int32_t> rejected_targets;
+    std::vector<float> rejected_loss_mask;
+    std::vector<std::int32_t> rejected_sequence_ids;
+};
+
+class SequentialStructuredPreferenceBatchSampler {
+public:
+    SequentialStructuredPreferenceBatchSampler(
+        std::vector<StructuredPreferenceFile> files,
+        std::int64_t batch_size);
+
+    bool next(StructuredPreferenceBatch& out);
+    bool seek_batch(std::int64_t batch_index);
+    void reset();
+    std::int64_t total_batches() const;
+
+private:
+    std::vector<StructuredPreferenceFile> files_;
+    std::int64_t batch_size_ = 0;
+    std::uint32_t sequence_length_ = 0;
+    std::size_t file_index_ = 0;
+    std::uint64_t local_record_index_ = 0;
+    std::vector<std::uint8_t> scratch_;
+};
+
+// Fixed-width online-PPO prompt records. Each record contains uint32 input_ids
+// followed by float32 attention_mask, both of sequence_length elements. The
+// mask is one non-empty contiguous prefix and trailing tokens are exact pads.
+struct StructuredPpoPromptFile {
+    std::filesystem::path path;
+    std::uintmax_t bytes = 0;
+    std::uint64_t records = 0;
+    std::uint32_t sequence_length = 0;
+    std::uint32_t tokenizer_vocab_size = 0;
+    std::uint32_t pad_token_id = 0;
+    std::string tokenizer_sha256;
+    std::string chat_template_sha256;
+    std::string tokenizer_revision;
+    std::string split;
+};
+
+struct StructuredPpoPromptDataset {
+    std::filesystem::path dataset_path;
+    std::vector<StructuredPpoPromptFile> train_files;
+    std::vector<StructuredPpoPromptFile> val_files;
+    std::uint64_t train_records = 0;
+    std::uint64_t val_records = 0;
+};
+
+struct StructuredPpoPromptBatch {
+    std::int64_t batch_size = 0;
+    std::int64_t seq_len = 0;
+    std::vector<std::uint32_t> input_ids;
+    std::vector<float> attention_mask;
+};
+
+class SequentialStructuredPpoPromptBatchSampler {
+public:
+    SequentialStructuredPpoPromptBatchSampler(
+        std::vector<StructuredPpoPromptFile> files,
+        std::int64_t batch_size);
+
+    bool next(StructuredPpoPromptBatch& out);
+    bool seek_batch(std::int64_t batch_index);
+    void reset();
+    std::int64_t total_batches() const;
+
+private:
+    std::vector<StructuredPpoPromptFile> files_;
+    std::int64_t batch_size_ = 0;
+    std::uint32_t sequence_length_ = 0;
+    std::size_t file_index_ = 0;
+    std::uint64_t local_record_index_ = 0;
+    std::vector<std::uint8_t> scratch_;
+};
+
 struct ByteShardDataset {
     std::filesystem::path dataset_path;
     std::vector<TokenShardFile> train_shards;
@@ -219,6 +334,14 @@ TokenShardDataset resolve_token_shards(
     bool allow_train_as_val,
     bool require_validation = true);
 StructuredSftDataset resolve_structured_sft_records(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation = true);
+StructuredPreferenceDataset resolve_structured_preference_records(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation = true);
+StructuredPpoPromptDataset resolve_structured_ppo_prompt_records(
     const std::string& alias_or_path,
     bool allow_train_as_val,
     bool require_validation = true);

@@ -1371,6 +1371,24 @@ void launch_glimmer_cache_commit_bf16_v1(
 void launch_dflash_block_attention_float32_v1(
     const NfnNativeTileDFlashBlockAttentionDescriptorV1& descriptor,
     cudaStream_t stream);
+void launch_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    cudaStream_t stream);
+void launch_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1& descriptor,
+    cudaStream_t stream);
 void launch_glimmer_sigmoid_gate_float32_v1(
     const float* values,
     const float* gate,
@@ -1424,6 +1442,42 @@ void launch_glimmer_logit_transform_backward_float32_v1(
     cudaStream_t stream);
 void launch_glimmer_masked_cross_entropy_i32_float32_v1(
     const NfnNativeTileGlimmerMaskedCeDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
     cudaStream_t stream);
 void launch_token_embedding_backward_weight_i32_float32(
     const std::int32_t* token_ids,
@@ -3190,6 +3244,183 @@ bool normalize_glimmer_masked_ce_descriptor(
     return true;
 }
 
+bool normalize_sequence_logp_descriptor(
+    const NfnNativeTileSequenceLogpDescriptorV1* source,
+    NfnNativeTileSequenceLogpDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileSequenceLogpDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->transformed_logits == nullptr || source->targets == nullptr ||
+        source->loss_mask == nullptr || source->batch_size <= 0 ||
+        source->sequence_length <= 0 || source->vocab_size <= 0 ||
+        source->vocab_size > std::numeric_limits<std::int32_t>::max() ||
+        (!backward && source->sequence_logp == nullptr) ||
+        (backward &&
+         (source->grad_sequence_logp == nullptr ||
+          source->grad_transformed_logits == nullptr))) {
+        return false;
+    }
+    std::int64_t rows = 0;
+    std::int64_t values = 0;
+    if (!checked_positive_product(
+            source->batch_size, source->sequence_length, &rows) ||
+        !checked_positive_product(rows, source->vocab_size, &values)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileSequenceLogpDescriptorV1);
+    return true;
+}
+
+bool normalize_dpo_pairwise_descriptor(
+    const NfnNativeTileDpoPairwiseDescriptorV1* source,
+    NfnNativeTileDpoPairwiseDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileDpoPairwiseDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->loss_type > NFN_NATIVE_TILE_DPO_LOSS_IPO || source->flags != 0 ||
+        source->reserved0 != 0 || source->policy_logp_chosen == nullptr ||
+        source->policy_logp_rejected == nullptr ||
+        source->reference_logp_chosen == nullptr ||
+        source->reference_logp_rejected == nullptr || source->examples <= 0 ||
+        !std::isfinite(source->beta) || !(source->beta > 0.0f) ||
+        !std::isfinite(source->label_smoothing) ||
+        source->label_smoothing < 0.0f || source->label_smoothing > 1.0f ||
+        !std::isfinite(source->grad_scale) || source->grad_scale < 0.0f ||
+        (!backward &&
+         (source->row_loss == nullptr || source->chosen_reward == nullptr ||
+          source->rejected_reward == nullptr)) ||
+        (backward &&
+         (source->grad_policy_logp_chosen == nullptr ||
+          source->grad_policy_logp_rejected == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileDpoPairwiseDescriptorV1);
+    return true;
+}
+
+bool normalize_masked_reward_head_descriptor(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* source,
+    NfnNativeTileMaskedRewardHeadDescriptorV1* output,
+    bool backward) {
+    NfnNativeTilePackedWeightDescriptorV1 weight{};
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileMaskedRewardHeadDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->hidden == nullptr ||
+        source->sequence_mask == nullptr || source->weight == nullptr ||
+        source->batch_size <= 0 || source->sequence_length <= 0 ||
+        source->hidden_size <= 0 ||
+        !normalize_packed_weight_descriptor(source->weight, &weight) ||
+        weight.encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_BF16 ||
+        weight.output_dim != 1 || weight.input_dim != source->hidden_size ||
+        (!backward &&
+         (source->reward == nullptr || source->selected_positions == nullptr)) ||
+        (backward &&
+         (source->selected_positions == nullptr || source->grad_reward == nullptr ||
+          source->grad_hidden == nullptr || source->grad_weight == nullptr))) {
+        return false;
+    }
+    std::int64_t rows = 0;
+    std::int64_t elements = 0;
+    if (!checked_positive_product(
+            source->batch_size, source->sequence_length, &rows) ||
+        !checked_positive_product(rows, source->hidden_size, &elements)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileMaskedRewardHeadDescriptorV1);
+    return true;
+}
+
+bool normalize_preference_bce_descriptor(
+    const NfnNativeTilePreferenceBceDescriptorV1* source,
+    NfnNativeTilePreferenceBceDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTilePreferenceBceDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->reward_chosen == nullptr || source->reward_rejected == nullptr ||
+        source->examples <= 0 || !std::isfinite(source->grad_scale) ||
+        source->grad_scale < 0.0f || (!backward && source->row_loss == nullptr) ||
+        (backward &&
+         (source->grad_reward_chosen == nullptr ||
+          source->grad_reward_rejected == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTilePreferenceBceDescriptorV1);
+    return true;
+}
+
+bool normalize_token_logp_entropy_descriptor(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* source,
+    NfnNativeTileTokenLogpEntropyDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileTokenLogpEntropyDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->transformed_logits == nullptr || source->targets == nullptr ||
+        source->loss_mask == nullptr || source->rows <= 0 ||
+        source->vocab_size <= 0 ||
+        source->vocab_size > std::numeric_limits<std::int32_t>::max() ||
+        (!backward &&
+         (source->token_logp == nullptr || source->token_entropy == nullptr)) ||
+        (backward &&
+         (source->grad_token_logp == nullptr ||
+          source->grad_token_entropy == nullptr ||
+          source->grad_transformed_logits == nullptr))) {
+        return false;
+    }
+    std::int64_t values = 0;
+    if (!checked_positive_product(source->rows, source->vocab_size, &values)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileTokenLogpEntropyDescriptorV1);
+    return true;
+}
+
+bool normalize_masked_ppo_loss_descriptor(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* source,
+    NfnNativeTileMaskedPpoLossDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileMaskedPpoLossDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        (source->flags & ~NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0 ||
+        source->reserved0 != 0 || source->logp_new == nullptr ||
+        source->logp_old == nullptr || source->advantages == nullptr ||
+        source->value_new == nullptr || source->value_old == nullptr ||
+        source->returns == nullptr || source->loss_mask == nullptr ||
+        source->entropy == nullptr || source->rows <= 0 ||
+        !std::isfinite(source->clip_range) || !(source->clip_range > 0.0f) ||
+        source->clip_range >= 1.0f ||
+        !std::isfinite(source->value_coefficient) ||
+        source->value_coefficient < 0.0f ||
+        !std::isfinite(source->entropy_coefficient) ||
+        source->entropy_coefficient < 0.0f ||
+        !std::isfinite(source->epsilon) || !(source->epsilon > 0.0f) ||
+        (!backward &&
+         (source->policy_loss == nullptr || source->value_loss == nullptr ||
+          source->entropy_bonus == nullptr || source->total_loss == nullptr)) ||
+        (backward &&
+         (source->grad_logp_new == nullptr ||
+          source->grad_value_new == nullptr ||
+          source->grad_entropy == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileMaskedPpoLossDescriptorV1);
+    return true;
+}
+
 bool normalize_glimmer_gqa_decode_descriptor(
     const NfnNativeTileGlimmerGqaDecodeDescriptorV1* source,
     NfnNativeTileGlimmerGqaDecodeDescriptorV1* output) {
@@ -4020,6 +4251,10 @@ int nfn_native_tile_glimmer_inference_abi_version() {
     return NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1;
 }
 
+int nfn_native_tile_glimmer_vision_abi_version() {
+    return NFN_NATIVE_TILE_GLIMMER_VISION_V1;
+}
+
 int nfn_native_tile_glimmer_training_abi_version() {
     return NFN_NATIVE_TILE_GLIMMER_TRAINING_V1;
 }
@@ -4201,6 +4436,80 @@ int nfn_native_tile_dflash_block_attention_float32_v1(
     return launch_status();
 }
 
+int nfn_native_tile_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->projected == nullptr || descriptor->position_table == nullptr ||
+        descriptor->corner_indices == nullptr || descriptor->corner_weights == nullptr ||
+        descriptor->permutation == nullptr || descriptor->output == nullptr ||
+        descriptor->rows <= 0 || descriptor->width <= 0 ||
+        descriptor->position_rows <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_prepare_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    void* cuda_stream) {
+    if (input == nullptr || weight == nullptr || bias == nullptr || output == nullptr ||
+        rows <= 0 || width <= 0 || width > 8192 || !std::isfinite(eps) ||
+        !(eps > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_layer_norm_float32_v1(
+        input, weight, bias, output, rows, width, eps, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->interleaved_rope > 1 || descriptor->reserved0 != 0 ||
+        descriptor->reserved1 != 0 || descriptor->query == nullptr ||
+        descriptor->key == nullptr || descriptor->value == nullptr ||
+        descriptor->position_width == nullptr ||
+        descriptor->position_height == nullptr ||
+        descriptor->row_begin == nullptr || descriptor->row_end == nullptr ||
+        descriptor->output == nullptr || descriptor->rows <= 0 ||
+        descriptor->heads <= 0 || descriptor->head_dim <= 0 ||
+        descriptor->head_dim > 256 || descriptor->head_dim % 4 != 0 ||
+        !std::isfinite(descriptor->rope_theta) || !(descriptor->rope_theta > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_attention_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->reordered_hidden == nullptr ||
+        descriptor->source_rows == nullptr || descriptor->output == nullptr ||
+        descriptor->merged_rows <= 0 || descriptor->hidden_size <= 0 ||
+        descriptor->merge_area <= 0 || descriptor->merge_area > 16) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_pixel_shuffle_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_glimmer_sigmoid_gate_float32_v1(
     const float* values,
     const float* gate,
@@ -4358,6 +4667,140 @@ int nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1(
         return static_cast<int>(cudaErrorInvalidValue);
     }
     neuralfn::tile_cuda::launch_glimmer_masked_cross_entropy_i32_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor) {
+    NfnNativeTileSequenceLogpDescriptorV1 normalized{};
+    if (!normalize_sequence_logp_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_sequence_logp_i32_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor) {
+    NfnNativeTileSequenceLogpDescriptorV1 normalized{};
+    if (!normalize_sequence_logp_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_sequence_logp_i32_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor) {
+    NfnNativeTileDpoPairwiseDescriptorV1 normalized{};
+    if (!normalize_dpo_pairwise_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_dpo_pairwise_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor) {
+    NfnNativeTileDpoPairwiseDescriptorV1 normalized{};
+    if (!normalize_dpo_pairwise_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_dpo_pairwise_loss_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor) {
+    NfnNativeTileMaskedRewardHeadDescriptorV1 normalized{};
+    if (!normalize_masked_reward_head_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_reward_head_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor) {
+    NfnNativeTileMaskedRewardHeadDescriptorV1 normalized{};
+    if (!normalize_masked_reward_head_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_reward_head_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor) {
+    NfnNativeTilePreferenceBceDescriptorV1 normalized{};
+    if (!normalize_preference_bce_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_preference_bce_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor) {
+    NfnNativeTilePreferenceBceDescriptorV1 normalized{};
+    if (!normalize_preference_bce_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_preference_bce_loss_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor) {
+    NfnNativeTileTokenLogpEntropyDescriptorV1 normalized{};
+    if (!normalize_token_logp_entropy_descriptor(
+            descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_token_logp_entropy_i32_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor) {
+    NfnNativeTileTokenLogpEntropyDescriptorV1 normalized{};
+    if (!normalize_token_logp_entropy_descriptor(
+            descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_token_logp_entropy_i32_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor) {
+    NfnNativeTileMaskedPpoLossDescriptorV1 normalized{};
+    if (!normalize_masked_ppo_loss_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_ppo_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor) {
+    NfnNativeTileMaskedPpoLossDescriptorV1 normalized{};
+    if (!normalize_masked_ppo_loss_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_ppo_loss_float32_backward_v1(
         normalized, as_stream(normalized.cuda_stream));
     return launch_status();
 }

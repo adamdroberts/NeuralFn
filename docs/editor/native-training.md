@@ -78,11 +78,13 @@ Native editor training currently has these explicit limits:
 These are fail-closed limits, not fallback triggers.
 
 The dedicated Muse Glimmer trainer is currently a direct CLI/SDK native path,
-not an editor-run-service promotion. Exact production Glimmer AR/SFT and
-LoRA/QLoRA graphs can preflight to `nfn_muse_glimmer_native_train`, but the
-trainer also requires an authenticated 627-tensor BF16 source, its SHA-256,
-uint32 or structured-SFT dataset lineage, and (for SFT) the pinned ATEM hash.
-The editor request schema does not yet carry that source/checkpoint contract,
-so it must continue to reject a Glimmer start rather than launching with
-invented defaults. Use the direct workflow documented in
+not an editor-run-service promotion. Exact production Glimmer AR/SFT,
+LoRA/QLoRA, DPO, reward, and PPO graphs can preflight to
+`nfn_muse_glimmer_native_train`; immutable official K-Quant LoRA supports
+SFT/DPO, and full-BF16 AR/SFT can use NCCL pipeline stages. These workflows
+require authenticated base/reference/reward artifacts, uint32 or structured
+objective records, exact tokenizer/ATEM lineage, and objective-specific resume
+state. The editor request schema does not yet carry that complete contract, so
+it must continue to reject a Glimmer start rather than launching with invented
+defaults. Use the direct workflow documented in
 [CLI Workflows](../cli.md#native-muse-glimmer-training).

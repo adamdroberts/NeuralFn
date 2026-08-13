@@ -58,7 +58,7 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `gpt2_diff` | `build_gpt2_diff_spec` | gpt2 | ar | dense | GPT-2 + Differential Transformer attention (`attention_variant="differential"`, `diff_lambda_init=0.8`) |
 | `gpt2_stable` | `build_gpt2_stable_spec` | gpt2 | ar | dense | GPT-2 + z-loss **and** QK-norm; the stacked pretraining-stability recipe, ~no throughput cost |
 | `llama` | `build_llama_spec` | llama | ar | dense | RMSNorm, SwiGLU, RoPE, GQA |
-| `muse_glimmer` | `build_muse_glimmer_spec` | muse_glimmer | ar | dense | Exact Muse Glimmer text decoder: non-square GQA, local/local/local/global RoPE/NoPE, gated attention, centered sandwich RMSNorms, untied head and ordered multiplier/softcap. Strict BF16/K-Quant CPU and CUDA text execution, DFlash, native AR/SFT/LoRA/QLoRA, and CPU vision are separately artifact-gated. |
+| `muse_glimmer` | `build_muse_glimmer_spec` | muse_glimmer | ar | dense | Exact Muse Glimmer text decoder: non-square GQA, local/local/local/global RoPE/NoPE, gated attention, centered sandwich RMSNorms, untied head and ordered multiplier/softcap. Strict BF16/K-Quant CPU/CUDA inference, DFlash, native AR/SFT/LoRA/QLoRA/DPO/reward/PPO, full-BF16 AR/SFT pipeline training, target-bound DFlash distillation, and CPU/CUDA vision are independently artifact/ABI-gated. |
 | `moe` / `mixllama` | `build_mixllama_spec` | mixllama | ar | moe | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | `build_llama_fast_spec` | llama | ar | dense | Like llama + `torch.compile` |
 | `mixllama_fast` | `build_mixllama_fast_spec` | mixllama | ar | moe | Like moe + `torch.compile` |

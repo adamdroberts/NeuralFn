@@ -13,8 +13,12 @@ from server.dataset_manager import (
     TOKEN_SHARD_V2_ENDIAN_MARKER,
     TOKEN_SHARD_V2_HEADER_BYTES,
     build_token_shard_v2_header,
+    inspect_structured_ppo_prompt_v1,
+    inspect_structured_preference_v1,
     inspect_structured_sft_v1,
     inspect_token_shard,
+    write_structured_preference_v1,
+    write_structured_ppo_prompt_v1,
     write_structured_sft_v1,
 )
 
@@ -206,3 +210,241 @@ def test_structured_sft_v1_round_trip_and_corruption_gates(tmp_path: Path) -> No
     path.write_bytes(bad)
     with pytest.raises(ValueError, match="Ignored targets"):
         inspect_structured_sft_v1(path)
+
+
+def test_structured_preference_v1_round_trip_and_corruption_gates(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "preference_train_000000.preference"
+    chosen = {
+        "input_ids": [65_535, 65_536, 201_818, 202_047],
+        "targets": [-100, 201_818, 202_047, 200_008],
+        "loss_mask": [0.0, 1.0, 1.0, 1.0],
+        "sequence_ids": [0, 0, 1, 1],
+    }
+    rejected = {
+        "input_ids": [65_535, 65_536, 201_818, 202_047],
+        "targets": [-100, 65_536, 201_818, 200_008],
+        "loss_mask": [0.0, 1.0, 1.0, 1.0],
+        "sequence_ids": [0, 0, 1, 1],
+    }
+    write_structured_preference_v1(
+        path,
+        [{"chosen": chosen, "rejected": rejected}],
+        sequence_length=4,
+        tokenizer_vocab_size=202_048,
+        pad_token_id=200_018,
+        tokenizer_sha256="a" * 64,
+        chat_template_sha256="b" * 64,
+        tokenizer_revision="fixture-r1",
+        split="train",
+    )
+    inspected = inspect_structured_preference_v1(path)
+    assert inspected == {
+        "schema": "neuralfn.native_structured_preference.v1",
+        "record_count": 1,
+        "sequence_length": 4,
+        "tokenizer_vocab_size": 202_048,
+        "pad_token_id": 200_018,
+        "tokenizer_sha256": "a" * 64,
+        "chat_template_sha256": "b" * 64,
+        "tokenizer_revision": "fixture-r1",
+        "split": "train",
+        "objective": "preference",
+    }
+
+    bad = bytearray(path.read_bytes())
+    # Rejected target 0 starts at header + chosen branch (64 bytes) + input IDs.
+    struct.pack_into("<i", bad, 512 + 64 + 16, 202_048)
+    path.write_bytes(bad)
+    with pytest.raises(ValueError, match="rejected"):
+        inspect_structured_preference_v1(path)
+
+
+def test_cpp_structured_preference_resolver_and_sampler(tmp_path: Path) -> None:
+    compiler = shutil.which("g++")
+    if compiler is None:
+        pytest.skip("g++ is unavailable")
+    dataset = tmp_path / "preference_dataset"
+    dataset.mkdir()
+    records = [
+        {
+            "chosen": {
+                "input_ids": [1, 2, 3, 4],
+                "targets": [-100, 2, 3, 4],
+                "loss_mask": [0.0, 1.0, 1.0, 1.0],
+                "sequence_ids": [0, 0, 0, 0],
+            },
+            "rejected": {
+                "input_ids": [1, 5, 6, 7],
+                "targets": [-100, 5, 6, 7],
+                "loss_mask": [0.0, 1.0, 1.0, 1.0],
+                "sequence_ids": [0, 0, 0, 0],
+            },
+        }
+    ]
+    common = {
+        "records": records,
+        "sequence_length": 4,
+        "tokenizer_vocab_size": 202_048,
+        "pad_token_id": 200_018,
+        "tokenizer_sha256": "a" * 64,
+        "chat_template_sha256": "b" * 64,
+        "tokenizer_revision": "fixture-r1",
+    }
+    write_structured_preference_v1(
+        dataset / "preference_train_000000.preference", split="train", **common
+    )
+    write_structured_preference_v1(
+        dataset / "preference_val_000000.preference",
+        split="validation",
+        **common,
+    )
+    helper = tmp_path / "preference_sampler.cpp"
+    helper.write_text(
+        r"""
+#include "token_shards.h"
+#include <iostream>
+
+int main(int argc, char** argv) {
+    try {
+        auto dataset = neuralfn::native_train::resolve_structured_preference_records(
+            argv[1], false);
+        neuralfn::native_train::SequentialStructuredPreferenceBatchSampler sampler(
+            dataset.train_files, 1);
+        neuralfn::native_train::StructuredPreferenceBatch batch;
+        if (!sampler.next(batch)) return 3;
+        std::cout << dataset.train_records << " " << batch.seq_len << " "
+                  << batch.chosen_targets[2] << " "
+                  << batch.rejected_input_ids[3] << "\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << "\n";
+        return 2;
+    }
+}
+""",
+        encoding="utf-8",
+    )
+    binary = tmp_path / "preference_sampler"
+    compile_result = subprocess.run(
+        [
+            compiler,
+            "-std=c++20",
+            "-O2",
+            "-I",
+            str(ROOT / "neuralfn" / "csrc" / "native_train"),
+            str(helper),
+            str(ROOT / "neuralfn" / "csrc" / "native_train" / "token_shards.cpp"),
+            "-o",
+            str(binary),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compile_result.returncode == 0, compile_result.stderr
+    run = subprocess.run(
+        [str(binary), str(dataset)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == "1 4 3 7"
+
+
+def test_structured_ppo_prompt_python_and_cpp_round_trip(tmp_path: Path) -> None:
+    compiler = shutil.which("g++")
+    if compiler is None:
+        pytest.skip("g++ is unavailable")
+    dataset = tmp_path / "ppo_dataset"
+    dataset.mkdir()
+    common = {
+        "records": [
+            {
+                "input_ids": [200_000, 65_536, 201_818, 200_018, 200_018, 200_018],
+                "attention_mask": [1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+        "sequence_length": 6,
+        "tokenizer_vocab_size": 202_048,
+        "pad_token_id": 200_018,
+        "tokenizer_sha256": "a" * 64,
+        "chat_template_sha256": "b" * 64,
+        "tokenizer_revision": "fixture-r1",
+    }
+    train = dataset / "ppo_prompt_train_000000.ppo_prompt"
+    write_structured_ppo_prompt_v1(train, split="train", **common)
+    write_structured_ppo_prompt_v1(
+        dataset / "ppo_prompt_val_000000.ppo_prompt",
+        split="validation",
+        **common,
+    )
+    inspected = inspect_structured_ppo_prompt_v1(train)
+    assert inspected["schema"] == "neuralfn.native_structured_ppo_prompt.v1"
+    assert inspected["record_count"] == 1
+    assert inspected["chat_template_sha256"] == "b" * 64
+
+    helper = tmp_path / "ppo_prompt_sampler.cpp"
+    helper.write_text(
+        r"""
+#include "token_shards.h"
+#include <iostream>
+
+int main(int argc, char** argv) {
+    try {
+        auto dataset = neuralfn::native_train::resolve_structured_ppo_prompt_records(
+            argv[1], false);
+        neuralfn::native_train::SequentialStructuredPpoPromptBatchSampler sampler(
+            dataset.train_files, 1);
+        neuralfn::native_train::StructuredPpoPromptBatch batch;
+        if (!sampler.next(batch)) return 3;
+        std::cout << dataset.train_records << " " << batch.seq_len << " "
+                  << batch.input_ids[2] << " " << batch.attention_mask[3] << "\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << "\n";
+        return 2;
+    }
+}
+""",
+        encoding="utf-8",
+    )
+    binary = tmp_path / "ppo_prompt_sampler"
+    compile_result = subprocess.run(
+        [
+            compiler,
+            "-std=c++20",
+            "-O2",
+            "-I",
+            str(ROOT / "neuralfn" / "csrc" / "native_train"),
+            str(helper),
+            str(ROOT / "neuralfn" / "csrc" / "native_train" / "token_shards.cpp"),
+            "-o",
+            str(binary),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compile_result.returncode == 0, compile_result.stderr
+    run = subprocess.run(
+        [str(binary), str(dataset)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == "1 6 201818 0"
+
+    corrupted = bytearray(train.read_bytes())
+    # A zero may not interrupt the non-empty prompt prefix.
+    struct.pack_into("<f", corrupted, 512 + 6 * 4 + 1 * 4, 0.0)
+    train.write_bytes(corrupted)
+    with pytest.raises(ValueError, match="contiguous prefix"):
+        inspect_structured_ppo_prompt_v1(train)

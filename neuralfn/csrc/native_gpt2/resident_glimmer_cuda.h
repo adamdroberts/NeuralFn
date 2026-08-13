@@ -64,6 +64,52 @@ struct HostLoraPlan {
     std::vector<HostLoraLayer> layers;
 };
 
+struct VisionHostLinear {
+    HostWeightView weight;
+    std::vector<float> bias;
+};
+
+struct VisionHostLayer {
+    VisionHostLinear query;
+    VisionHostLinear key;
+    VisionHostLinear value;
+    VisionHostLinear output;
+    std::vector<float> norm1_weight;
+    std::vector<float> norm1_bias;
+    std::vector<float> norm2_weight;
+    std::vector<float> norm2_bias;
+    VisionHostLinear fc1;
+    VisionHostLinear fc2;
+};
+
+struct VisionHostWeightPlan {
+    HostWeightView patch;
+    std::vector<float> position;
+    std::vector<float> pre_norm_weight;
+    std::vector<float> pre_norm_bias;
+    std::vector<float> post_norm_weight;
+    std::vector<float> post_norm_bias;
+    std::vector<VisionHostLayer> layers;
+    VisionHostLinear adapter_fc1;
+    VisionHostLinear adapter_fc2;
+    VisionHostLinear projection;
+};
+
+struct VisionConfig {
+    std::int64_t hidden_size = 1536;
+    std::int64_t intermediate_size = 8960;
+    std::int64_t num_layers = 50;
+    std::int64_t num_heads = 16;
+    std::int64_t patch_width = 1176;
+    std::int64_t merge_size = 2;
+    std::int64_t position_side = 32;
+    std::int64_t adapter_size = 4096;
+    std::int64_t output_size = 6656;
+    float rope_theta = 10000.0f;
+    float norm_eps = 1.0e-5f;
+    bool interleaved_rope = false;
+};
+
 struct Config {
     std::int64_t max_seq_len = 131072;
     std::int64_t vocab_size = 202048;
@@ -100,6 +146,15 @@ public:
 
     std::shared_ptr<Cache> create_cache() const;
     void load_lora_adapter(const HostLoraPlan& weights);
+    void load_vision(
+        const VisionConfig& config,
+        const VisionHostWeightPlan& weights);
+    std::vector<float> encode_vision(
+        const std::vector<float>& packed_patches,
+        const std::vector<std::int64_t>& grid_thw,
+        const std::atomic<bool>& cancelled);
+    bool has_vision() const noexcept;
+    std::int64_t vision_weight_bytes() const noexcept;
     void append_token(
         std::int64_t token_id,
         std::int64_t position,

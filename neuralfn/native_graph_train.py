@@ -1525,11 +1525,12 @@ def _validate_muse_glimmer_training_contract(
                 "The exact Muse Glimmer native trainer accepts adapter_type='none', 'lora', or 'qlora'.",
             )
         )
-    if objective not in {"ar", "sft"}:
+    if objective not in {"ar", "sft", "dpo", "reward_model", "ppo"}:
         issues.append(
             _issue(
                 "unsupported_training_configuration",
-                "The exact Muse Glimmer native trainer currently accepts only ar or full sft.",
+                "The exact Muse Glimmer native trainer accepts ar, sft, dpo, "
+                "reward_model, or ppo.",
             )
         )
     elif objective == "ar" and (spec.get("finetune") is not None or adapter_type != "none"):
@@ -1539,23 +1540,176 @@ def _validate_muse_glimmer_training_contract(
                 "Muse Glimmer autoregressive pretraining requires template_spec.finetune=null.",
             )
         )
-    elif objective == "sft":
+    elif objective in {"sft", "dpo", "reward_model", "ppo"}:
+        base_weight_precision = _normalized(
+            finetune.get("base_weight_precision") or "bf16"
+        )
+        allowed_base_precisions = {
+            "bf16",
+            "k_quant_17gb",
+            "k_quant_dynamic",
+        }
+        if base_weight_precision not in allowed_base_precisions:
+            issues.append(
+                _issue(
+                    "unsupported_training_adapter",
+                    "Muse Glimmer native post-training base_weight_precision must be "
+                    "bf16, k-quant-17gb, or k-quant-dynamic.",
+                )
+            )
+        if base_weight_precision != "bf16":
+            canonical_digests = {
+                "k_quant_17gb": "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e",
+                "k_quant_dynamic": "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38",
+            }
+            if (
+                adapter_type != "lora"
+                or objective not in {"sft", "dpo"}
+                or not str(finetune.get("base_checkpoint") or "")
+                or str(finetune.get("base_checkpoint_sha256") or "")
+                != canonical_digests.get(base_weight_precision)
+                or finetune.get("adapter_only_save") is not True
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_adapter",
+                        "Native K-Quant post-training requires the canonical profile "
+                        "digest, adapter_type='lora', SFT/DPO, and adapter-only save; "
+                        "packed-reward PPO remains separately gated.",
+                    )
+                )
+            if objective in {"dpo", "ppo"} and (
+                str(finetune.get("ref_checkpoint") or "")
+                != str(finetune.get("base_checkpoint") or "")
+                or str(finetune.get("ref_checkpoint_sha256") or "")
+                != str(finetune.get("base_checkpoint_sha256") or "")
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_adapter",
+                        "Native K-Quant DPO/PPO requires the reference to be the exact "
+                        "same immutable GGUF base as the policy adapter.",
+                    )
+                )
         for key in ("tokenizer_sha256", "chat_template_sha256"):
             value = str(finetune.get(key) or "")
             if re.fullmatch(r"[0-9a-f]{64}", value) is None:
                 issues.append(
                     _issue(
                         "unsupported_training_configuration",
-                        f"Muse Glimmer native SFT requires finetune.{key} as a lowercase SHA-256 digest.",
+                        f"Muse Glimmer native {objective.upper()} requires finetune.{key} "
+                        "as a lowercase SHA-256 digest.",
                     )
                 )
-        if finetune.get("objective") != "sft":
+        if finetune.get("objective") != objective:
             issues.append(
                 _issue(
                     "unsupported_training_configuration",
-                    "Muse Glimmer native post-training requires finetune.objective='sft'.",
+                    f"Muse Glimmer native post-training requires "
+                    f"finetune.objective={objective!r}.",
                 )
             )
+        if objective == "dpo":
+            if not str(finetune.get("ref_checkpoint") or ""):
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        "Muse Glimmer native DPO requires finetune.ref_checkpoint.",
+                    )
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(finetune.get("ref_checkpoint_sha256") or ""),
+            ) is None:
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        "Muse Glimmer native DPO requires "
+                        "finetune.ref_checkpoint_sha256 as a lowercase SHA-256 digest.",
+                    )
+                )
+            try:
+                beta = float(finetune.get("beta"))
+                smoothing = float(finetune.get("dpo_label_smoothing"))
+            except (TypeError, ValueError):
+                beta, smoothing = 0.0, -1.0
+            if (
+                not math.isfinite(beta)
+                or beta <= 0.0
+                or not math.isfinite(smoothing)
+                or not 0.0 <= smoothing < 0.5
+                or _normalized(finetune.get("dpo_loss_type"))
+                not in {"sigmoid", "hinge", "ipo"}
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        "Muse Glimmer native DPO requires positive beta, label smoothing "
+                        "in [0,0.5), and loss type sigmoid, hinge, or ipo.",
+                    )
+                )
+        elif objective == "reward_model" and adapter_type != "none":
+            issues.append(
+                _issue(
+                    "unsupported_training_adapter",
+                    "Muse Glimmer native reward-model training requires "
+                    "adapter_type='none'.",
+                )
+            )
+        elif objective == "ppo":
+            for checkpoint_key, digest_key, label in (
+                ("ref_checkpoint", "ref_checkpoint_sha256", "reference"),
+                ("reward_checkpoint", "reward_checkpoint_sha256", "reward"),
+            ):
+                if not str(finetune.get(checkpoint_key) or "") or re.fullmatch(
+                    r"[0-9a-f]{64}", str(finetune.get(digest_key) or "")
+                ) is None:
+                    issues.append(
+                        _issue(
+                            "unsupported_training_configuration",
+                            f"Muse Glimmer native PPO requires a {label} checkpoint "
+                            "and lowercase SHA-256 digest.",
+                        )
+                    )
+            try:
+                kl_coef = float(finetune.get("kl_coef"))
+                clip = float(finetune.get("ppo_clip"))
+                value_coefficient = float(finetune.get("ppo_vf_coef"))
+                entropy_coefficient = float(finetune.get("ppo_ent_coef"))
+                rollout_length = int(finetune.get("rollout_length"))
+                epochs = int(finetune.get("ppo_epochs_per_rollout"))
+                minibatch = int(finetune.get("ppo_minibatch_size"))
+                gamma = float(finetune.get("gae_gamma"))
+                gae_lambda = float(finetune.get("gae_lambda"))
+            except (TypeError, ValueError):
+                kl_coef, clip = -1.0, 0.0
+                value_coefficient = entropy_coefficient = -1.0
+                rollout_length = epochs = minibatch = 0
+                gamma = gae_lambda = -1.0
+            if (
+                not math.isfinite(kl_coef)
+                or kl_coef < 0.0
+                or not math.isfinite(clip)
+                or not 0.0 < clip < 1.0
+                or not math.isfinite(value_coefficient)
+                or value_coefficient < 0.0
+                or not math.isfinite(entropy_coefficient)
+                or entropy_coefficient < 0.0
+                or rollout_length <= 0
+                or epochs <= 0
+                or minibatch <= 0
+                or not math.isfinite(gamma)
+                or not 0.0 <= gamma <= 1.0
+                or not math.isfinite(gae_lambda)
+                or not 0.0 <= gae_lambda <= 1.0
+            ):
+                issues.append(
+                    _issue(
+                        "unsupported_training_configuration",
+                        "Muse Glimmer native PPO requires valid KL/clip/value/entropy, "
+                        "rollout/epoch/minibatch, and GAE settings.",
+                    )
+                )
         if adapter_type in {"lora", "qlora"}:
             allowed_targets = {
                 "q_proj", "k_proj", "v_proj", "o_proj", "attn_gate_proj",
@@ -1633,9 +1787,26 @@ def _validate_muse_glimmer_training_contract(
         "tensor_scale", "rms_norm", "qk_norm", "rotary_embedding",
         "sliding_window_attention", "scaled_dot_product_attention",
         "sigmoid", "silu", "multiply",
-        "logit_softcap",
-        "masked_token_cross_entropy" if objective == "sft" else "token_cross_entropy",
     }
+    if objective == "sft":
+        required_operations.update({"logit_softcap", "masked_token_cross_entropy"})
+    elif objective == "dpo":
+        required_operations.update(
+            {"logit_softcap", "sequence_logp", "dpo_pairwise_loss"}
+        )
+    elif objective == "reward_model":
+        required_operations.update({"masked_reward_head", "preference_bce_loss"})
+    elif objective == "ppo":
+        required_operations.update(
+            {
+                "ppo_rollout_source",
+                "policy_logits_value",
+                "token_logp_entropy",
+                "masked_ppo_clipped_loss",
+            }
+        )
+    else:
+        required_operations.update({"logit_softcap", "token_cross_entropy"})
     required_operations.add(
         "nf4_linear"
         if adapter_type == "qlora"
@@ -2666,11 +2837,67 @@ def _adapter_trainer_arguments(
         ]
         objective = _normalized(_mapping(spec.get("template")).get("objective"))
         arguments.extend(["--objective", objective])
-        if objective == "sft":
+        if objective in {"sft", "dpo", "reward_model", "ppo"}:
             finetune = _mapping(spec.get("finetune"))
             arguments.extend(
                 ["--chat-template-sha256", str(finetune.get("chat_template_sha256") or "")]
             )
+            base_weight_precision = _normalized(
+                finetune.get("base_weight_precision") or "bf16"
+            )
+            if base_weight_precision != "bf16":
+                arguments.extend(
+                    ["--kquant-profile", base_weight_precision.replace("_", "-")]
+                )
+            if objective == "dpo":
+                arguments.extend(
+                    [
+                        "--reference-checkpoint",
+                        str(finetune.get("ref_checkpoint") or ""),
+                        "--reference-checkpoint-sha256",
+                        str(finetune.get("ref_checkpoint_sha256") or ""),
+                        "--dpo-beta",
+                        format(_as_float(finetune.get("beta")), ".17g"),
+                        "--dpo-label-smoothing",
+                        format(
+                            _as_float(finetune.get("dpo_label_smoothing")),
+                            ".17g",
+                        ),
+                        "--dpo-loss-type",
+                        str(finetune.get("dpo_loss_type") or ""),
+                    ]
+                )
+            elif objective == "ppo":
+                arguments.extend(
+                    [
+                        "--reference-checkpoint",
+                        str(finetune.get("ref_checkpoint") or ""),
+                        "--reference-checkpoint-sha256",
+                        str(finetune.get("ref_checkpoint_sha256") or ""),
+                        "--reward-checkpoint",
+                        str(finetune.get("reward_checkpoint") or ""),
+                        "--reward-checkpoint-sha256",
+                        str(finetune.get("reward_checkpoint_sha256") or ""),
+                        "--kl-coef",
+                        format(_as_float(finetune.get("kl_coef")), ".17g"),
+                        "--ppo-clip",
+                        format(_as_float(finetune.get("ppo_clip")), ".17g"),
+                        "--ppo-vf-coef",
+                        format(_as_float(finetune.get("ppo_vf_coef")), ".17g"),
+                        "--ppo-ent-coef",
+                        format(_as_float(finetune.get("ppo_ent_coef")), ".17g"),
+                        "--rollout-length",
+                        str(_as_int(finetune.get("rollout_length"))),
+                        "--ppo-epochs-per-rollout",
+                        str(_as_int(finetune.get("ppo_epochs_per_rollout"))),
+                        "--ppo-minibatch-size",
+                        str(_as_int(finetune.get("ppo_minibatch_size"))),
+                        "--gae-gamma",
+                        format(_as_float(finetune.get("gae_gamma")), ".17g"),
+                        "--gae-lambda",
+                        format(_as_float(finetune.get("gae_lambda")), ".17g"),
+                    ]
+                )
             block = _mapping(spec.get("block_spec"))
             adapter_type = _normalized(block.get("adapter_type"))
             if adapter_type in {"lora", "qlora"}:

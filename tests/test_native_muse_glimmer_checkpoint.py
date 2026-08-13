@@ -89,6 +89,7 @@ def _write_production_lora_checkpoint(
     *,
     base_sha256: str = "c" * 64,
     training_adapter: str = "lora",
+    base_weight_precision: str = "bf16",
 ) -> tuple[Path, dict[str, object]]:
     root.mkdir()
     rank = 1
@@ -117,9 +118,11 @@ def _write_production_lora_checkpoint(
     manifest: dict[str, object] = {
         "format": checkpoint.NATIVE_LORA_FORMAT,
         "architecture": "muse_glimmer",
-        "base_weight_precision": "bf16",
+        "base_weight_precision": base_weight_precision,
         "training_base_precision": (
-            "nf4-group64-fp32-scale" if training_adapter == "qlora" else "bf16"
+            "nf4-group64-fp32-scale"
+            if training_adapter == "qlora"
+            else base_weight_precision
         ),
         "training_adapter": training_adapter,
         "layers": 52,
@@ -192,6 +195,8 @@ def test_strict_sharded_inspection_and_bounded_native_conversion(tmp_path: Path)
     assert metadata["artifact"]["target_nbytes"] == 14
     assert metadata["artifact"]["target_sha256"] == hashlib.sha256(bytes(range(14))).hexdigest()
     assert metadata["tensors"][1]["parameterization"] == "centered_delta"
+    assert metadata["capabilities"]["resident_cpu"] is True
+    assert metadata["capabilities"]["resident_cuda"] is True
     assert converted.done_path.is_file()
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
         checkpoint._publish_converted_checkpoint(
@@ -441,6 +446,22 @@ def test_native_qlora_adapter_inspector_preserves_training_provenance(
         checkpoint.inspect_native_muse_glimmer_lora_checkpoint(root)
 
 
+@pytest.mark.parametrize("profile", ["k-quant-17gb", "k-quant-dynamic"])
+def test_native_kquant_lora_adapter_inspector_preserves_packed_base_lineage(
+    tmp_path: Path, profile: str
+) -> None:
+    root, _manifest = _write_production_lora_checkpoint(
+        tmp_path / profile,
+        training_adapter="lora",
+        base_weight_precision=profile,
+    )
+    descriptor = checkpoint.inspect_native_muse_glimmer_lora_checkpoint(root)
+    assert descriptor["target_compatibility"]["base_weight_precision"] == profile
+    assert descriptor["source"]["training_base_precision"] == profile
+    assert descriptor["capabilities"]["kquant_lora"] is True
+    assert descriptor["capabilities"]["qlora"] is False
+
+
 def test_native_lora_attachment_is_atomic_and_lineage_bound(tmp_path: Path) -> None:
     base_sha = "c" * 64
     lora, manifest = _write_production_lora_checkpoint(
@@ -451,7 +472,12 @@ def test_native_lora_attachment_is_atomic_and_lineage_bound(tmp_path: Path) -> N
     execution = {
         "schema": "neuralfn.native_execution_manifest",
         "version": 1,
-        "checkpoint_variants": {"bf16": {"target_sha256": base_sha}},
+        "checkpoint_variants": {
+            "bf16": {
+                "target_sha256": base_sha,
+                "weight_precision": "bf16",
+            }
+        },
         "tokenizer": {"sha256": checkpoint.MUSE_GLIMMER_TOKENIZER_SHA256},
         "chat_template": {
             "sha256": checkpoint.MUSE_GLIMMER_ATEM_TEMPLATE_SHA256
@@ -505,7 +531,12 @@ def test_native_lora_cli_attach_round_trips_qlora_provenance(
     execution = {
         "schema": "neuralfn.native_execution_manifest",
         "version": 1,
-        "checkpoint_variants": {"bf16": {"target_sha256": base_sha}},
+        "checkpoint_variants": {
+            "bf16": {
+                "target_sha256": base_sha,
+                "weight_precision": "bf16",
+            }
+        },
         "tokenizer": {"sha256": checkpoint.MUSE_GLIMMER_TOKENIZER_SHA256},
         "chat_template": {
             "sha256": checkpoint.MUSE_GLIMMER_ATEM_TEMPLATE_SHA256

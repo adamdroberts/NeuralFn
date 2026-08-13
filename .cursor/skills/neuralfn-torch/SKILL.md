@@ -110,12 +110,16 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `deepseek_v4` | DeepSeek-V4-Pro | NSA attention + auxfree MoE + mHC residuals + QK-norm + FP8 |
 
 Muse Glimmer additionally exposes separate
-`build_muse_glimmer_assistant_graph()`, `build_muse_glimmer_vision_graph()`,
-and media-fusion builders. Keep them separate from the ordinary autoregressive
-root. Its SFT, LoRA/NF4-QLoRA, DPO, reward, and PPO wrappers must all use the
-shared exact Glimmer body; never rebuild a generic two-norm LLaMA body inside a
-fine-tuning root. Native K-Quant and DFlash execution is an artifact/binding
-capability, not something the Torch preset may infer.
+`build_muse_glimmer_assistant_graph()`,
+`build_muse_glimmer_dflash_distillation_graph()`,
+`build_muse_glimmer_vision_graph()`, and media-fusion builders. Keep them
+separate from the ordinary autoregressive root. DFlash distillation must use
+`MuseGlimmerDFlashDistillationSpec` plus `DFlashDistillationTrainer`; the target
+is frozen and complete target/config/tokenizer/ATEM lineage is mandatory. Its
+SFT, LoRA/NF4-QLoRA, DPO, reward, and PPO wrappers must all use the shared exact
+Glimmer body; never rebuild a generic two-norm LLaMA body inside a fine-tuning
+root. Native K-Quant, DFlash and CUDA vision execution are independently
+artifact/binding-gated, not capabilities the Torch preset may infer.
 | `gemma3` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + softcap |
 
 For MoE presets, `mlp_multiplier` remains floating-point through graph

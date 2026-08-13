@@ -328,8 +328,17 @@ width as well.
 class FineTuneSpec:
     objective: str = "pretrain"
     base_checkpoint: str = ""
+    base_checkpoint_sha256: str = ""
+    base_weight_precision: str = "bf16"
+    tokenizer_sha256: str = ""
+    chat_template_sha256: str = ""
+    ref_graph_path: str = ""
     ref_checkpoint: str = ""
+    ref_checkpoint_sha256: str = ""
+    reward_graph_path: str = ""
     reward_checkpoint: str = ""
+    reward_checkpoint_sha256: str = ""
+    resume_checkpoint: str = ""
     adapter_only_save: bool = False
     beta: float = 0.1
     dpo_loss_type: str = "sigmoid"
@@ -349,14 +358,24 @@ Fine-tuning metadata attached to `ModelSpec.finetune`. `build_gpt_root_graph()`
 uses `model_spec.template.objective` to dispatch to the SFT, DPO, PPO, or
 reward-model root graph builders. `base_checkpoint` initializes the policy/base
 weights, `ref_checkpoint` is used by DPO/PPO reference forwards, and
-`reward_checkpoint` is used by PPO reward scoring.
+`reward_checkpoint` is used by PPO reward scoring. Native post-training also
+authenticates the corresponding SHA-256 fields. `base_weight_precision` is a
+checkpoint format/profile contract, not an activation dtype.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `objective` | `str` | `"pretrain"` | `"sft"`, `"dpo"`, `"ppo"`, or `"reward_model"` for fine-tuning graphs |
 | `base_checkpoint` | `str` | `""` | Pretrained base weights path |
+| `base_checkpoint_sha256` | `str` | `""` | Lowercase SHA-256 for the native base artifact |
+| `base_weight_precision` | `str` | `"bf16"` | `"bf16"`, `"k-quant-17gb"`, or `"k-quant-dynamic"`; K-Quant native tuning is immutable-base LoRA SFT/DPO |
+| `tokenizer_sha256` / `chat_template_sha256` | `str` | `""` | Exact native structured-record lineage |
+| `ref_graph_path` | `str` | `""` | Frozen Torch reference graph path |
 | `ref_checkpoint` | `str` | `""` | Frozen reference weights for DPO/PPO |
+| `ref_checkpoint_sha256` | `str` | `""` | Lowercase SHA-256 required by native DPO/PPO |
+| `reward_graph_path` | `str` | `""` | Frozen Torch reward graph path |
 | `reward_checkpoint` | `str` | `""` | Frozen reward model weights for PPO |
+| `reward_checkpoint_sha256` | `str` | `""` | Lowercase SHA-256 required by native PPO |
+| `resume_checkpoint` | `str` | `""` | Strict objective/topology/lineage-bound resume path |
 | `adapter_only_save` | `bool` | `False` | Save only adapter/head state when requested by caller |
 | `beta` | `float` | `0.1` | DPO reward-temperature parameter |
 | `dpo_loss_type` | `str` | `"sigmoid"` | DPO loss variant: `"sigmoid"`, `"hinge"`, or `"ipo"` |
@@ -370,6 +389,35 @@ weights, `ref_checkpoint` is used by DPO/PPO reference forwards, and
 | `ppo_minibatch_size` | `int` | `4` | PPO minibatch size for rollout optimization |
 | `gae_gamma` | `float` | `1.0` | Discount factor for generalized advantage estimation |
 | `gae_lambda` | `float` | `0.95` | Lambda parameter for generalized advantage estimation |
+
+---
+
+## MuseGlimmerDFlashDistillationSpec
+
+```python
+@dataclass
+class MuseGlimmerDFlashDistillationSpec:
+    recipe: str = "neuralfn.muse_glimmer_dflash_distill.v1"
+    recipe_revision: str = "686da8d893536688e86adae41aa628aa740a1a35"
+    target_checkpoint_sha256: str = ""
+    target_config_sha256: str = ""
+    tokenizer_sha256: str = ""
+    chat_template_sha256: str = ""
+    num_anchors: int = 512
+    loss_objective: str = "dpace"
+    dpace_alpha: float = 0.5
+    loss_decay_factor: float = 7.0
+    self_logit_distillation: bool = True
+    seed: int = 20_260_813
+```
+
+This is NeuralFn's versioned assistant-training recipe, not a claim about the
+unpublished provenance of Meta's released assistant. All four lineage digests
+must be populated before training. `loss_objective` is `"dpace"` or
+`"decay"`; checkpoints bind the complete dataclass, graph topology, assistant
+geometry, optimizer, RNG states, shuffled data order and cursor. Production
+native export additionally requires canonical Glimmer/DFlash geometry and the
+pinned config/tokenizer/ATEM hashes.
 
 ---
 
@@ -523,7 +571,7 @@ when constructing fine-tuning graphs.
 | `build_gpt2_diff_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + Differential Transformer attention; sets `attention_variant="differential"` and `diff_lambda_init=0.8` |
 | `build_gpt2_stable_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + z-loss and QK-norm stacked; the dense pretraining-stability recipe |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
-| `build_muse_glimmer_spec(**kwargs)` | muse_glimmer | dense | eager | Exact 30B text decoder: asymmetric GQA, 3-local/1-global RoPE/NoPE, gated attention, four centered norms, and an untied softcapped head; strict native BF16/K-Quant text, DFlash, native AR/SFT/LoRA/QLoRA, and CPU vision are separately artifact-gated |
+| `build_muse_glimmer_spec(**kwargs)` | muse_glimmer | dense | eager | Exact 30B text decoder: asymmetric GQA, 3-local/1-global RoPE/NoPE, gated attention, four centered norms, and an untied softcapped head; strict native BF16/K-Quant CPU/CUDA inference, DFlash, AR/SFT/LoRA/QLoRA/DPO/reward/PPO, pipeline AR/SFT, and CPU/CUDA vision are separately artifact-gated |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |
 | `build_llama_fast_megakernel_spec(**kwargs)` | llama | dense | megakernel | LLaMA-fast shape with fused runtime metadata |

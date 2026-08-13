@@ -21,13 +21,33 @@ _LAZY_EXPORTS = {
     "SHIPPED_GPT_TEMPLATE_PRESETS": ("config", "SHIPPED_GPT_TEMPLATE_PRESETS"),
     "MuseGlimmerVisionSpec": ("config", "MuseGlimmerVisionSpec"),
     "MuseGlimmerDFlashSpec": ("config", "MuseGlimmerDFlashSpec"),
+    "MuseGlimmerDFlashDistillationSpec": (
+        "config",
+        "MuseGlimmerDFlashDistillationSpec",
+    ),
     "TorchTrainConfig": ("torch_backend", "TorchTrainConfig"),
     "TorchTrainer": ("torch_backend", "TorchTrainer"),
+    "DFlashDistillationTrainer": (
+        "torch_backend",
+        "DFlashDistillationTrainer",
+    ),
+    "DFlashDistillationMetrics": (
+        "torch_backend",
+        "DFlashDistillationMetrics",
+    ),
+    "dflash_dpace_position_weights": (
+        "torch_backend",
+        "dflash_dpace_position_weights",
+    ),
     "build_gpt_root_graph": ("torch_templates", "build_gpt_root_graph"),
     "build_model_stage_graph": ("torch_templates", "build_model_stage_graph"),
     "build_muse_glimmer_assistant_graph": (
         "torch_templates",
         "build_muse_glimmer_assistant_graph",
+    ),
+    "build_muse_glimmer_dflash_distillation_graph": (
+        "torch_templates",
+        "build_muse_glimmer_dflash_distillation_graph",
     ),
     "build_muse_glimmer_vision_graph": (
         "torch_templates",

@@ -18,7 +18,7 @@ execute graph-supplied Python.
 | Retained lossless cache | The reviewed dense-v5, canonical LLaMA, and exact standard-MoE artifacts support preallocated `auto`/`full` K/V state with whole-logit parity against `off` recomputation. Muse Glimmer uses its exact local-ring/global-full hybrid cache, including paired transactional target/assistant state when DFlash is enabled. |
 | TurboQuant cache | Bound reviewed dense-v5 artifacts with even head dimensions prove native packed CPU `mse-3.5`/`qjl-3.5` cache ABI v1. Contexts at most 16K with even head dimensions in 2..256 separately prove `turboquant_tile_attention` feature ABI v1; an explicit strict-sidecar request can run packed historical attention on CUDA while CPU remains the default. Other families remain unavailable. |
 | Session prefix COW | Bound resident-ready dense-v5, canonical-LLaMA, and exact standard-MoE artifacts with lossless-cache proof emit `capabilities.session_prefix_cow=true` plus `kernel_abi.session_prefix_cow={version:1,status:"ready",profile:<format-specific-profile>,operation:"fork_session"}`. The full-cache profiles are `dense-full-cache-kv-final-hidden-v1`, `llama-full-cache-gqa-kv-final-hidden-v1`, and `standard-moe-full-cache-gqa-kv-final-hidden-v1`. Reviewed dense-v5 TurboQuant artifacts separately emit `capabilities.session_prefix_cow_cpu_turboquant=true` and `kernel_abi.session_prefix_cow_cpu_turboquant={version:1,status:"ready",profile:"dense-cpu-turboquant-mse-qjl-packed-kv-final-hidden-v1",operation:"fork_session",backend:"cpu-reference-packed"}`. Both are whole-storage SDK/native session-fork primitives; Tile device state and serving lineage remain unavailable. |
-| Native serving | Compatible dense-v5, canonical LLaMA, exact standard-MoE, and strict Muse Glimmer bundles prove their respective resident/lean-serving ABIs; LLaMA and MoE still need separately supported tokenizer/chat metadata, while Glimmer binds authenticated `tokenizer.json` plus ATEM. `--state-db` adds bounded text Responses/Conversations, local compaction, and durable background work. Exact metadata can enable buffered strict flat JSON schema and one forced client-executed function call/result. Chat media is limited to independently proven CPU Glimmer base64 images; broader tools, schemas, Responses multimedia, and CUDA vision remain unavailable. |
+| Native serving | Compatible dense-v5, canonical LLaMA, exact standard-MoE, and strict Muse Glimmer bundles prove their respective resident/lean-serving ABIs; LLaMA and MoE still need separately supported tokenizer/chat metadata, while Glimmer binds authenticated `tokenizer.json` plus ATEM. `--state-db` adds bounded text Responses/Conversations, local compaction, and durable background work. Exact metadata can enable buffered strict flat JSON schema and one forced client-executed function call/result. Chat media is limited to independently proven Glimmer base64 images on CPU or whole-model CUDA; broader tools, schemas and Responses multimedia remain unavailable. |
 
 Structural compatibility is not proof of a native forward, resident adapter,
 cache, or serving path. Read `manifest.capabilities` and the compatibility report's
@@ -46,10 +46,11 @@ now provides:
 - additive `primary_checkpoint_variant`, `checkpoint_variants`,
   `companion_checkpoints`, `speculative_decoding`, memory-profile, and
   compatibility fields while preserving the v1 top-level `checkpoint` object;
-- resident CPU and whole-model CUDA text execution, hybrid lossless cache,
-  DFlash, and load-time weight-precision selection; and
+- resident CPU and whole-model CUDA text/vision execution, hybrid lossless
+  cache, DFlash, and load-time weight-precision selection; and
 - exact graph preflight into the dedicated `nfn_muse_glimmer_native_train`
-  target for production AR/SFT and native LoRA/QLoRA configurations.
+  target for production AR/SFT/LoRA/QLoRA/DPO/reward/PPO, immutable K-Quant
+  LoRA SFT/DPO, and full-BF16 AR/SFT pipeline configurations.
 
 The generic catalog's preview `muse_glimmer` graph remains blocked from its
 ordinary one-checkpoint migration proof because preview geometry is not the
@@ -82,7 +83,8 @@ Bundle one or both canonical official packed profiles and optional companions:
 nfn migrate muse-glimmer-gguf-to-native \
   --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
   --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
-  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --dflash /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --mmproj /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
   --tokenizer-source /models/Muse-Glimmer-30B \
   --output-dir artifacts/glimmer-kquant
 ```

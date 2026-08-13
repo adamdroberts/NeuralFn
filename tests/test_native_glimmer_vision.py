@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -131,6 +132,14 @@ def vision_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 / "native_gpt2"
                 / "resident_glimmer_vision.cpp"
             ),
+            str(
+                ROOT
+                / "neuralfn"
+                / "csrc"
+                / "native_gpt2"
+                / "resident_glimmer_cuda.cpp"
+            ),
+            "-ldl",
             "-o",
             str(output),
         ],
@@ -140,6 +149,39 @@ def vision_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
         text=True,
     )
     return output
+
+
+@pytest.fixture(scope="session")
+def fake_vision_cuda(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, Path]:
+    output = tmp_path_factory.mktemp("fake-glimmer-vision-cuda")
+    runtime = output / "libcudart-fake.so"
+    tile = output / "libnfn-glimmer-tile-fake.so"
+    subprocess.run(
+        [
+            "c++", "-std=c++20", "-O2", "-fPIC", "-shared",
+            str(ROOT / "tests" / "cpp" / "fake_cuda_runtime.cpp"),
+            "-o", str(runtime),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "c++", "-std=c++20", "-O2", "-fPIC", "-shared",
+            "-I", str(ROOT / "neuralfn" / "csrc" / "native_train"),
+            str(ROOT / "tests" / "cpp" / "fake_glimmer_tile_ops.cpp"),
+            "-o", str(tile),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return runtime, tile
 
 
 def _oracle(weights: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -214,6 +256,41 @@ def test_native_vision_matches_independent_torch_window_and_merge_oracle(
     actual = torch.tensor([float(value) for value in lines[0].split(",")]).reshape(2, OUTPUT)
     assert actual == pytest.approx(_oracle(weights), abs=2.5e-5)
     assert lines[1] == "cancelled"
+
+
+def test_native_cuda_vision_matches_cpu_and_torch_without_cpu_model_compute(
+    vision_probe: Path,
+    fake_vision_cuda: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    payload = tmp_path / "tiny-vision-cuda.bf16"
+    weights = _write_payload(payload)
+    runtime, tile = fake_vision_cuda
+    environment = os.environ.copy()
+    environment["NFN_TEST_GLIMMER_CUDA_RUNTIME"] = str(runtime)
+    environment["NFN_TEST_GLIMMER_TILE_OPS"] = str(tile)
+    completed = subprocess.run(
+        [str(vision_probe), str(payload)],
+        cwd=ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    lines = completed.stdout.splitlines()
+    cpu = torch.tensor([float(value) for value in lines[0].split(",")]).reshape(2, OUTPUT)
+    cuda = torch.tensor([float(value) for value in lines[2].split(",")]).reshape(2, OUTPUT)
+    expected = _oracle(weights)
+    assert cpu == pytest.approx(expected, abs=2.5e-5)
+    assert cuda == pytest.approx(cpu, abs=2.5e-5)
+    resident, workspace, launches = map(int, lines[3].split(","))
+    # Norms, biases, and the learned position table are expanded once to F32
+    # at load time; request-time model compute still remains on the CUDA path.
+    assert resident > payload.stat().st_size
+    assert workspace > 0
+    assert launches > 0
+    assert lines[1] == "cancelled"
+    assert lines[4] == "cuda-cancelled"
 
 
 def test_native_vision_rejects_truncated_payload(

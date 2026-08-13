@@ -1,4 +1,5 @@
 #include "resident_glimmer_vision.h"
+#include "resident_glimmer_cuda.h"
 
 #include "resident_dense.h"
 #include "resident_sha256.h"
@@ -1176,6 +1177,90 @@ void Model::build_gguf_layout() {
         layer.fc2_bias = tensors.at(prefix + "ffn_down.bias");
         layers_.push_back(layer);
     }
+}
+
+neuralfn::resident_glimmer_cuda::VisionConfig Model::cuda_config() const {
+    neuralfn::resident_glimmer_cuda::VisionConfig result;
+    result.hidden_size = config_.hidden_size;
+    result.intermediate_size = config_.intermediate_size;
+    result.num_layers = config_.num_layers;
+    result.num_heads = config_.num_heads;
+    result.patch_width = config_.patch_width;
+    result.merge_size = config_.merge_size;
+    result.position_side = config_.position_side;
+    result.adapter_size = config_.adapter_size;
+    result.output_size = config_.output_size;
+    result.rope_theta = config_.rope_theta;
+    result.norm_eps = config_.norm_eps;
+    result.interleaved_rope = interleaved_rope_;
+    return result;
+}
+
+neuralfn::resident_glimmer_cuda::VisionHostWeightPlan
+Model::cuda_weight_plan() const {
+    using neuralfn::resident_glimmer_cuda::HostWeightView;
+    using neuralfn::resident_glimmer_cuda::VisionHostLayer;
+    using neuralfn::resident_glimmer_cuda::VisionHostLinear;
+    using neuralfn::resident_glimmer_cuda::VisionHostWeightPlan;
+    const auto view = [](const Weight& source) {
+        HostWeightView result;
+        result.data = source.data;
+        result.rows = source.rows;
+        result.cols = source.cols;
+        result.row_stride_bytes = source.row_stride_bytes;
+        result.nbytes = source.nbytes;
+        switch (source.encoding) {
+            case Weight::Encoding::F32: result.encoding = 0; break;
+            case Weight::Encoding::BF16: result.encoding = 30; break;
+            case Weight::Encoding::Q4K: result.encoding = 12; break;
+            case Weight::Encoding::Q6K: result.encoding = 14; break;
+        }
+        return result;
+    };
+    const auto dense = [](const Weight& source) {
+        std::vector<float> result(checked_size(
+            checked_mul(source.rows, source.cols, "vision dense export"),
+            "vision dense export"));
+        for (std::int64_t row = 0; row < source.rows; ++row) {
+            for (std::int64_t col = 0; col < source.cols; ++col) {
+                result[checked_size(row * source.cols + col, "vision dense export")] =
+                    source.at(row, col);
+            }
+        }
+        return result;
+    };
+    const auto linear = [&](const Weight& weight, const Weight* bias) {
+        VisionHostLinear result;
+        result.weight = view(weight);
+        if (bias != nullptr) result.bias = dense(*bias);
+        return result;
+    };
+    VisionHostWeightPlan result;
+    result.patch = view(*patch_);
+    result.position = dense(*position_);
+    result.pre_norm_weight = dense(*pre_norm_weight_);
+    result.pre_norm_bias = dense(*pre_norm_bias_);
+    result.post_norm_weight = dense(*post_norm_weight_);
+    result.post_norm_bias = dense(*post_norm_bias_);
+    result.layers.reserve(layers_.size());
+    for (const Layer& source : layers_) {
+        VisionHostLayer layer;
+        layer.query = linear(*source.q_weight, source.q_bias);
+        layer.key = linear(*source.k_weight, source.k_bias);
+        layer.value = linear(*source.v_weight, source.v_bias);
+        layer.output = linear(*source.output_weight, source.output_bias);
+        layer.norm1_weight = dense(*source.norm1_weight);
+        layer.norm1_bias = dense(*source.norm1_bias);
+        layer.norm2_weight = dense(*source.norm2_weight);
+        layer.norm2_bias = dense(*source.norm2_bias);
+        layer.fc1 = linear(*source.fc1_weight, source.fc1_bias);
+        layer.fc2 = linear(*source.fc2_weight, source.fc2_bias);
+        result.layers.push_back(std::move(layer));
+    }
+    result.adapter_fc1 = linear(*adapter_fc1_, nullptr);
+    result.adapter_fc2 = linear(*adapter_fc2_, nullptr);
+    result.projection = linear(*projection_, nullptr);
+    return result;
 }
 
 std::vector<float> Model::encode(

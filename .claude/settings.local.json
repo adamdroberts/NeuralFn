@@ -4,7 +4,11 @@
       "Bash(find /home/adam/dev/innovation/NeuralFn -type f \\\\\\(-name *.md -o -name ISSUES* -o -name TODO* -o -name *.test.* \\\\\\))",
       "Bash(conda run:*)",
       "Bash(conda list:*)",
-      "Bash(conda install:*)"
+      "Bash(conda install:*)",
+      "Bash(git config *)",
+      "Bash(echo \"\\(exit $?\\)\")",
+      "Bash(git remote *)",
+      "Bash(git ls-remote *)"
     ]
   }
 }

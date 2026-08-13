@@ -562,6 +562,29 @@ def resident_binding(tmp_path_factory: pytest.TempPathFactory) -> ModuleType:
     return module
 
 
+def test_resident_binding_reports_glimmer_cuda_vision_feature(
+    resident_binding: ModuleType,
+) -> None:
+    capabilities = resident_binding.resident_inference_capabilities()
+    assert capabilities["vision"] is True
+    assert capabilities["vision_cpu"] is True
+    assert capabilities["vision_cuda"] is True
+    assert capabilities["media_encoder_abi"] == {
+        "version": 1,
+        "load_operation": "load_companion",
+        "encode_operation": "encode_media",
+        "prefill_operation": "prefill_with_embeddings",
+        "projection_width": 6656,
+    }
+    source = (ROOT / "neuralfn/csrc/native_gpt2/resident_binding.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        'handle->glimmer->vision_whole_model_cuda() ? Py_True : Py_False'
+        in source
+    )
+
+
 def test_resident_binding_loads_once_and_runs_real_dense_recompute(
     resident_binding: ModuleType,
     tmp_path: Path,

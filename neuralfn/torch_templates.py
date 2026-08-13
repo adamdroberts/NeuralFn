@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import asdict
 from typing import Any
 
 from .builtins import BuiltinNeurons
 from .config import (
     BlockSpec,
     ModelSpec,
+    MuseGlimmerDFlashDistillationSpec,
     MuseGlimmerVisionSpec,
     TemplateSpec,
     model_spec_to_dict,
@@ -793,6 +795,7 @@ def build_muse_glimmer_dflash_attention_graph(
     *,
     window_size: int,
     rope_theta: float,
+    training_attention_mask: bool = False,
 ) -> NeuronGraph:
     """DFlash attention with shared context/block K/V projections."""
 
@@ -801,12 +804,14 @@ def build_muse_glimmer_dflash_attention_graph(
     head_dim = int(spec.head_dim or (model_dim // num_heads))
     attention_dim = num_heads * head_dim
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
-    inputs = (
+    inputs = [
         ("x_in", "block_hidden", 80),
         ("context_in", "accepted_context", 200),
         ("context_positions_in", "context_position_ids", 320),
         ("block_positions_in", "block_position_ids", 440),
-    )
+    ]
+    if training_attention_mask:
+        inputs.append(("attention_mask_in", "attention_mask", 560))
     for node_id, port_name, y in inputs:
         graph.add_node(
             NeuronInstance(
@@ -815,23 +820,26 @@ def build_muse_glimmer_dflash_attention_graph(
                 position=(40, y),
             )
         )
+    attention_def = clone_neuron_def(
+        BuiltinNeurons.dflash_attention_module,
+        config={
+            "model_dim": model_dim,
+            "num_heads": num_heads,
+            "num_kv_heads": num_kv_heads,
+            "head_dim": head_dim,
+            "window_size": int(window_size),
+            "rope_base": float(rope_theta),
+            "norm_eps": float(spec.qk_norm_eps),
+            "convention": "hf",
+            "bias": False,
+            "dropout_p": 0.0,
+        },
+    )
+    if training_attention_mask:
+        attention_def.input_ports.append(Port("attention_mask", dtype="tensor"))
     graph.add_node(
         NeuronInstance(
-            clone_neuron_def(
-                BuiltinNeurons.dflash_attention_module,
-                config={
-                    "model_dim": model_dim,
-                    "num_heads": num_heads,
-                    "num_kv_heads": num_kv_heads,
-                    "head_dim": head_dim,
-                    "window_size": int(window_size),
-                    "rope_base": float(rope_theta),
-                    "norm_eps": float(spec.qk_norm_eps),
-                    "convention": "hf",
-                    "bias": False,
-                    "dropout_p": 0.0,
-                },
-            ),
+            attention_def,
             instance_id="dflash_attention",
             position=(300, 220),
         )
@@ -883,14 +891,18 @@ def build_muse_glimmer_dflash_block_graph(
     spec: BlockSpec,
     attention_graph: NeuronGraph,
     mlp_graph: NeuronGraph,
+    *,
+    training_attention_mask: bool = False,
 ) -> NeuronGraph:
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
-    inputs = (
+    inputs = [
         ("x_in", "block_hidden", 100),
         ("context_in", "accepted_context", 220),
         ("context_positions_in", "context_position_ids", 340),
         ("block_positions_in", "block_position_ids", 460),
-    )
+    ]
+    if training_attention_mask:
+        inputs.append(("attention_mask_in", "attention_mask", 580))
     for node_id, port_name, y in inputs:
         graph.add_node(
             NeuronInstance(
@@ -923,6 +935,7 @@ def build_muse_glimmer_dflash_block_graph(
                     "accepted_context",
                     "context_position_ids",
                     "block_position_ids",
+                    *(["attention_mask"] if training_attention_mask else []),
                 ],
                 output_aliases=["attention"],
             ),
@@ -933,9 +946,14 @@ def build_muse_glimmer_dflash_block_graph(
     graph.add_edge(
         Edge(id="e_norm_attn", src_node="input_layernorm", src_port=0, dst_node="self_attn", dst_port=0)
     )
-    for port, node_id in enumerate(
-        ("context_in", "context_positions_in", "block_positions_in"), start=1
-    ):
+    forwarded_inputs = [
+        "context_in",
+        "context_positions_in",
+        "block_positions_in",
+    ]
+    if training_attention_mask:
+        forwarded_inputs.append("attention_mask_in")
+    for port, node_id in enumerate(forwarded_inputs, start=1):
         graph.add_edge(
             Edge(
                 id=f"e_{node_id}_attn",
@@ -1007,6 +1025,7 @@ def build_muse_glimmer_assistant_graph(
     window_size: int = 2_048,
     rope_theta: float = 500_000.0,
     target_layer_ids: tuple[int, ...] = (1, 13, 25, 37, 49),
+    training_attention_mask: bool = False,
 ) -> NeuronGraph:
     """Build the separate five-layer DFlash assistant training graph.
 
@@ -1056,12 +1075,18 @@ def build_muse_glimmer_assistant_graph(
         spec,
         window_size=window_size,
         rope_theta=rope_theta,
+        training_attention_mask=training_attention_mask,
     )
     mlp = build_muse_glimmer_mlp_graph(
         "muse_glimmer_dflash_mlp", model_dim, spec
     )
     block = build_muse_glimmer_dflash_block_graph(
-        "muse_glimmer_dflash_block", model_dim, spec, attention, mlp
+        "muse_glimmer_dflash_block",
+        model_dim,
+        spec,
+        attention,
+        mlp,
+        training_attention_mask=training_attention_mask,
     )
     graph = NeuronGraph(
         name=name,
@@ -1075,6 +1100,11 @@ def build_muse_glimmer_assistant_graph(
                 "target_layer_ids": list(target_layer_ids),
                 "shared_target_embedding": True,
                 "shared_target_lm_head": True,
+                **(
+                    {"training_attention_mask": True}
+                    if training_attention_mask
+                    else {}
+                ),
             }
         },
         variant_library={
@@ -1083,12 +1113,14 @@ def build_muse_glimmer_assistant_graph(
             "muse_glimmer_dflash_block": {"default": block},
         },
     )
-    inputs = (
+    inputs = [
         ("target_taps_in", "target_hidden_taps", 100),
         ("noise_embeddings_in", "raw_noise_embeddings", 220),
         ("context_positions_in", "context_position_ids", 340),
         ("block_positions_in", "block_position_ids", 460),
-    )
+    ]
+    if training_attention_mask:
+        inputs.append(("attention_mask_in", "attention_mask", 580))
     for node_id, port_name, y in inputs:
         graph.add_node(
             NeuronInstance(
@@ -1133,6 +1165,7 @@ def build_muse_glimmer_assistant_graph(
                         "accepted_context",
                         "context_position_ids",
                         "block_position_ids",
+                        *(["attention_mask"] if training_attention_mask else []),
                     ],
                     output_aliases=["block_hidden"],
                 ),
@@ -1144,6 +1177,8 @@ def build_muse_glimmer_assistant_graph(
         graph.add_edge(Edge(id=f"e_context_{node_id}", src_node="context_norm", src_port=0, dst_node=node_id, dst_port=1))
         graph.add_edge(Edge(id=f"e_context_pos_{node_id}", src_node="context_positions_in", src_port=0, dst_node=node_id, dst_port=2))
         graph.add_edge(Edge(id=f"e_block_pos_{node_id}", src_node="block_positions_in", src_port=0, dst_node=node_id, dst_port=3))
+        if training_attention_mask:
+            graph.add_edge(Edge(id=f"e_attention_mask_{node_id}", src_node="attention_mask_in", src_port=0, dst_node=node_id, dst_port=4))
         current = node_id
     graph.add_node(
         NeuronInstance(
@@ -1163,6 +1198,38 @@ def build_muse_glimmer_assistant_graph(
     graph.add_edge(Edge(id="e_output_norm_hidden", src_node="output_norm", src_port=0, dst_node="assistant_hidden_out", dst_port=0))
     graph.input_node_ids = [row[0] for row in inputs]
     graph.output_node_ids = ["assistant_hidden_out"]
+    return graph
+
+
+def build_muse_glimmer_dflash_distillation_graph(
+    name: str,
+    target_model_spec: ModelSpec,
+    *,
+    distillation_spec: MuseGlimmerDFlashDistillationSpec | None = None,
+    **assistant_kwargs: Any,
+) -> NeuronGraph:
+    """Build the trainable assistant graph used by DFlash distillation.
+
+    The frozen target forward, raw target embedding, shared LM head, anchor
+    sampling, and weighted objective are orchestrated by
+    :class:`neuralfn.torch_backend.DFlashDistillationTrainer`.  This graph adds
+    the explicit multi-anchor attention mask needed during training while
+    retaining the exact same assistant parameter topology as inference.
+    """
+
+    if "training_attention_mask" in assistant_kwargs:
+        raise ValueError(
+            "build_muse_glimmer_dflash_distillation_graph owns "
+            "training_attention_mask"
+        )
+    recipe = distillation_spec or MuseGlimmerDFlashDistillationSpec()
+    graph = build_muse_glimmer_assistant_graph(
+        name,
+        target_model_spec,
+        training_attention_mask=True,
+        **assistant_kwargs,
+    )
+    graph.torch_config["dflash_distillation"] = asdict(recipe)
     return graph
 
 
@@ -4330,10 +4397,13 @@ def build_sft_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
             "base_checkpoint": model_spec.finetune.base_checkpoint,
             "base_checkpoint_sha256": model_spec.finetune.base_checkpoint_sha256,
             "tokenizer_sha256": model_spec.finetune.tokenizer_sha256,
+            "chat_template_sha256": model_spec.finetune.chat_template_sha256,
             "ref_graph_path": model_spec.finetune.ref_graph_path,
             "ref_checkpoint": model_spec.finetune.ref_checkpoint,
+            "ref_checkpoint_sha256": model_spec.finetune.ref_checkpoint_sha256,
             "reward_graph_path": model_spec.finetune.reward_graph_path,
             "reward_checkpoint": model_spec.finetune.reward_checkpoint,
+            "reward_checkpoint_sha256": model_spec.finetune.reward_checkpoint_sha256,
             "resume_checkpoint": model_spec.finetune.resume_checkpoint,
             "beta": model_spec.finetune.beta,
             "kl_coef": model_spec.finetune.kl_coef,
@@ -4547,10 +4617,13 @@ def build_dpo_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
             "base_checkpoint": model_spec.finetune.base_checkpoint,
             "base_checkpoint_sha256": model_spec.finetune.base_checkpoint_sha256,
             "tokenizer_sha256": model_spec.finetune.tokenizer_sha256,
+            "chat_template_sha256": model_spec.finetune.chat_template_sha256,
             "ref_graph_path": model_spec.finetune.ref_graph_path,
             "ref_checkpoint": model_spec.finetune.ref_checkpoint,
+            "ref_checkpoint_sha256": model_spec.finetune.ref_checkpoint_sha256,
             "reward_graph_path": model_spec.finetune.reward_graph_path,
             "reward_checkpoint": model_spec.finetune.reward_checkpoint,
+            "reward_checkpoint_sha256": model_spec.finetune.reward_checkpoint_sha256,
             "resume_checkpoint": model_spec.finetune.resume_checkpoint,
             "beta": model_spec.finetune.beta,
             "dpo_loss_type": model_spec.finetune.dpo_loss_type,
@@ -4622,6 +4695,7 @@ def build_reward_model_root_graph(*, name: str = "model_root", model_spec: Model
             "base_checkpoint": model_spec.finetune.base_checkpoint,
             "base_checkpoint_sha256": model_spec.finetune.base_checkpoint_sha256,
             "tokenizer_sha256": model_spec.finetune.tokenizer_sha256,
+            "chat_template_sha256": model_spec.finetune.chat_template_sha256,
             "resume_checkpoint": model_spec.finetune.resume_checkpoint,
             "adapter_only_save": model_spec.finetune.adapter_only_save,
         }
@@ -4774,10 +4848,13 @@ def build_ppo_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
             "base_checkpoint": model_spec.finetune.base_checkpoint,
             "base_checkpoint_sha256": model_spec.finetune.base_checkpoint_sha256,
             "tokenizer_sha256": model_spec.finetune.tokenizer_sha256,
+            "chat_template_sha256": model_spec.finetune.chat_template_sha256,
             "ref_graph_path": model_spec.finetune.ref_graph_path,
             "ref_checkpoint": model_spec.finetune.ref_checkpoint,
+            "ref_checkpoint_sha256": model_spec.finetune.ref_checkpoint_sha256,
             "reward_graph_path": model_spec.finetune.reward_graph_path,
             "reward_checkpoint": model_spec.finetune.reward_checkpoint,
+            "reward_checkpoint_sha256": model_spec.finetune.reward_checkpoint_sha256,
             "resume_checkpoint": model_spec.finetune.resume_checkpoint,
             "kl_coef": model_spec.finetune.kl_coef,
             "ppo_clip": model_spec.finetune.ppo_clip,

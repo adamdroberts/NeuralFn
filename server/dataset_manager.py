@@ -37,6 +37,12 @@ TOKEN_SHARD_V2_ENDIAN_MARKER = 0x01020304
 STRUCTURED_SFT_V1_MAGIC = b"NFNSFT1\0"
 STRUCTURED_SFT_V1_VERSION = 1
 STRUCTURED_SFT_V1_HEADER_BYTES = 512
+STRUCTURED_PREFERENCE_V1_MAGIC = b"NFNPRF1\0"
+STRUCTURED_PREFERENCE_V1_VERSION = 1
+STRUCTURED_PREFERENCE_V1_HEADER_BYTES = 512
+STRUCTURED_PPO_PROMPT_V1_MAGIC = b"NFNPPO1\0"
+STRUCTURED_PPO_PROMPT_V1_VERSION = 1
+STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES = 512
 SENTENCEPIECE_TOKENIZER_VARIANTS = (
     "sp1024",
     "sp2048",
@@ -380,6 +386,495 @@ def inspect_structured_sft_v1(
             )
     return {
         "schema": "neuralfn.native_structured_sft.v1",
+        "record_count": int(records),
+        "sequence_length": int(sequence_length),
+        "tokenizer_vocab_size": int(vocab),
+        "pad_token_id": int(pad),
+        "tokenizer_sha256": tokenizer_sha,
+        "chat_template_sha256": template_sha,
+        "tokenizer_revision": revision,
+        "split": split,
+        "objective": objective,
+    }
+
+
+def build_structured_ppo_prompt_v1_header(
+    *,
+    record_count: int,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> bytes:
+    """Build the fixed-width prompt header used by native online PPO."""
+
+    if record_count <= 0 or sequence_length <= 1:
+        raise ValueError("record_count must be positive and sequence_length must exceed one")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if not 0 <= pad_token_id < tokenizer_vocab_size:
+        raise ValueError("pad_token_id must be inside tokenizer_vocab_size")
+    for label, digest in (
+        ("tokenizer_sha256", tokenizer_sha256),
+        ("chat_template_sha256", chat_template_sha256),
+    ):
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError(f"{label} must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    header = bytearray(STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES)
+    header[:8] = STRUCTURED_PPO_PROMPT_V1_MAGIC
+    struct.pack_into(
+        "<IIIIQIII",
+        header,
+        8,
+        STRUCTURED_PPO_PROMPT_V1_VERSION,
+        STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        0,
+        int(record_count),
+        int(sequence_length),
+        int(tokenizer_vocab_size),
+        int(pad_token_id),
+    )
+    _write_fixed_ascii(header, 48, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(
+        header, 113, 65, chat_template_sha256, field="chat_template_sha256"
+    )
+    _write_fixed_ascii(
+        header, 178, 96, tokenizer_revision, field="tokenizer_revision"
+    )
+    _write_fixed_ascii(header, 274, 32, split, field="split")
+    _write_fixed_ascii(header, 306, 32, "ppo_prompt", field="objective")
+    return bytes(header)
+
+
+def _validated_structured_ppo_prompt_arrays(
+    record: dict[str, Any],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if set(record) != {"input_ids", "attention_mask"}:
+        raise ValueError(
+            "Each structured PPO prompt must contain exactly input_ids and attention_mask"
+        )
+    input_ids = np.asarray(record["input_ids"], dtype=np.dtype("<u4"))
+    attention_mask = np.asarray(record["attention_mask"], dtype=np.dtype("<f4"))
+    if (
+        input_ids.ndim != 1
+        or attention_mask.ndim != 1
+        or input_ids.shape[0] != sequence_length
+        or attention_mask.shape[0] != sequence_length
+    ):
+        raise ValueError("Every structured PPO prompt array must match sequence_length")
+    if bool(np.any(input_ids >= tokenizer_vocab_size)):
+        raise ValueError("Structured PPO prompt contains an out-of-vocabulary ID")
+    if not bool(np.all(np.isfinite(attention_mask))) or bool(
+        np.any((attention_mask != 0.0) & (attention_mask != 1.0))
+    ):
+        raise ValueError("Structured PPO attention_mask must contain only finite zero/one values")
+    prompt_length = int(attention_mask.sum())
+    if not 0 < prompt_length < sequence_length:
+        raise ValueError("Structured PPO prompt must leave at least one completion slot")
+    if not bool(np.all(attention_mask[:prompt_length] == 1.0)) or not bool(
+        np.all(attention_mask[prompt_length:] == 0.0)
+    ):
+        raise ValueError("Structured PPO attention_mask must be one contiguous prefix")
+    if not bool(np.all(input_ids[prompt_length:] == pad_token_id)):
+        raise ValueError("Structured PPO prompt padding must use pad_token_id exactly")
+    return input_ids, attention_mask
+
+
+def write_structured_ppo_prompt_v1(
+    path: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> Path:
+    """Atomically publish authenticated prompt records for native online PPO."""
+
+    destination = Path(path).expanduser().resolve()
+    if destination.exists():
+        raise FileExistsError(f"Refusing to overwrite structured PPO prompts: {destination}")
+    if not records:
+        raise ValueError("records must not be empty")
+    validated = [
+        _validated_structured_ppo_prompt_arrays(
+            record,
+            sequence_length=sequence_length,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+            pad_token_id=pad_token_id,
+        )
+        for record in records
+    ]
+    header = build_structured_ppo_prompt_v1_header(
+        record_count=len(validated),
+        sequence_length=sequence_length,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        pad_token_id=pad_token_id,
+        tokenizer_sha256=tokenizer_sha256,
+        chat_template_sha256=chat_template_sha256,
+        tokenizer_revision=tokenizer_revision,
+        split=split,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    if temporary.exists():
+        raise FileExistsError(f"Structured PPO staging file already exists: {temporary}")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(header)
+            for arrays in validated:
+                for array in arrays:
+                    stream.write(array.tobytes(order="C"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return destination
+
+
+def inspect_structured_ppo_prompt_v1(
+    path: str | Path,
+    *,
+    validate_records: bool = True,
+) -> dict[str, Any]:
+    """Strictly inspect native PPO prompts and their tokenizer/template lineage."""
+
+    source = Path(path).expanduser().resolve()
+    size = source.stat().st_size
+    with source.open("rb") as stream:
+        header = stream.read(STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES)
+    if (
+        len(header) != STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES
+        or header[:8] != STRUCTURED_PPO_PROMPT_V1_MAGIC
+    ):
+        raise DatasetTokenizerMismatchError(f"Invalid structured PPO prompt header: {source}")
+    version, header_bytes, endian, flags, records, sequence_length, vocab, pad = (
+        struct.unpack_from("<IIIIQIII", header, 8)
+    )
+    if (
+        version != STRUCTURED_PPO_PROMPT_V1_VERSION
+        or header_bytes != STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES
+        or endian != TOKEN_SHARD_V2_ENDIAN_MARKER
+        or flags != 0
+        or records <= 0
+        or sequence_length <= 1
+        or vocab <= 0
+        or pad >= vocab
+        or size != header_bytes + records * sequence_length * 8
+        or any(header[338:])
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured PPO prompt geometry/extent: {source}"
+        )
+    tokenizer_sha = _read_fixed_ascii(header, 48, 65, field="tokenizer_sha256")
+    template_sha = _read_fixed_ascii(header, 113, 65, field="chat_template_sha256")
+    revision = _read_fixed_ascii(header, 178, 96, field="tokenizer_revision")
+    split = _read_fixed_ascii(header, 274, 32, field="split")
+    objective = _read_fixed_ascii(header, 306, 32, field="objective")
+    if (
+        any(
+            len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+            for value in (tokenizer_sha, template_sha)
+        )
+        or split not in {"train", "validation", "test"}
+        or objective != "ppo_prompt"
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured PPO prompt lineage: {source}"
+        )
+    if validate_records:
+        record_dtype = np.dtype(
+            [
+                ("input_ids", "<u4", (sequence_length,)),
+                ("attention_mask", "<f4", (sequence_length,)),
+            ]
+        )
+        payload = np.memmap(
+            source,
+            dtype=record_dtype,
+            mode="r",
+            offset=STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES,
+            shape=(records,),
+        )
+        for record in payload:
+            _validated_structured_ppo_prompt_arrays(
+                {name: record[name] for name in record_dtype.names or ()},
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=vocab,
+                pad_token_id=pad,
+            )
+    return {
+        "schema": "neuralfn.native_structured_ppo_prompt.v1",
+        "record_count": int(records),
+        "sequence_length": int(sequence_length),
+        "tokenizer_vocab_size": int(vocab),
+        "pad_token_id": int(pad),
+        "tokenizer_sha256": tokenizer_sha,
+        "chat_template_sha256": template_sha,
+        "tokenizer_revision": revision,
+        "split": split,
+        "objective": objective,
+    }
+
+
+def build_structured_preference_v1_header(
+    *,
+    record_count: int,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> bytes:
+    """Build the authenticated fixed-width native preference-record header."""
+
+    if record_count <= 0 or sequence_length <= 0:
+        raise ValueError("record_count and sequence_length must be positive")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if not 0 <= pad_token_id < tokenizer_vocab_size:
+        raise ValueError("pad_token_id must be inside tokenizer_vocab_size")
+    for label, digest in (
+        ("tokenizer_sha256", tokenizer_sha256),
+        ("chat_template_sha256", chat_template_sha256),
+    ):
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError(f"{label} must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    header = bytearray(STRUCTURED_PREFERENCE_V1_HEADER_BYTES)
+    header[:8] = STRUCTURED_PREFERENCE_V1_MAGIC
+    struct.pack_into(
+        "<IIIIQIII",
+        header,
+        8,
+        STRUCTURED_PREFERENCE_V1_VERSION,
+        STRUCTURED_PREFERENCE_V1_HEADER_BYTES,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        0,
+        int(record_count),
+        int(sequence_length),
+        int(tokenizer_vocab_size),
+        int(pad_token_id),
+    )
+    _write_fixed_ascii(header, 48, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(
+        header, 113, 65, chat_template_sha256, field="chat_template_sha256"
+    )
+    _write_fixed_ascii(
+        header, 178, 96, tokenizer_revision, field="tokenizer_revision"
+    )
+    _write_fixed_ascii(header, 274, 32, split, field="split")
+    _write_fixed_ascii(header, 306, 32, "preference", field="objective")
+    return bytes(header)
+
+
+def _validated_structured_preference_record(
+    record: dict[str, Any],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+) -> tuple[
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+]:
+    if set(record) != {"chosen", "rejected"}:
+        raise ValueError(
+            "Each structured preference record must contain exactly chosen and rejected"
+        )
+    branches = []
+    for branch_name in ("chosen", "rejected"):
+        branch = record[branch_name]
+        if not isinstance(branch, dict):
+            raise ValueError(f"Structured preference {branch_name} must be a record object")
+        try:
+            arrays = _validated_structured_sft_arrays(
+                branch,
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=tokenizer_vocab_size,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Invalid structured preference {branch_name}: {exc}") from exc
+        branches.append(arrays)
+    return branches[0], branches[1]
+
+
+def write_structured_preference_v1(
+    path: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> Path:
+    """Atomically publish paired chosen/rejected records for native preference training."""
+
+    destination = Path(path).expanduser().resolve()
+    if destination.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite structured preference file: {destination}"
+        )
+    if not records:
+        raise ValueError("records must not be empty")
+    validated = [
+        _validated_structured_preference_record(
+            record,
+            sequence_length=sequence_length,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+        )
+        for record in records
+    ]
+    header = build_structured_preference_v1_header(
+        record_count=len(validated),
+        sequence_length=sequence_length,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        pad_token_id=pad_token_id,
+        tokenizer_sha256=tokenizer_sha256,
+        chat_template_sha256=chat_template_sha256,
+        tokenizer_revision=tokenizer_revision,
+        split=split,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    if temporary.exists():
+        raise FileExistsError(
+            f"Structured preference staging file already exists: {temporary}"
+        )
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(header)
+            for chosen, rejected in validated:
+                for arrays in (chosen, rejected):
+                    for array in arrays:
+                        stream.write(array.tobytes(order="C"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return destination
+
+
+def inspect_structured_preference_v1(
+    path: str | Path,
+    *,
+    validate_records: bool = True,
+) -> dict[str, Any]:
+    """Strictly inspect a native chosen/rejected preference file and lineage."""
+
+    source = Path(path).expanduser().resolve()
+    size = source.stat().st_size
+    with source.open("rb") as stream:
+        header = stream.read(STRUCTURED_PREFERENCE_V1_HEADER_BYTES)
+    if (
+        len(header) != STRUCTURED_PREFERENCE_V1_HEADER_BYTES
+        or header[:8] != STRUCTURED_PREFERENCE_V1_MAGIC
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference header: {source}"
+        )
+    version, header_bytes, endian, flags, records, sequence_length, vocab, pad = (
+        struct.unpack_from("<IIIIQIII", header, 8)
+    )
+    if (
+        version != STRUCTURED_PREFERENCE_V1_VERSION
+        or header_bytes != STRUCTURED_PREFERENCE_V1_HEADER_BYTES
+        or endian != TOKEN_SHARD_V2_ENDIAN_MARKER
+        or flags != 0
+        or records <= 0
+        or sequence_length <= 0
+        or vocab <= 0
+        or pad >= vocab
+        or size != header_bytes + records * sequence_length * 32
+        or any(header[338:])
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference geometry/extent: {source}"
+        )
+    tokenizer_sha = _read_fixed_ascii(header, 48, 65, field="tokenizer_sha256")
+    template_sha = _read_fixed_ascii(
+        header, 113, 65, field="chat_template_sha256"
+    )
+    revision = _read_fixed_ascii(header, 178, 96, field="tokenizer_revision")
+    split = _read_fixed_ascii(header, 274, 32, field="split")
+    objective = _read_fixed_ascii(header, 306, 32, field="objective")
+    if (
+        any(
+            len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+            for value in (tokenizer_sha, template_sha)
+        )
+        or split not in {"train", "validation", "test"}
+        or objective != "preference"
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference lineage: {source}"
+        )
+    if validate_records:
+        branch_fields = [
+            ("input_ids", "<u4", (sequence_length,)),
+            ("targets", "<i4", (sequence_length,)),
+            ("loss_mask", "<f4", (sequence_length,)),
+            ("sequence_ids", "<i4", (sequence_length,)),
+        ]
+        record_dtype = np.dtype(
+            [
+                (f"{branch}_{name}", dtype, shape)
+                for branch in ("chosen", "rejected")
+                for name, dtype, shape in branch_fields
+            ]
+        )
+        payload = np.memmap(
+            source,
+            dtype=record_dtype,
+            mode="r",
+            offset=STRUCTURED_PREFERENCE_V1_HEADER_BYTES,
+            shape=(records,),
+        )
+        for record in payload:
+            structured = {
+                branch: {
+                    name: record[f"{branch}_{name}"]
+                    for name, _, _ in branch_fields
+                }
+                for branch in ("chosen", "rejected")
+            }
+            _validated_structured_preference_record(
+                structured,
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=vocab,
+            )
+    return {
+        "schema": "neuralfn.native_structured_preference.v1",
         "record_count": int(records),
         "sequence_length": int(sequence_length),
         "tokenizer_vocab_size": int(vocab),

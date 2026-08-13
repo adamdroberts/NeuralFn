@@ -223,6 +223,8 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "dataset_source",
     "denoise_head",
     "differential_attention",
+    "dpo_dataset_source",
+    "dpo_pairwise_loss",
     "dropout",
     "dyt",
     "expert_combine",
@@ -250,14 +252,22 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "mamba",
     "manifold_hyper_connection",
     "mask_scheduler",
+    "masked_reward_head",
+    "masked_ppo_clipped_loss",
     "masked_token_cross_entropy",
     "merge_heads",
     "multiply",
+    "pair_batch_concat",
+    "pair_batch_split",
+    "policy_logits_value",
+    "preference_bce_loss",
+    "ppo_rollout_source",
     "multi_latent_attention",
     "mx_linear",
     "native_sparse_attention",
     "qk_norm",
     "random_timesteps",
+    "reference_forward",
     "repeat_kv",
     "reshape_heads",
     "residual_add",
@@ -277,6 +287,7 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "semantic_hasher",
     "semantic_moe_jepa_evo_router",
     "semantic_projector",
+    "sequence_logp",
     "sigmoid",
     "silu",
     "sliding_window_attention",
@@ -285,6 +296,7 @@ _EXPLICIT_NATIVE_MODULE_TYPES: tuple[str, ...] = (
     "tied_lm_head",
     "token_cross_entropy",
     "token_embedding",
+    "token_logp_entropy",
     "topk_route",
     "ttt_linear",
     "universal_transformer",
@@ -545,6 +557,9 @@ def native_graph_training_adapters() -> tuple[NativeGraphTrainingAdapter, ...]:
             "muse-glimmer-bf16-parameter-checkpoint-resume-v1",
             "muse-glimmer-frozen-base-native-lora-v1",
             "muse-glimmer-frozen-nf4-base-native-qlora-v1",
+            "muse-glimmer-native-dpo-v1",
+            "muse-glimmer-native-reward-model-v1",
+            "muse-glimmer-native-online-ppo-v1",
         ),
     )
     return (*dense_adapters, *llama_adapters, *standard_moe_adapters, glimmer_adapter)
@@ -608,7 +623,11 @@ def _resident_muse_glimmer_v1_graph_compatible(
     if any(spec.get(key) != value for key, value in exact_spec.items()):
         return False
     objective = _normalize_name(template.get("objective"))
-    if objective not in ({"ar", "sft"} if allow_training_objectives else {"ar"}):
+    if objective not in (
+        {"ar", "sft", "dpo", "reward-model", "ppo"}
+        if allow_training_objectives
+        else {"ar"}
+    ):
         return False
     exact_template = {
         "backbone": "muse_glimmer",
@@ -668,7 +687,7 @@ def _resident_muse_glimmer_v1_graph_compatible(
     finetune = _mapping(spec.get("finetune"))
     adapter_type = _normalize_name(block.get("adapter_type"))
     if not (
-        finetune.get("objective") == "sft"
+        _normalize_name(finetune.get("objective")) == objective
         and _normalize_name(template.get("adapter")) == "none"
         and adapter_type in {"none", "lora", "qlora"}
         and all(
@@ -677,6 +696,102 @@ def _resident_muse_glimmer_v1_graph_compatible(
         )
     ):
         return False
+    base_weight_precision = _normalize_name(
+        finetune.get("base_weight_precision") or "bf16"
+    )
+    if base_weight_precision not in {
+        "bf16",
+        "k-quant-17gb",
+        "k-quant-dynamic",
+    }:
+        return False
+    if base_weight_precision != "bf16":
+        canonical_digests = {
+            "k-quant-17gb": "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e",
+            "k-quant-dynamic": "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38",
+        }
+        if (
+            adapter_type != "lora"
+            or objective not in {"sft", "dpo"}
+            or not str(finetune.get("base_checkpoint") or "")
+            or str(finetune.get("base_checkpoint_sha256") or "")
+            != canonical_digests[base_weight_precision]
+            or finetune.get("adapter_only_save") is not True
+        ):
+            return False
+        if objective in {"dpo", "ppo"} and (
+            str(finetune.get("ref_checkpoint") or "")
+            != str(finetune.get("base_checkpoint") or "")
+            or str(finetune.get("ref_checkpoint_sha256") or "")
+            != str(finetune.get("base_checkpoint_sha256") or "")
+        ):
+            return False
+    if objective == "dpo":
+        try:
+            beta = float(finetune.get("beta"))
+            smoothing = float(finetune.get("dpo_label_smoothing"))
+        except (TypeError, ValueError):
+            return False
+        if (
+            not str(finetune.get("ref_checkpoint") or "")
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(finetune.get("ref_checkpoint_sha256") or ""),
+            )
+            is None
+            or not math.isfinite(beta)
+            or beta <= 0.0
+            or not math.isfinite(smoothing)
+            or not 0.0 <= smoothing < 0.5
+            or _normalize_name(finetune.get("dpo_loss_type"))
+            not in {"sigmoid", "hinge", "ipo"}
+        ):
+            return False
+    elif objective == "reward-model" and adapter_type != "none":
+        return False
+    elif objective == "ppo":
+        try:
+            kl_coef = float(finetune.get("kl_coef"))
+            clip = float(finetune.get("ppo_clip"))
+            value_coefficient = float(finetune.get("ppo_vf_coef"))
+            entropy_coefficient = float(finetune.get("ppo_ent_coef"))
+            rollout_length = int(finetune.get("rollout_length"))
+            epochs = int(finetune.get("ppo_epochs_per_rollout"))
+            minibatch = int(finetune.get("ppo_minibatch_size"))
+            gamma = float(finetune.get("gae_gamma"))
+            gae_lambda = float(finetune.get("gae_lambda"))
+        except (TypeError, ValueError):
+            return False
+        if (
+            not str(finetune.get("ref_checkpoint") or "")
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(finetune.get("ref_checkpoint_sha256") or ""),
+            )
+            is None
+            or not str(finetune.get("reward_checkpoint") or "")
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(finetune.get("reward_checkpoint_sha256") or ""),
+            )
+            is None
+            or not math.isfinite(kl_coef)
+            or kl_coef < 0.0
+            or not math.isfinite(clip)
+            or not 0.0 < clip < 1.0
+            or not math.isfinite(value_coefficient)
+            or value_coefficient < 0.0
+            or not math.isfinite(entropy_coefficient)
+            or entropy_coefficient < 0.0
+            or rollout_length <= 0
+            or epochs <= 0
+            or minibatch <= 0
+            or not math.isfinite(gamma)
+            or not 0.0 <= gamma <= 1.0
+            or not math.isfinite(gae_lambda)
+            or not 0.0 <= gae_lambda <= 1.0
+        ):
+            return False
     if adapter_type == "none":
         return True
     allowed_targets = {

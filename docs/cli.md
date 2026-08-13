@@ -97,7 +97,8 @@ nfn migrate muse-glimmer-to-native \
 nfn migrate muse-glimmer-gguf-to-native \
   --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
   --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
-  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --dflash /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --mmproj /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
   --tokenizer-source /models/Muse-Glimmer-30B \
   --output-dir artifacts/glimmer-kquant
 ```
@@ -162,9 +163,25 @@ nfn train --base-model muse-glimmer \
 
 `--objective ar` consumes versioned uint32 shards. `--objective sft` consumes
 structured `.sft` records with targets, loss masks, boundaries, and exact ATEM
-lineage. `--adapter none|lora|qlora` selects full update, dense-base LoRA, or a
-frozen deterministic NF4 group-64 base. Native DPO/reward/PPO and K-Quant-base
-adapter tuning remain unavailable; the exact Torch graph paths are separate.
+lineage. DPO uses structured chosen/rejected records and requires an
+authenticated frozen reference. Reward mode trains a masked last-token scalar
+head with pairwise BCE. PPO performs online rollouts with authenticated frozen
+reference/reward checkpoints, per-token log-probabilities, KL, GAE, and clipped
+minibatch epochs. `--adapter none|lora|qlora` selects full update, dense-base
+LoRA, or a frozen deterministic NF4 group-64 base.
+
+`--kquant-profile k-quant-17gb|k-quant-dynamic` selects immutable official
+GGUF-base LoRA for SFT/DPO; it is not NF4 QLoRA. The main digest and tensor
+table are pinned in adapter state, DPO reference must be the identical packed
+base, and only adapters are saved. Packed reward/PPO is rejected.
+
+Full-BF16 AR/SFT accepts `--pipeline-parallel-size N` and
+`--pipeline-cuda-devices d0,...,dN-1`. Without an explicit rank the CLI starts
+one process per distinct device, assigns contiguous layer stages, and shares a
+temporary NCCL unique-ID file. Use `--nccl-lib`, optionally
+`--distributed-timeout-seconds`/`--distributed-reserve-bytes`, or
+`--print-distributed-plan` for admission planning. Rank-local checkpoints bind
+the world/stage layout and cannot resume under a different layout.
 
 `nfn train --runtime native-cuda --graph-file GRAPH ...` runs the same
 source-safe compatibility pass before binary resolution. Thirteen exact reviewed
@@ -4944,8 +4961,8 @@ A legacy previous-response-only job reconstructs only a currently
 completed/incomplete lineage or fails with `response_lineage_unavailable`.
 
 The isolated app exposes `/health`, model list/retrieve, and bounded OpenAI
-Chat Completions. Chat is text by default; a jointly proven CPU Muse Glimmer
-vision artifact also accepts base64 image data URLs. SSE emits committed-token `chat.completion.chunk` records and
+Chat Completions. Chat is text by default; a jointly proven CPU or whole-model
+CUDA Muse Glimmer vision artifact also accepts base64 image data URLs. SSE emits committed-token `chat.completion.chunk` records and
 terminates with `data: [DONE]`. With `--state-db`, it also exposes the bounded
 text Responses and Conversations resources, API-key-scoped lineage, semantic
 Responses SSE, local response compaction, and durable background/cancel
@@ -5314,7 +5331,7 @@ were passed explicitly.
 |------|---------|
 | `--training-mode sft` | Supervised fine-tuning with `sft_dataset_source` and masked token CE. |
 | `--training-mode dpo` | Direct Preference Optimization with policy/reference forwards. |
-| `--training-mode ppo` | PPO graph skeleton for rollout-buffer optimization. |
+| `--training-mode ppo` | PPO inner graph plus real `PPOTrainer` rollout/reference/reward/KL/GAE orchestration. |
 | `--training-mode reward_model` | Preference reward-head training. |
 | `--adapter-type lora` | Insert trainable LoRA projections. |
 | `--adapter-type qlora` | Use nf4 base projection buffers plus LoRA deltas. |

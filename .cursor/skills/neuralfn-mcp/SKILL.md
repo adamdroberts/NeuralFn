@@ -218,7 +218,7 @@ the current compiled ABI.
 | `nanogpt` | GPT-2 style (LayerNorm, GELU, absolute pos) | AR |
 | `gpt2` | GPT-2 (with bias) | AR |
 | `llama` | LLaMA (RMSNorm, SwiGLU, RoPE, GQA) | AR |
-| `muse_glimmer` | Exact Muse Glimmer 30B decoder; strict native BF16/K-Quant/DFlash support is separately artifact-gated, with CPU-only vision | AR |
+| `muse_glimmer` | Exact Muse Glimmer 30B decoder; strict native BF16/K-Quant/DFlash, post-training, pipeline AR/SFT and CPU/CUDA vision capabilities are independently artifact/ABI-gated | AR |
 | `moe` / `mixllama` | LLaMA + Mixture of Experts | AR |
 | `llama_fast` | LLaMA with torch.compile | AR |
 | `mixllama_fast` | MoE with torch.compile | AR |

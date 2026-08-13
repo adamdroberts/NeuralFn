@@ -1278,6 +1278,10 @@ void GlimmerModel::initialize_cuda_backend() {
     cuda.tile_ops_lib = config_.tile_ops_lib;
     cuda.cuda_runtime_lib = config_.cuda_runtime_lib;
     cuda_model_ = neuralfn::resident_glimmer_cuda::Model::load(cuda, plan);
+    if (vision_model_) {
+        cuda_model_->load_vision(
+            vision_model_->cuda_config(), vision_model_->cuda_weight_plan());
+    }
 }
 
 void GlimmerModel::require_open() const {
@@ -1372,6 +1376,10 @@ std::string GlimmerModel::cuda_runtime_library() const {
     return cuda_model_ ? cuda_model_->cuda_runtime_library() : std::string{};
 }
 
+bool GlimmerModel::vision_whole_model_cuda() const noexcept {
+    return cuda_model_ && cuda_model_->has_vision();
+}
+
 void GlimmerModel::load_vision_companion(const std::string& checkpoint_path) {
     std::unique_lock<std::shared_mutex> lock(lifecycle_mutex_);
     require_open();
@@ -1382,13 +1390,13 @@ void GlimmerModel::load_vision_companion(const std::string& checkpoint_path) {
         throw std::runtime_error(
             "Muse Glimmer mmproj must be loaded before creating target sessions");
     }
-    if (cuda_model_) {
-        throw std::runtime_error(
-            "Muse Glimmer mmproj currently requires the CPU resident target; "
-            "whole-model CUDA vision is not yet available");
-    }
-    vision_model_ = neuralfn::resident_glimmer_vision::Model::load_gguf(
+    auto loaded = neuralfn::resident_glimmer_vision::Model::load_gguf(
         checkpoint_path);
+    if (cuda_model_) {
+        cuda_model_->load_vision(
+            loaded->cuda_config(), loaded->cuda_weight_plan());
+    }
+    vision_model_ = std::move(loaded);
 }
 
 void GlimmerModel::load_lora_adapter(
@@ -1535,6 +1543,14 @@ std::vector<float> GlimmerModel::encode_media(
     if (!vision_model_) {
         throw std::runtime_error(
             "Muse Glimmer media encoding requires a full BF16 checkpoint or a compatible mmproj companion");
+    }
+    if (cuda_model_) {
+        if (!cuda_model_->has_vision()) {
+            throw std::runtime_error(
+                "whole-model Glimmer CUDA has no resident vision weights");
+        }
+        return cuda_model_->encode_vision(
+            packed_patches, grid_thw, cancelled);
     }
     return vision_model_->encode(packed_patches, grid_thw, cancelled);
 }

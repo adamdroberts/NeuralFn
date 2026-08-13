@@ -58,7 +58,8 @@ Canonical docs:
   `nfn migrate muse-glimmer-to-native` accepts only the pinned BF16
   target/full/assistant snapshots;
   `nfn migrate muse-glimmer-gguf-to-native` accepts only canonical authenticated
-  Dynamic/17GB/DFlash/mmproj files; and
+  Dynamic/17GB mains through repeatable `--gguf`, with optional canonical
+  DFlash and mmproj companions through `--dflash` and `--mmproj`; and
   `nfn migrate muse-glimmer-lora-to-native` authenticates and atomically
   attaches a source-bound LoRA/QLoRA checkpoint. Resident inference exposes
   `--weight-precision auto|bf16|k-quant-dynamic|k-quant-17gb`,

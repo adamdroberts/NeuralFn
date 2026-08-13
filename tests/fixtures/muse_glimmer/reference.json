@@ -10,6 +10,17 @@
   "assistant_revision": "e8192f3a8f617f74be2ce220360c89ef4789f39f",
   "gguf_revision": "43c7eadd41352a299ea8e0a36b3157978dd63596",
   "llama_cpp_revision": "62bf73d",
+  "dflash_training_recipe": {
+    "implementation": "neuralfn.muse_glimmer_dflash_distill.v1",
+    "upstream_repository": "NVIDIA/Model-Optimizer",
+    "upstream_revision": "686da8d893536688e86adae41aa628aa740a1a35",
+    "upstream_files": {
+      "modelopt/torch/speculative/config.py": "7e13156356ceaf49ba47de6e026a15b3e361a024d3f17b50c52636a37a90624c",
+      "modelopt/torch/speculative/plugins/hf_dflash.py": "39027f00e60701d74c9c34d9307cda965f7f79769bcc1a2e63d649a71d57c5e6",
+      "examples/speculative_decoding/doc/dflash.md": "fb37198f4af5f20a1332bc53a92f16174732310f7e04788a21af919e1c3c9a50"
+    },
+    "meta_released_training_recipe_claimed": false
+  },
   "tokenizer_contract": {
     "tokenizer_json_sha256": "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d",
     "tokenizer_config_sha256": "781e6c74f571642c71202167b67d9255b28cc439bdda1582ff31346182f5a9c5",

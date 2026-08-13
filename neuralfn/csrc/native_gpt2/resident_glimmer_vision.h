@@ -6,6 +6,11 @@
 #include <string>
 #include <vector>
 
+namespace neuralfn::resident_glimmer_cuda {
+struct VisionConfig;
+struct VisionHostWeightPlan;
+}
+
 namespace neuralfn::resident_glimmer_vision {
 
 struct Config {
@@ -46,6 +51,9 @@ public:
         const std::vector<float>& packed_patches,
         const std::vector<std::int64_t>& grid_thw,
         const std::atomic<bool>& cancelled) const;
+
+    neuralfn::resident_glimmer_cuda::VisionConfig cuda_config() const;
+    neuralfn::resident_glimmer_cuda::VisionHostWeightPlan cuda_weight_plan() const;
 
     std::int64_t output_size() const noexcept { return config_.output_size; }
     std::int64_t weight_bytes() const noexcept { return payload_nbytes_; }

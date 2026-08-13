@@ -38,10 +38,16 @@ native training, and resident inference. The implemented native path includes:
   sampled speculative decoding;
 - load-time `auto|bf16|k-quant-dynamic|k-quant-17gb` weight selection, where
   CUDA `auto` uses current free VRAM plus context/companion/workspace budgets;
-- native pretraining, full masked SFT, all-projection LoRA, and NF4 group-64
-  QLoRA with strict save/resume and adapter deployment; and
-- CPU full-BF16 image/video vision plus still-image execution through the
-  official packed `mmproj` companion.
+- native pretraining, full masked SFT, all-projection LoRA, NF4 group-64
+  QLoRA, DPO, reward-model training, and online PPO with strict save/resume;
+- frozen official K-Quant LoRA SFT/DPO with adapter-only, profile-bound state;
+- a target-frozen DFlash distillation trainer with D-PACE/decay objectives,
+  exact resume, acceptance audit, and native assistant export;
+- full-BF16 AR/SFT pipeline parallelism with one CUDA process per contiguous
+  stage, NCCL transfers/reductions, per-rank admission and rank-sharded
+  checkpoints; and
+- CPU/CUDA full-BF16 image/video vision plus CPU/CUDA still-image execution
+  through the official packed `mmproj` companion.
 
 Convert and run an official packed bundle like this:
 
@@ -49,7 +55,8 @@ Convert and run an official packed bundle like this:
 nfn migrate muse-glimmer-gguf-to-native \
   --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
   --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
-  --gguf /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --dflash /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --mmproj /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
   --tokenizer-source /models/Muse-Glimmer-30B \
   --output-dir artifacts/glimmer-kquant
 
@@ -65,7 +72,8 @@ nfn infer \
 ```
 
 The same family has a dedicated Torch-free trainer. Pretraining uses uint32
-token shards; SFT/LoRA/QLoRA uses structured records with exact ATEM lineage:
+token shards; SFT/LoRA/QLoRA/DPO/reward/PPO uses structured records with exact
+ATEM and checkpoint lineage:
 
 ```bash
 nfn train --base-model muse-glimmer \
@@ -80,11 +88,153 @@ nfn train --base-model muse-glimmer \
   --output-dir runs/glimmer-qlora
 ```
 
-Capabilities remain independent and fail closed. Native DPO/reward/PPO,
-K-Quant adapter training, DFlash distillation, distributed 30B training, and
-whole-model CUDA vision are not advertised. See the precise implementation
-matrix and kernel boundary in
+For a full-BF16 8-stage AR/SFT run, add `--pipeline-parallel-size 8`,
+`--pipeline-cuda-devices 0,1,2,3,4,5,6,7`, and an absolute `--nccl-lib` path.
+The launcher creates one process per device and refuses cross-world-size or
+cross-stage resume. K-Quant adapter tuning is intentionally LoRA-only and
+supports SFT/DPO; it never mutates or relabels the official GGUF bytes.
+
+Capabilities remain independent and fail closed. The current sources have
+real CUDA 13.3.33 NVCC compiler proofs for `sm_80`, `sm_89`, `sm_90`, and
+`sm_120`, covering the normal and strict Tile libraries plus all five Glimmer
+ABI v1 surfaces. Source-built RTX 5090 (`sm_120`, 33,708,376,064 bytes) runs
+qualify both official packed profiles with DFlash and mmproj through 8,192
+prompt tokens: all four compute-sanitizer tools pass the real-device kernel
+probe and whole-model execution reports zero CPU model-compute rows. The
+32-GB tier uses the default `auto` policy and selects Dynamic. The 24-GB tier
+runs on the same larger card with `k-quant-17gb` explicitly pinned and records
+a 20,359,217,152-byte peak CUDA delta, below the tier's 24-billion-byte
+minimum. Qualification tiers are minimum capacities, not exact device bands.
+An 80-GB-or-larger BF16 run remains a release gate. A separate
+full-size target-only check against pinned llama.cpp commit `62bf73d` now
+matches all 16 greedy token IDs for the same canonical Dynamic artifact and
+BOS-prefixed raw prompt; full logit, rendered-chat, and DFlash oracle coverage
+is still open. See the precise implementation matrix, measurements, and kernel
+boundary in
 [`docs/glimmer-support-todo.md`](docs/glimmer-support-todo.md).
+
+The release gate is executable with
+[`tools/qualify_muse_glimmer_gpu.py`](tools/qualify_muse_glimmer_gpu.py). It
+rebuilds the current tree with NVCC for the selected GPU architecture. It uses
+the default VRAM-driven `auto` selector for the highest tier eligible on the
+physical GPU and an explicit precision pin when qualifying a lower tier on a
+larger device. It then requires CUDA-resident target,
+DFlash and vision execution with zero CPU model-compute rows, runs the exact
+raw-kernel surface under compute-sanitizer `memcheck`, `synccheck`, `initcheck`,
+and `racecheck`, then benchmarks the authenticated full artifact without
+instrumentation. It records p50/p95 TTFT, decode throughput, acceptance, VRAM,
+and artifact/source hashes. The build host needs CUDA Toolkit 13.3+ with
+`cuda_tile.h`, NVCC Tile C++
+support, and `compute-sanitizer` on `PATH` (or supplied by the corresponding
+flags). Run one result on each hardware class:
+
+```bash
+# Compiler-only proof. This deliberately cannot produce a release-qualified
+# result; it does not execute kernels or run compute-sanitizer.
+python tools/qualify_muse_glimmer_gpu.py build \
+  --cuda-arch sm_120 --nvcc /usr/local/cuda/bin/nvcc \
+  --build-dir build/glimmer-compile-sm120 \
+  --json-out build/glimmer-compile-sm120.json
+
+python tools/qualify_muse_glimmer_gpu.py run \
+  --artifact artifacts/glimmer-kquant --profile k-quant-17gb --gpu-class 24 \
+  --cuda-runtime-lib /usr/local/cuda/lib64/libcudart.so \
+  --build-dir build/glimmer-qualify-24 --contexts 128,2048,8192 \
+  --require-dflash --run-vision --vision-patch-width 588 \
+  --json-out build/glimmer-24.json
+
+python tools/qualify_muse_glimmer_gpu.py run \
+  --artifact artifacts/glimmer-kquant --profile k-quant-dynamic --gpu-class 32 \
+  --cuda-runtime-lib /usr/local/cuda/lib64/libcudart.so \
+  --build-dir build/glimmer-qualify-32 --contexts 128,2048,8192 \
+  --require-dflash --run-vision --vision-patch-width 588 \
+  --json-out build/glimmer-32.json
+
+python tools/qualify_muse_glimmer_gpu.py run \
+  --artifact artifacts/glimmer-bf16-full --profile bf16 --gpu-class 80 \
+  --cuda-runtime-lib /usr/local/cuda/lib64/libcudart.so \
+  --build-dir build/glimmer-qualify-80 --contexts 128,2048,8192 \
+  --require-dflash --run-vision --vision-patch-width 1176 \
+  --json-out build/glimmer-80.json
+
+python tools/qualify_muse_glimmer_gpu.py verify \
+  --result build/glimmer-24.json --result build/glimmer-32.json \
+  --result build/glimmer-80.json --json-out build/glimmer-matrix.json
+```
+
+`--gpu-class` names the profile's minimum decimal-GB tier, not an exact device
+size. For example, the 24-GB/17GB command is valid on a 32-GB GPU. The harness
+pins `k-quant-17gb` explicitly in that case because production `auto` should
+still choose Dynamic on a 32-GB device; the result retains CUDA's exact
+physical total and sampled peak/minimum-free byte counts.
+
+The 2026-08-13 24-GB-tier run explicitly selected K-Quant-17GB on that physical
+RTX 5090. Source proof
+`26d412085b7941a2a7d55c00b49b6fdc885c0ab2d5709083c101a367e0105469`
+and result JSON SHA-256
+`cc70412c7299a3cc84d2247a9d81466104e47b5d411c571b236ce5b4f8c8c30a`
+bind the run to the canonical target SHA
+`4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e`.
+K-Quant-17GB+DFlash+mmproj loaded in 24.52 s. The sampled peak CUDA delta was
+20,359,217,152 bytes (18.961 GiB), minimum sampled free memory was
+9,398,059,008 bytes, and the model returned to within 4,259,840 bytes of its
+fresh-worker baseline after close. Target-only, vision, and DFlash CUDA weights
+occupied 16,743,521,568, 1,400,328,928, and 1,618,131,968 bytes respectively;
+`cpu_model_compute_rows=0`.
+
+One capacity trial per context measured:
+
+| Prompt | Prefill | TTFT | 16-token DFlash decode | DFlash acceptance |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 | 21.76 tok/s | 5.937 s | 2.303 tok/s | 3 / 127 (2.36%) |
+| 8,192 | 8.96 tok/s | 914.161 s | 1.490 tok/s | 0 / 135 |
+
+Because each row has one repetition, its p50 and p95 are the same observation;
+these are capacity/correctness figures, not a performance distribution. The
+four-row mmproj probe took 14.35 ms. The measured peak is 3,640,782,848 bytes
+below the 24-GB tier, while the result still records the physical card's exact
+33,708,376,064-byte total instead of pretending it was a smaller GPU.
+This standalone result uses the current source proof; the earlier Dynamic run
+below predates the tier-policy edit. The final three-tier `verify` invocation
+therefore requires a fresh Dynamic result alongside the future BF16 result so
+all inputs carry one identical source proof.
+
+The 2026-08-13 RTX 5090 32-GB-class run used CUDA runtime/driver 13.3 and
+source proof
+`cbb3dade82f3939eeee0355ff44a3bd76473fdd524cbbe7295c47a7a85d0b957`.
+It loaded Dynamic+DFlash+mmproj in 27.08 s, sampled a 23,171,432,448-byte peak
+device-memory delta, retained at least 6,168,707,072 free bytes, and reported
+34,169,647 target CUDA launches with `cpu_model_compute_rows=0`. Three trials
+per context measured:
+
+| Prompt | Prefill p50 | TTFT p50 | 16-token DFlash decode p50 | DFlash acceptance |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 | 19.67 tok/s | 6.568 s | 2.134 tok/s | 9 / 375 (2.4%) |
+| 2,048 | 12.77 tok/s | 160.466 s | 1.618 tok/s | 0 / 405 |
+| 8,192 | 8.26 tok/s | 992.434 s | 1.410 tok/s | 0 / 405 |
+
+The low acceptance on this repeated-token qualification prompt is measured
+behavior, not a general DFlash quality claim. The four-row still-image mmproj
+probe produced one 6,656-wide row in 15.82 ms p50. These are correctness and
+capacity measurements for this exact build, not production throughput targets.
+
+The same source-built resident also passed a bounded independent full-size
+target check against llama.cpp build 10349 at commit
+`62bf73d25c53b8161f8a22894d4f90c4aebbd7d0`, using the authenticated Dynamic
+GGUF and raw prefix `[200000, 19873]` (BOS + `Hello`). Both runtimes returned
+the exact 16-token sequence
+`[24, 372, 1045, 10016, 328, 2885, 262, 5091, 8811, 511, 917, 4921, 768, 328, 2885, 262]`.
+It decodes to `, I am trying to create a simple script that will allow me to create a`;
+NeuralFn reported `cpu_model_compute_rows=0`. This proves one greedy raw-prompt
+token path, not general logit, sampling, ATEM chat, DFlash, or quality parity.
+
+The verifier rejects fake runtimes, profile/class mismatches, tiny geometry,
+noncanonical K-Quant files, missing companions, absent sanitizer evidence,
+mixed source-tree hashes, and any CPU fallback. An ordinary successful process
+exit is therefore not sufficient evidence for release qualification. The
+compiler-only result has `status: "source-built"` and
+`release_qualified: false`; only three successful `run` results accepted by
+`verify` qualify the hardware matrix.
 
 ## Native Execution IR and graph migration
 
@@ -656,9 +806,10 @@ schemas, automatic/parallel/hosted tools, Conversations/compaction tool
 history, constrained streaming/background work, Chat Completions tools, and
 Responses multimedia remain fail-closed. Chat Completions has one separate
 exception: an authenticated, vision-capable Muse Glimmer artifact accepts
-bounded base64 image data URLs; audio, files, external URLs, server video, and
-CUDA vision remain unavailable. See the serving reference for the exact
-bounded schema and artifact metadata contract.
+bounded base64 image data URLs through the proven CPU or whole-model CUDA
+vision runner; audio, files, external URLs, and server video remain
+unavailable. See the serving reference for the exact bounded schema and
+artifact metadata contract.
 The pinned official `openai==2.44.0` transport gate also exercises real
 loopback sockets: Uvicorn TLS rejects the untrusted per-test certificate and
 accepts its explicit CA, an HTTP proxy observes a real `CONNECT` tunnel to that

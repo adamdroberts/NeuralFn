@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -24,8 +25,19 @@ bool valid(const NfnNativeTilePackedWeightDescriptorV1* weight) {
         weight->data == nullptr || weight->output_dim <= 0 || weight->input_dim <= 0)
         return false;
     std::int64_t row_bytes = 0;
-    if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_BF16) {
+    if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_F32) {
+        row_bytes = weight->input_dim * 4;
+    } else if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_BF16) {
         row_bytes = weight->input_dim * 2;
+    } else if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K) {
+        if (weight->input_dim % 256 != 0) return false;
+        row_bytes = weight->input_dim / 256 * 144;
+    } else if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K) {
+        if (weight->input_dim % 256 != 0) return false;
+        row_bytes = weight->input_dim / 256 * 176;
+    } else if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K) {
+        if (weight->input_dim % 256 != 0) return false;
+        row_bytes = weight->input_dim / 256 * 210;
     } else if (weight->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64) {
         row_bytes = ((weight->input_dim + 63) / 64) * 36;
     } else {
@@ -38,9 +50,23 @@ bool valid(const NfnNativeTilePackedWeightDescriptorV1* weight) {
 float value(const NfnNativeTilePackedWeightDescriptorV1& weight,
             std::int64_t row, std::int64_t col) {
     const auto* row_data = weight.data + row * weight.row_stride_bytes;
+    if (weight.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_F32) {
+        float result = 0.0f;
+        std::memcpy(&result, row_data + col * 4, sizeof(result));
+        return result;
+    }
     if (weight.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_BF16) {
         const auto* values = reinterpret_cast<const std::uint16_t*>(row_data);
         return bf16(values[col]);
+    }
+    // Tiny K-Quant integration fixtures use canonical-sized all-zero blocks.
+    // The production dequantizer is verified independently; returning zero
+    // here keeps this fake runtime a compact orchestration oracle while still
+    // requiring the exact Q4_K/Q5_K/Q6_K descriptor strides and dispatch.
+    if (weight.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K ||
+        weight.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K ||
+        weight.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K) {
+        return 0.0f;
     }
     constexpr float codebook[16] = {
         -1.0f, -0.6961928009986877f, -0.5250730514526367f,
@@ -66,6 +92,7 @@ int nfn_native_tile_ops_abi_version() { return 1; }
 int nfn_native_tile_strict_math_abi_version() { return 1; }
 int nfn_native_tile_packed_weight_abi_version() { return 1; }
 int nfn_native_tile_glimmer_inference_abi_version() { return 1; }
+int nfn_native_tile_glimmer_vision_abi_version() { return 1; }
 int nfn_native_tile_glimmer_training_abi_version() { return 1; }
 const char* nfn_native_tile_ops_error_string(int status) {
     return status == 0 ? "success" : "fake Tile failure";
@@ -77,14 +104,15 @@ int nfn_native_tile_packed_weight_validate_v1(
 int nfn_native_tile_linear_packed_weight_float32_v1(
     const NfnNativeTilePackedWeightDescriptorV1* weight,
     const float* input,
-    const float*,
+    const float* bias,
     float* output,
     std::int64_t rows,
     bool has_bias) {
-    if (!valid(weight) || input == nullptr || output == nullptr || rows <= 0 || has_bias) return 1;
+    if (!valid(weight) || input == nullptr || output == nullptr || rows <= 0 ||
+        (has_bias && bias == nullptr)) return 1;
     for (std::int64_t row = 0; row < rows; ++row) {
         for (std::int64_t out = 0; out < weight->output_dim; ++out) {
-            double sum = 0.0;
+            double sum = has_bias ? bias[out] : 0.0;
             for (std::int64_t col = 0; col < weight->input_dim; ++col) {
                 sum += input[row * weight->input_dim + col] * value(*weight, out, col);
             }
@@ -316,6 +344,136 @@ int nfn_native_tile_dflash_block_attention_float32_v1(
     }
     return 0;
 }
+int nfn_native_tile_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1* d) {
+    if (d == nullptr || d->version != 1 || d->projected == nullptr ||
+        d->position_table == nullptr || d->corner_indices == nullptr ||
+        d->corner_weights == nullptr || d->permutation == nullptr ||
+        d->output == nullptr || d->rows <= 0 || d->width <= 0) return 1;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const std::int32_t source = d->permutation[row];
+        if (source < 0 || source >= d->rows) return 1;
+        for (std::int64_t dim = 0; dim < d->width; ++dim) {
+            float result = d->projected[static_cast<std::int64_t>(source)*d->width+dim];
+            for (int corner = 0; corner < 4; ++corner) {
+                const auto metadata = static_cast<std::int64_t>(source)*4+corner;
+                const std::int32_t table = d->corner_indices[metadata];
+                if (table >= 0) {
+                    if (table >= d->position_rows) return 1;
+                    result += d->corner_weights[metadata]*
+                        d->position_table[static_cast<std::int64_t>(table)*d->width+dim];
+                }
+            }
+            d->output[row*d->width+dim] = result;
+        }
+    }
+    return 0;
+}
+int nfn_native_tile_glimmer_vision_layer_norm_float32_v1(
+    const float* input, const float* weight, const float* bias, float* output,
+    std::int64_t rows, std::int64_t width, float eps, void*) {
+    if (input == nullptr || weight == nullptr || bias == nullptr || output == nullptr ||
+        rows <= 0 || width <= 0 || !(eps > 0.0f)) return 1;
+    for (std::int64_t row = 0; row < rows; ++row) {
+        double mean = 0.0;
+        for (std::int64_t dim = 0; dim < width; ++dim) mean += input[row*width+dim];
+        mean /= width;
+        double variance = 0.0;
+        for (std::int64_t dim = 0; dim < width; ++dim) {
+            const double centered = input[row*width+dim]-mean;
+            variance += centered*centered;
+        }
+        const double inverse = 1.0/std::sqrt(variance/width+eps);
+        for (std::int64_t dim = 0; dim < width; ++dim) {
+            output[row*width+dim] = static_cast<float>(
+                (input[row*width+dim]-mean)*inverse*weight[dim]+bias[dim]);
+        }
+    }
+    return 0;
+}
+int nfn_native_tile_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1* d) {
+    if (d == nullptr || d->version != 1 || d->query == nullptr ||
+        d->key == nullptr || d->value == nullptr || d->output == nullptr ||
+        d->position_width == nullptr || d->position_height == nullptr ||
+        d->row_begin == nullptr || d->row_end == nullptr || d->rows <= 0 ||
+        d->heads <= 0 || d->head_dim <= 0 || d->head_dim % 4 != 0) return 1;
+    const auto rotated = [&](const float* values, std::int64_t row,
+                             std::int64_t head, std::int64_t dim) {
+        const auto* data = values+(row*d->heads+head)*d->head_dim;
+        const std::int64_t spatial = d->head_dim/2;
+        const std::int64_t frequencies = spatial/2;
+        if (d->interleaved_rope) {
+            const std::int64_t pair = dim/2;
+            const float position = static_cast<float>(pair < frequencies
+                ? d->position_width[row] : d->position_height[row]);
+            const auto frequency = pair%frequencies;
+            const double angle = position/std::pow(
+                d->rope_theta, static_cast<double>(frequency*2)/spatial);
+            const float first = data[pair*2], second = data[pair*2+1];
+            return static_cast<float>((dim&1)
+                ? second*std::cos(angle)+first*std::sin(angle)
+                : first*std::cos(angle)-second*std::sin(angle));
+        }
+        const auto frequency = dim%frequencies;
+        const bool width_axis = dim < frequencies ||
+            (dim >= spatial && dim < spatial+frequencies);
+        const float position = static_cast<float>(width_axis
+            ? d->position_width[row] : d->position_height[row]);
+        const double angle = position/std::pow(
+            d->rope_theta, static_cast<double>(frequency*2)/spatial);
+        const auto paired = dim < d->head_dim/2
+            ? dim+d->head_dim/2 : dim-d->head_dim/2;
+        const float other = dim < d->head_dim/2 ? -data[paired] : data[paired];
+        return static_cast<float>(data[dim]*std::cos(angle)+other*std::sin(angle));
+    };
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const auto begin = d->row_begin[row], end = d->row_end[row];
+        if (begin < 0 || end <= begin || end > d->rows) return 1;
+        for (std::int64_t head = 0; head < d->heads; ++head) {
+            std::vector<double> scores(static_cast<std::size_t>(end-begin));
+            double maximum = -std::numeric_limits<double>::infinity();
+            for (std::int64_t key_row = begin; key_row < end; ++key_row) {
+                double score = 0.0;
+                for (std::int64_t dim = 0; dim < d->head_dim; ++dim) {
+                    score += rotated(d->query,row,head,dim)*
+                        rotated(d->key,key_row,head,dim);
+                }
+                score /= std::sqrt(static_cast<double>(d->head_dim));
+                scores[static_cast<std::size_t>(key_row-begin)] = score;
+                maximum = std::max(maximum, score);
+            }
+            double denominator = 0.0;
+            for (double score : scores) denominator += std::exp(score-maximum);
+            for (std::int64_t dim = 0; dim < d->head_dim; ++dim) {
+                double result = 0.0;
+                for (std::int64_t key_row = begin; key_row < end; ++key_row) {
+                    result += std::exp(scores[static_cast<std::size_t>(key_row-begin)]-maximum)/
+                        denominator*d->value[(key_row*d->heads+head)*d->head_dim+dim];
+                }
+                d->output[(row*d->heads+head)*d->head_dim+dim] = static_cast<float>(result);
+            }
+        }
+    }
+    return 0;
+}
+int nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1* d) {
+    if (d == nullptr || d->version != 1 || d->reordered_hidden == nullptr ||
+        d->source_rows == nullptr || d->output == nullptr || d->merged_rows <= 0 ||
+        d->hidden_size <= 0 || d->merge_area <= 0) return 1;
+    for (std::int64_t row = 0; row < d->merged_rows; ++row) {
+        for (std::int64_t dim = 0; dim < d->hidden_size; ++dim) {
+            for (std::int64_t slot = 0; slot < d->merge_area; ++slot) {
+                const auto source = d->source_rows[row*d->merge_area+slot];
+                if (source < 0) return 1;
+                d->output[(row*d->hidden_size+dim)*d->merge_area+slot] =
+                    d->reordered_hidden[static_cast<std::int64_t>(source)*d->hidden_size+dim];
+            }
+        }
+    }
+    return 0;
+}
 int nfn_native_tile_glimmer_sigmoid_gate_float32_v1(
     const float* values, const float* gate, float* output, std::int64_t count, void*) {
     for (std::int64_t i = 0; i < count; ++i) output[i] = values[i] / (1.0f + std::exp(-gate[i]));
@@ -492,6 +650,340 @@ int nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1(
     }
     return 0;
 }
+int nfn_native_tile_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* d) {
+    if (d == nullptr || d->transformed_logits == nullptr || d->targets == nullptr ||
+        d->loss_mask == nullptr || d->sequence_logp == nullptr) return 1;
+    for (std::int64_t example = 0; example < d->batch_size; ++example) {
+        double total = 0.0;
+        for (std::int64_t step = 0; step < d->sequence_length; ++step) {
+            const std::int64_t row = example*d->sequence_length+step;
+            const auto target = d->targets[row];
+            const float mask = d->loss_mask[row];
+            if (target == d->ignore_index || !(mask > 0.0f)) continue;
+            if (target < 0 || target >= d->vocab_size) return 1;
+            const float* logits = d->transformed_logits+row*d->vocab_size;
+            const float maximum = *std::max_element(logits, logits+d->vocab_size);
+            double denominator = 0.0;
+            for (std::int64_t col = 0; col < d->vocab_size; ++col)
+                denominator += std::exp(static_cast<double>(logits[col]-maximum));
+            total += mask*(static_cast<double>(logits[target]-maximum)-std::log(denominator));
+        }
+        d->sequence_logp[example] = static_cast<float>(total);
+    }
+    return 0;
+}
+int nfn_native_tile_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* d) {
+    if (d == nullptr || d->transformed_logits == nullptr || d->targets == nullptr ||
+        d->loss_mask == nullptr || d->grad_sequence_logp == nullptr ||
+        d->grad_transformed_logits == nullptr) return 1;
+    const std::int64_t rows = d->batch_size*d->sequence_length;
+    for (std::int64_t row = 0; row < rows; ++row) {
+        const auto target = d->targets[row];
+        const float mask = d->loss_mask[row];
+        float* grad = d->grad_transformed_logits+row*d->vocab_size;
+        if (target == d->ignore_index || !(mask > 0.0f)) {
+            std::fill(grad, grad+d->vocab_size, 0.0f);
+            continue;
+        }
+        if (target < 0 || target >= d->vocab_size) return 1;
+        const float* logits = d->transformed_logits+row*d->vocab_size;
+        const float maximum = *std::max_element(logits, logits+d->vocab_size);
+        double denominator = 0.0;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col)
+            denominator += std::exp(static_cast<double>(logits[col]-maximum));
+        const float upstream = d->grad_sequence_logp[row/d->sequence_length]*mask;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col) {
+            const float probability = static_cast<float>(
+                std::exp(static_cast<double>(logits[col]-maximum))/denominator);
+            grad[col] = upstream*((col == target ? 1.0f : 0.0f)-probability);
+        }
+    }
+    return 0;
+}
+int nfn_native_tile_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* d) {
+    if (d == nullptr || d->row_loss == nullptr || d->chosen_reward == nullptr ||
+        d->rejected_reward == nullptr) return 1;
+    const auto softplus = [](float value) {
+        return std::max(value, 0.0f)+std::log1p(std::exp(-std::abs(value)));
+    };
+    for (std::int64_t i = 0; i < d->examples; ++i) {
+        const float chosen = d->policy_logp_chosen[i]-d->reference_logp_chosen[i];
+        const float rejected = d->policy_logp_rejected[i]-d->reference_logp_rejected[i];
+        const float logit = d->beta*(chosen-rejected);
+        if (d->loss_type == NFN_NATIVE_TILE_DPO_LOSS_HINGE) {
+            d->row_loss[i] = std::max(0.0f, 1.0f-logit);
+        } else if (d->loss_type == NFN_NATIVE_TILE_DPO_LOSS_IPO) {
+            const float delta = logit-1.0f/(2.0f*std::max(d->beta, 1.0e-8f));
+            d->row_loss[i] = delta*delta;
+        } else {
+            d->row_loss[i] = (1.0f-d->label_smoothing)*softplus(-logit)+
+                d->label_smoothing*softplus(logit);
+        }
+        d->chosen_reward[i] = d->beta*chosen;
+        d->rejected_reward[i] = d->beta*rejected;
+    }
+    return 0;
+}
+int nfn_native_tile_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* d) {
+    if (d == nullptr || d->grad_policy_logp_chosen == nullptr ||
+        d->grad_policy_logp_rejected == nullptr) return 1;
+    for (std::int64_t i = 0; i < d->examples; ++i) {
+        const float chosen = d->policy_logp_chosen[i]-d->reference_logp_chosen[i];
+        const float rejected = d->policy_logp_rejected[i]-d->reference_logp_rejected[i];
+        const float logit = d->beta*(chosen-rejected);
+        float derivative = 0.0f;
+        if (d->loss_type == NFN_NATIVE_TILE_DPO_LOSS_HINGE) {
+            derivative = logit < 1.0f ? -1.0f : 0.0f;
+        } else if (d->loss_type == NFN_NATIVE_TILE_DPO_LOSS_IPO) {
+            derivative = 2.0f*(logit-1.0f/(2.0f*std::max(d->beta, 1.0e-8f)));
+        } else {
+            derivative = 1.0f/(1.0f+std::exp(-logit))-
+                (1.0f-d->label_smoothing);
+        }
+        const float gradient = d->grad_scale*d->beta*derivative;
+        d->grad_policy_logp_chosen[i] = gradient;
+        d->grad_policy_logp_rejected[i] = -gradient;
+    }
+    return 0;
+}
+int nfn_native_tile_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* d) {
+    if (d == nullptr || d->hidden == nullptr || d->sequence_mask == nullptr ||
+        !valid(d->weight) || d->reward == nullptr || d->selected_positions == nullptr)
+        return 1;
+    for (std::int64_t example = 0; example < d->batch_size; ++example) {
+        std::int32_t selected = -1;
+        for (std::int64_t position = 0; position < d->sequence_length; ++position) {
+            const float mask = d->sequence_mask[example*d->sequence_length+position];
+            if (!std::isfinite(mask) || mask < 0.0f) return 1;
+            if (mask > 0.0f) selected = static_cast<std::int32_t>(position);
+        }
+        if (selected < 0) return 1;
+        d->selected_positions[example] = selected;
+        double reward = 0.0;
+        for (std::int64_t col = 0; col < d->hidden_size; ++col) {
+            reward += d->hidden[
+                (example*d->sequence_length+selected)*d->hidden_size+col]*
+                value(*d->weight, 0, col);
+        }
+        d->reward[example] = static_cast<float>(reward);
+    }
+    return 0;
+}
+int nfn_native_tile_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* d) {
+    if (d == nullptr || d->grad_reward == nullptr || d->grad_hidden == nullptr ||
+        d->grad_weight == nullptr || d->selected_positions == nullptr || !valid(d->weight))
+        return 1;
+    std::fill(
+        d->grad_hidden,
+        d->grad_hidden+d->batch_size*d->sequence_length*d->hidden_size,
+        0.0f);
+    std::fill(d->grad_weight, d->grad_weight+d->hidden_size, 0.0f);
+    for (std::int64_t example = 0; example < d->batch_size; ++example) {
+        const std::int32_t selected = d->selected_positions[example];
+        if (selected < 0 || selected >= d->sequence_length) return 1;
+        for (std::int64_t col = 0; col < d->hidden_size; ++col) {
+            const std::int64_t index =
+                (example*d->sequence_length+selected)*d->hidden_size+col;
+            d->grad_hidden[index] = d->grad_reward[example]*value(*d->weight, 0, col);
+            d->grad_weight[col] += d->grad_reward[example]*d->hidden[index];
+        }
+    }
+    return 0;
+}
+int nfn_native_tile_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* d) {
+    if (d == nullptr || d->row_loss == nullptr) return 1;
+    for (std::int64_t i = 0; i < d->examples; ++i) {
+        const float difference = d->reward_chosen[i]-d->reward_rejected[i];
+        d->row_loss[i] = std::max(-difference, 0.0f)+
+            std::log1p(std::exp(-std::abs(difference)));
+    }
+    return 0;
+}
+int nfn_native_tile_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* d) {
+    if (d == nullptr || d->grad_reward_chosen == nullptr ||
+        d->grad_reward_rejected == nullptr) return 1;
+    for (std::int64_t i = 0; i < d->examples; ++i) {
+        const float difference = d->reward_chosen[i]-d->reward_rejected[i];
+        const float gradient = d->grad_scale*(
+            1.0f/(1.0f+std::exp(-difference))-1.0f);
+        d->grad_reward_chosen[i] = gradient;
+        d->grad_reward_rejected[i] = -gradient;
+    }
+    return 0;
+}
+int nfn_native_tile_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* d) {
+    if (d == nullptr || d->transformed_logits == nullptr || d->targets == nullptr ||
+        d->loss_mask == nullptr || d->token_logp == nullptr ||
+        d->token_entropy == nullptr) return 1;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const auto target = d->targets[row];
+        const float mask = d->loss_mask[row];
+        if (target == d->ignore_index || !(mask > 0.0f)) {
+            d->token_logp[row] = 0.0f;
+            d->token_entropy[row] = 0.0f;
+            continue;
+        }
+        if (target < 0 || target >= d->vocab_size || !std::isfinite(mask)) return 1;
+        const float* logits = d->transformed_logits+row*d->vocab_size;
+        const float maximum = *std::max_element(logits, logits+d->vocab_size);
+        double denominator = 0.0;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col)
+            denominator += std::exp(static_cast<double>(logits[col]-maximum));
+        const double logden = std::log(denominator);
+        double entropy = 0.0;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col) {
+            const double logp = logits[col]-maximum-logden;
+            entropy -= std::exp(logp)*logp;
+        }
+        d->token_logp[row] = static_cast<float>(mask*(logits[target]-maximum-logden));
+        d->token_entropy[row] = static_cast<float>(mask*entropy);
+    }
+    return 0;
+}
+int nfn_native_tile_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* d) {
+    if (d == nullptr || d->grad_token_logp == nullptr ||
+        d->grad_token_entropy == nullptr || d->grad_transformed_logits == nullptr)
+        return 1;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const auto target = d->targets[row];
+        const float mask = d->loss_mask[row];
+        float* gradient = d->grad_transformed_logits+row*d->vocab_size;
+        if (target == d->ignore_index || !(mask > 0.0f)) {
+            std::fill(gradient, gradient+d->vocab_size, 0.0f);
+            continue;
+        }
+        if (target < 0 || target >= d->vocab_size || !std::isfinite(mask)) return 1;
+        const float* logits = d->transformed_logits+row*d->vocab_size;
+        const float maximum = *std::max_element(logits, logits+d->vocab_size);
+        double denominator = 0.0;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col)
+            denominator += std::exp(static_cast<double>(logits[col]-maximum));
+        const double logden = std::log(denominator);
+        double entropy = 0.0;
+        for (std::int64_t col = 0; col < d->vocab_size; ++col) {
+            const double logp = logits[col]-maximum-logden;
+            entropy -= std::exp(logp)*logp;
+        }
+        for (std::int64_t col = 0; col < d->vocab_size; ++col) {
+            const double logp = logits[col]-maximum-logden;
+            const float probability = static_cast<float>(std::exp(logp));
+            gradient[col] = d->grad_token_logp[row]*mask*
+                    ((col == target ? 1.0f : 0.0f)-probability) +
+                d->grad_token_entropy[row]*mask*(-probability)*
+                    (static_cast<float>(logp)+static_cast<float>(entropy));
+        }
+    }
+    return 0;
+}
+static bool fake_masked_ppo_stats(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* d,
+    double* denominator, double* mean, double* variance) {
+    double count = 0.0, sum = 0.0;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        if (!std::isfinite(d->loss_mask[row]) || d->loss_mask[row] < 0.0f ||
+            !std::isfinite(d->advantages[row])) return false;
+        count += d->loss_mask[row];
+        sum += d->loss_mask[row]*d->advantages[row];
+    }
+    if (!(count > 0.0)) return false;
+    *mean = sum/count;
+    *variance = 0.0;
+    if (d->flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) {
+        for (std::int64_t row = 0; row < d->rows; ++row) {
+            const double delta = d->advantages[row]-*mean;
+            *variance += d->loss_mask[row]*delta*delta;
+        }
+        *variance /= count;
+    }
+    *denominator = count;
+    return true;
+}
+int nfn_native_tile_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* d) {
+    if (d == nullptr || d->policy_loss == nullptr || d->value_loss == nullptr ||
+        d->entropy_bonus == nullptr || d->total_loss == nullptr) return 1;
+    double denominator = 0.0, mean = 0.0, variance = 0.0;
+    if (!fake_masked_ppo_stats(d, &denominator, &mean, &variance)) return 1;
+    const double inv_std = d->flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES
+        ? 1.0/std::sqrt(variance+d->epsilon) : 1.0;
+    double policy = 0.0, value_loss = 0.0, entropy = 0.0;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const double mask = d->loss_mask[row];
+        if (!(mask > 0.0)) continue;
+        const double advantage = (d->advantages[row]-
+            ((d->flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) ? mean : 0.0))*inv_std;
+        const double ratio = std::exp(d->logp_new[row]-d->logp_old[row]);
+        const double clipped = std::clamp(
+            ratio, 1.0-static_cast<double>(d->clip_range),
+            1.0+static_cast<double>(d->clip_range));
+        policy -= mask*std::min(ratio*advantage, clipped*advantage);
+        const double delta = d->value_new[row]-d->value_old[row];
+        const double value_clipped = d->value_old[row]+std::clamp(
+            delta, -static_cast<double>(d->clip_range),
+            static_cast<double>(d->clip_range));
+        const double raw_error = d->value_new[row]-d->returns[row];
+        const double clipped_error = value_clipped-d->returns[row];
+        value_loss += 0.5*mask*std::max(
+            raw_error*raw_error, clipped_error*clipped_error);
+        entropy += mask*d->entropy[row];
+    }
+    *d->policy_loss = static_cast<float>(policy/denominator);
+    *d->value_loss = static_cast<float>(value_loss/denominator);
+    *d->entropy_bonus = static_cast<float>(entropy/denominator);
+    *d->total_loss = *d->policy_loss+d->value_coefficient**d->value_loss-
+        d->entropy_coefficient**d->entropy_bonus;
+    return 0;
+}
+int nfn_native_tile_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* d) {
+    if (d == nullptr || d->grad_logp_new == nullptr ||
+        d->grad_value_new == nullptr || d->grad_entropy == nullptr) return 1;
+    double denominator = 0.0, mean = 0.0, variance = 0.0;
+    if (!fake_masked_ppo_stats(d, &denominator, &mean, &variance)) return 1;
+    const double inv_std = d->flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES
+        ? 1.0/std::sqrt(variance+d->epsilon) : 1.0;
+    for (std::int64_t row = 0; row < d->rows; ++row) {
+        const double mask = d->loss_mask[row];
+        if (!(mask > 0.0)) {
+            d->grad_logp_new[row] = d->grad_value_new[row] =
+                d->grad_entropy[row] = 0.0f;
+            continue;
+        }
+        const double advantage = (d->advantages[row]-
+            ((d->flags & NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) ? mean : 0.0))*inv_std;
+        const double ratio = std::exp(d->logp_new[row]-d->logp_old[row]);
+        const bool active = advantage >= 0.0
+            ? ratio <= 1.0+d->clip_range : ratio >= 1.0-d->clip_range;
+        d->grad_logp_new[row] = active
+            ? static_cast<float>(-mask*advantage*ratio/denominator) : 0.0f;
+        const double delta = d->value_new[row]-d->value_old[row];
+        const double value_clipped = d->value_old[row]+std::clamp(
+            delta, -static_cast<double>(d->clip_range),
+            static_cast<double>(d->clip_range));
+        const double raw_error = d->value_new[row]-d->returns[row];
+        const double clipped_error = value_clipped-d->returns[row];
+        double value_gradient = 0.0;
+        if (raw_error*raw_error >= clipped_error*clipped_error)
+            value_gradient = raw_error;
+        else if (delta >= -d->clip_range && delta <= d->clip_range)
+            value_gradient = clipped_error;
+        d->grad_value_new[row] = static_cast<float>(
+            d->value_coefficient*mask*value_gradient/denominator);
+        d->grad_entropy[row] = static_cast<float>(
+            -d->entropy_coefficient*mask/denominator);
+    }
+    return 0;
+}
 int nfn_native_tile_token_embedding_backward_weight_i32_float32(
     const std::int32_t* ids, const float* grad_output, float* grad_weight,
     std::int64_t rows, std::int64_t vocab, std::int64_t dim, void*) {
@@ -520,6 +1012,16 @@ int nfn_native_tile_glimmer_adamw_bf16_float32_v1(
 int nfn_native_tile_swiglu_float32(
     const float* gate, const float* up, float* output, std::int64_t count, void*) {
     for (std::int64_t i = 0; i < count; ++i) output[i] = gate[i] / (1.0f + std::exp(-gate[i])) * up[i];
+    return 0;
+}
+int nfn_native_tile_gelu_float32(
+    const float* input, float* output, std::int64_t count, void*) {
+    if (input == nullptr || output == nullptr || count <= 0) return 1;
+    for (std::int64_t i = 0; i < count; ++i) {
+        output[i] = static_cast<float>(
+            0.5 * input[i] *
+            (1.0 + std::erf(input[i] / std::sqrt(2.0f))));
+    }
     return 0;
 }
 int nfn_native_tile_swiglu_backward_float32(

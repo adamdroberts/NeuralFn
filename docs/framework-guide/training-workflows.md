@@ -170,8 +170,9 @@ records carrying `input_ids`, targets, loss masks, boundaries, tokenizer/chat
 hashes, and split/objective metadata.
 
 The C++/CUDA loop implements full parameter updates, all-eight-projection LoRA,
-and frozen NF4 group-64 QLoRA. It persists optimizer moments, RNG/sampler
-cursor, data identity, graph/source hashes, objective/adapter mode, and
+frozen NF4 group-64 QLoRA, DPO, sequence-masked reward modeling, and online
+PPO. It persists optimizer moments, RNG/sampler/rollout cursor, data identity,
+graph/source/reference/reward hashes, objective/adapter mode, and
 activation-recomputation settings. Resume validates those fields before Tile or
 CUDA state is created. QLoRA reconstructs immutable packed base rows from the
 same BF16 source, computes packed base forward and backward-input only, and
@@ -191,11 +192,49 @@ nfn train --base-model muse-glimmer \
   --output-dir runs/glimmer-qlora
 ```
 
-Exact Torch Glimmer roots additionally implement DPO with a frozen reference,
-sequence-masked reward modeling, and a real PPO rollout/value/GAE path. Those
-three objectives are not yet native C++ trainers. K-Quant-base adapter tuning,
-DFlash distillation, multimodal native tuning, and distributed 30B training
-also remain fail-closed; NF4 QLoRA must not be described as K-Quant training.
+Native DPO consumes structured chosen/rejected masks, performs policy and
+frozen-reference forwards, reduces sequence log-probabilities, and applies
+sigmoid/hinge/IPO loss. Reward training updates a last-selected-token scalar
+head with Bradley-Terry loss while the LM head stays frozen. PPO collects real
+online rollouts, evaluates frozen reference and reward checkpoints, subtracts
+per-token KL, computes GAE/returns, and performs clipped value/policy minibatch
+epochs; it never synthesizes zero placeholder rollouts.
+
+Official `k-quant-17gb` and `k-quant-dynamic` bases support native LoRA SFT and
+DPO. Their GGUF codes are immutable and distinct from NF4 QLoRA. Every adapter
+checkpoint pins the profile, base digest and tensor type table; packed DPO uses
+the identical base as its frozen reference. Packed reward/PPO and lossy adapter
+merge remain rejected.
+
+Full-BF16 AR/SFT also supports contiguous pipeline parallelism:
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-text.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-pretrain \
+  --objective ar \
+  --pipeline-parallel-size 8 \
+  --pipeline-cuda-devices 0,1,2,3,4,5,6,7 \
+  --nccl-lib /absolute/path/libnccl.so \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-8stage
+```
+
+The launcher creates one process per stage. Rank 0 owns embeddings, the final
+rank owns norm/head, NCCL carries activations/gradients and global reductions,
+and each rank performs an independent free-memory admission check. Rank-local
+BF16 model shards, F32 moment shards, cursor/RNG state, manifest and final
+`DONE` marker resume only under the identical world/stage layout. The current
+distributed contract is full-BF16 AR/SFT; adapters, preference objectives,
+tensor parallelism and data parallelism remain separately gated.
+
+`build_muse_glimmer_dflash_distillation_graph()` and
+`DFlashDistillationTrainer` provide separate target-frozen DFlash training with
+random anchors, five taps, shared embedding/head, D-PACE or decay weighting,
+self-logit distillation, exact resume, acceptance audit and native assistant
+export. This is NeuralFn's recorded recipe, not a claim about Meta's unpublished
+training provenance. Native multimodal tuning remains fail-closed.
 
 Dense GPT native transformer training now fuses token embedding, absolute
 position embedding, and the scaled embedding residual add in the raw Tile-CUDA

@@ -1755,7 +1755,10 @@ def kquant_checkpoint_descriptor(model: GGUFModel, *, profile: str) -> dict[str,
     ):
         raise GGUFError("Cannot describe a K-quant model that was not fully authenticated")
     resident_weight_bytes = sum(tensor.nbytes for tensor in model.tensors)
-    minimum_total = (32 if profile == "k-quant-dynamic" else 24) * 1024**3
+    # Meta's 24 GB / 32 GB hardware profiles use vendor-marketed decimal GB.
+    # Treating those labels as GiB incorrectly rejects, for example, a 32 GB
+    # RTX 5090 reporting 33,708,376,064 physical bytes to CUDA.
+    minimum_total = (32 if profile == "k-quant-dynamic" else 24) * 1000**3
     return {
         "format": "neuralfn.native_family_muse_glimmer.gguf.kquant.v1",
         "artifact_path": model.path.name,
@@ -1813,6 +1816,12 @@ def kquant_checkpoint_descriptor(model: GGUFModel, *, profile: str) -> dict[str,
         "capabilities": {
             "resident_cpu": True,
             "whole_model_cuda": True,
+            # The base remains immutable; the native trainer streams these
+            # packed tensors for forward/backward-input and saves only BF16
+            # LoRA deltas. `post_training` remains false until an adapter is
+            # actually attached to the execution bundle.
+            "kquant_lora_training": True,
+            "kquant_lora_objectives": ["sft", "dpo"],
             "post_training": False,
         },
     }
@@ -1973,7 +1982,7 @@ def mmproj_kquant_checkpoint_descriptor(
         },
         "capabilities": {
             "resident_cpu": True,
-            "resident_cuda": False,
+            "resident_cuda": True,
             "image": True,
             # The official GGUF converter collapses the temporal-2 patch kernel
             # to one 588-wide spatial slab. That is exact for duplicated still
