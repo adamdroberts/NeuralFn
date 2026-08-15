@@ -53,7 +53,10 @@ class PersistenceWorker:
         last_step: int | None = None,
         status: str | None = None,
         error: str | None = None,
-        completed_at: float | None = None
+        completed_at: float | None = None,
+        compatibility_report: dict[str, Any] | None = None,
+        artifact_metadata: dict[str, Any] | None = None,
+        checkpoint_path: str | None = None,
     ) -> None:
         payload = {
             "type": "update_run",
@@ -63,6 +66,9 @@ class PersistenceWorker:
             "status": status,
             "error": error,
             "completed_at": completed_at,
+            "compatibility_report": compatibility_report,
+            "artifact_metadata": artifact_metadata,
+            "checkpoint_path": checkpoint_path,
             "timestamp": time.time()
         }
         self._enqueue(payload)
@@ -155,6 +161,12 @@ class PersistenceWorker:
             if payload.get("completed_at") is not None:
                 from datetime import datetime
                 run_row.completed_at = datetime.fromtimestamp(payload["completed_at"])
+            if payload.get("compatibility_report") is not None:
+                run_row.compatibility_report = dict(payload["compatibility_report"])
+            if payload.get("artifact_metadata") is not None:
+                run_row.artifact_metadata = dict(payload["artifact_metadata"])
+            if payload.get("checkpoint_path") is not None:
+                run_row.checkpoint_path = str(payload["checkpoint_path"])
             run_row.updated_at = utcnow()
 
     def _create_snapshot(

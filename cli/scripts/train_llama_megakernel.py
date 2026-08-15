@@ -17,10 +17,44 @@ from train_llama_fast import default_output_path as _fast_default_output_path
 
 MODE_NAME = "llama_megakernel"
 GRAPH_NAME = f"{MODE_NAME}_sdk"
+_NATIVE_TEMPLATE_FLAGS = ("--template-name", "--template", "--preset")
 
 
 def mode_name(*, fast: bool = False) -> str:
     return "llama_fast_megakernel" if fast else MODE_NAME
+
+
+def native_template_name(*, fast: bool = False) -> str:
+    return "llama-fast-megakernel" if fast else "llama-megakernel"
+
+
+def _native_forwarded_argv(argv: list[str]) -> list[str]:
+    """Own the native preset selector while preserving all other CLI flags."""
+
+    fast = False
+    forwarded: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--fast":
+            fast = True
+            index += 1
+            continue
+
+        selector_flag = next(
+            (flag for flag in _NATIVE_TEMPLATE_FLAGS if arg == flag or arg.startswith(flag + "=")),
+            None,
+        )
+        if selector_flag is not None:
+            index += 1
+            if arg == selector_flag and index < len(argv) and not argv[index].startswith("-"):
+                index += 1
+            continue
+
+        forwarded.append(arg)
+        index += 1
+
+    return ["--template-name", native_template_name(fast=fast), *forwarded]
 
 
 def default_output_path(*, fast: bool = False) -> Path:
@@ -83,8 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     """Dispatch LLaMA megakernel training/preflight to the compiled native frontend."""
 
     original_argv = sys.argv
-    if argv is not None:
-        sys.argv = [str(Path(__file__).resolve()), *argv]
+    raw_argv = list(argv) if argv is not None else list(sys.argv[1:])
+    sys.argv = [str(Path(__file__).resolve()), *_native_forwarded_argv(raw_argv)]
     try:
         reject_torch_training_by_default(
             "train_llama_megakernel.py",
@@ -94,8 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             family_native_cli_name="nfn_llama_native_train",
         )
     finally:
-        if argv is not None:
-            sys.argv = original_argv
+        sys.argv = original_argv
     return 0
 
 

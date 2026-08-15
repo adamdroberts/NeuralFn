@@ -110,15 +110,19 @@ Unique constraint on `(project_id, user_id)`.
 | `project_id` | String | FK to Project |
 | `session_id` | String | FK to EditorSession |
 | `started_by_user_id` | String | FK to User |
-| `status` | String | e.g. "pending", "running", "completed", "failed", "stopped" |
+| `status` | String | e.g. "queued", "running", "completed", "error", "stopped" |
 | `requested_method` | String | Method requested by the user |
 | `resolved_method` | String | Nullable, method actually used |
+| `runtime` | String | `scalar`, `torch`, or `native-cuda` |
 | `graph_name` | String | Nullable |
 | `dataset_names` | JSON | List of dataset names used |
 | `seq_len` | Integer | Nullable |
 | `last_loss` | Float | Nullable |
 | `last_step` | Integer | Nullable |
 | `error` | String | Nullable, error message on failure |
+| `compatibility_report` | JSON | Native IR compatibility snapshot; empty for non-native runs |
+| `artifact_metadata` | JSON | Materialized IR/plan/command/checkpoint metadata |
+| `checkpoint_path` | Text | Nullable, verified final native checkpoint path |
 | `created_at` | DateTime | UTC |
 | `started_at` | DateTime | Nullable, UTC |
 | `updated_at` | DateTime | UTC |

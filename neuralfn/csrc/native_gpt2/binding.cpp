@@ -184,14 +184,29 @@ bool validate_native_command_from_config(
 bool command_from_config(PyObject* config, std::vector<std::string>* command, std::string* error) {
     std::string train_data;
     std::string val_data;
+    bool prefer_compiled_cli = false;
     if (!optional_string_from_config(config, "train_data", &train_data)) {
         return false;
     }
     if (!optional_string_from_config(config, "val_data", &val_data)) {
         return false;
     }
+    if (!optional_bool_from_config(
+            config, "prefer_compiled_cli", false, &prefer_compiled_cli)) {
+        return false;
+    }
 
     command->clear();
+    if (prefer_compiled_cli) {
+        if (!string_list_from_config(config, "compiled_cli_argv", command)) {
+            return false;
+        }
+        if (!command->empty()) {
+            return validate_native_command_from_config(config, command, error);
+        }
+        *error = "native GPT config requires a non-empty compiled_cli_argv list";
+        return true;
+    }
     const bool use_compiled_cli = train_data.empty() || val_data.empty();
     if (use_compiled_cli) {
         if (!string_list_from_config(config, "compiled_cli_argv", command)) {

@@ -1,6 +1,6 @@
 # neuralfn.builtins
 
-Library of 115 built-in neuron definitions ready to drop into a graph.
+Library of 135 built-in neuron definitions ready to drop into a graph.
 
 ## Class: BuiltinNeurons
 
@@ -8,7 +8,7 @@ Library of 115 built-in neuron definitions ready to drop into a graph.
 class BuiltinNeurons:
     sigmoid = ...       # NeuronDef
     relu = ...          # NeuronDef
-    # ... all 115 builtins as class attributes
+    # ... all 135 builtins as class attributes
 ```
 
 Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
@@ -17,7 +17,7 @@ Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
 
 #### `BuiltinNeurons.all() -> list[NeuronDef]`
 
-Return the full built-in neuron catalog (all 115 entries).
+Return the full built-in neuron catalog (all 135 entries).
 
 #### `BuiltinNeurons.get(name: str) -> NeuronDef`
 
@@ -107,6 +107,15 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `mlp_relu2_module` | mlp_relu2 | module | 1 | 1 |
 | `gelu_module` | gelu | module | 1 | 1 |
 | `swiglu_module` | swiglu | module | 1 | 1 |
+| `silu_module` | tensor_silu | module | 1 | 1 |
+| `sigmoid_module` | tensor_sigmoid | module | 1 | 1 |
+| `multiply_module` | tensor_multiply | module | 2 | 1 |
+
+`swiglu` reads `model_dim`, floating-point `mlp_mult`, and optional
+`multiple_of` from `module_config`. Its hidden width is
+`int(model_dim * mlp_mult)`, rounded up to `multiple_of` when provided, in both
+the Torch and CUDA Tile implementations. Custom checkpoints created when the
+runtime ignored non-`8/3` multipliers need projection-shape migration.
 
 ### Torch -- Normalization
 
@@ -115,6 +124,21 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `rms_norm_module` | rms_norm | module | 1 | 1 |
 | `layer_norm_module` | layer_norm | module | 1 | 1 |
 | `dropout_module` | dropout | module | 1 | 1 |
+
+`rms_norm` has two intentionally supported serialized forms. A
+`module_config` containing `model_dim` creates a learnable float32 scale of
+that length initialized to ones; template builders use this affine form. When
+`model_dim` is absent, the module stays parameter-free so existing standalone
+and legacy graph payloads retain their prior behavior.
+
+`centered=true` initializes the learned parameter to zero and applies
+`(1 + weight)`; `force_float32=true` performs the reduction and affine
+multiply in float32 before casting back. These flags encode the Glimmer
+Gemma-2-style norm contract without changing existing RMSNorm nodes.
+
+`rotary_embedding` accepts `convention="legacy"` (default) or
+`convention="hf"`. The latter uses the Transformers `rotate_half` sign
+convention required by Muse Glimmer; existing serialized nodes remain legacy.
 
 ### Torch -- Attention
 
@@ -144,6 +168,7 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `tied_lm_head_module` | tied_lm_head | module | 2 | 1 |
 | `lm_head_module` | lm_head | module | 1 | 1 |
 | `logit_softcap_module` | logit_softcap | module | 1 | 1 |
+| `tensor_scale_module` | tensor_scale | module | 1 | 1 |
 | `token_cross_entropy_module` | token_cross_entropy | module | 2 | 1 |
 | `masked_token_cross_entropy_module` | masked_token_cross_entropy | module | 3 | 1 |
 
@@ -177,6 +202,16 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `load_balance_loss_module` | load_balance_loss | module | 3 | 2 |
 | `aux_loss_add_module` | aux_loss_add | module | 2 | 1 |
 | `loss_scale_module` | loss_scale | module | 1 | 1 |
+
+`expert_dispatch` reads `model_dim`, `experts`, floating-point `mlp_mult`, and
+optional `multiple_of` from `module_config`. Torch and CUDA Tile use identical
+packed parameter shapes: `w1` and `w3` are
+`[experts, model_dim, hidden_dim]`, while `w2` is
+`[experts, hidden_dim, model_dim]`, where `hidden_dim` is
+`max(1, int(model_dim * mlp_mult))` and is rounded upward only for a positive
+alignment. `None` and `0` are unaligned. Legacy serialized nodes that omit
+`mlp_mult` retain the intentional `4.0` default; invalid, non-finite, or
+non-positive multipliers and negative alignments are rejected.
 
 `topk_route_module` accepts `score_fn` in its module config. The default is
 `"softmax"`; `"sigmoid"` and DeepSeek-V4 `"sqrt_softplus"` are also supported

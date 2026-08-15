@@ -1,0 +1,112 @@
+{
+  "schema": "neuralfn.muse_glimmer.reference.v1",
+  "transformers_revision": "d1123114da1ab4395198146f4f84dae7fe8b693e",
+  "transformers_files": {
+    "src/transformers/models/muse_glimmer/modular_muse_glimmer.py": "adc0b4efdfb5e1e4a245ec6738ef4d3de92550c080ac623c495b0ff5e7479caf",
+    "src/transformers/models/muse_glimmer_assistant/modular_muse_glimmer_assistant.py": "74263100a445bd0f74fc9f7b8867bbe41a6f09d41db8bce910699e1d24738642",
+    "src/transformers/generation/candidate_generator.py": "cf3ba7f85407bd24f5a6016135809137d57492fca9d4373f7813242c1b7b75c2"
+  },
+  "model_revision": "a4e59da52a7bc87ae7251dd5545c0dd437c44b68",
+  "assistant_revision": "e8192f3a8f617f74be2ce220360c89ef4789f39f",
+  "gguf_revision": "43c7eadd41352a299ea8e0a36b3157978dd63596",
+  "llama_cpp_revision": "62bf73d",
+  "dflash_training_recipe": {
+    "implementation": "neuralfn.muse_glimmer_dflash_distill.v1",
+    "upstream_repository": "NVIDIA/Model-Optimizer",
+    "upstream_revision": "686da8d893536688e86adae41aa628aa740a1a35",
+    "upstream_files": {
+      "modelopt/torch/speculative/config.py": "7e13156356ceaf49ba47de6e026a15b3e361a024d3f17b50c52636a37a90624c",
+      "modelopt/torch/speculative/plugins/hf_dflash.py": "39027f00e60701d74c9c34d9307cda965f7f79769bcc1a2e63d649a71d57c5e6",
+      "examples/speculative_decoding/doc/dflash.md": "fb37198f4af5f20a1332bc53a92f16174732310f7e04788a21af919e1c3c9a50"
+    },
+    "meta_released_training_recipe_claimed": false
+  },
+  "tokenizer_contract": {
+    "tokenizer_json_sha256": "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d",
+    "tokenizer_config_sha256": "781e6c74f571642c71202167b67d9255b28cc439bdda1582ff31346182f5a9c5",
+    "added_tokens_canonical_sha256": "6b89e78e0ac391500aa191fae2ec274aaa9453498e273ce6f0e18253abffa5ca",
+    "atem_template_sha256": "cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678",
+    "vocab_size": 202048,
+    "special_token_ids": {
+      "bos": 200000,
+      "eos": 200001,
+      "eom": 200007,
+      "eot": 200008,
+      "pad": 200018,
+      "start": 200022,
+      "message": 200023,
+      "image_start": 200080,
+      "image_end": 200081,
+      "video_start": 200082,
+      "video_end": 200083,
+      "video_frame_separator": 200087,
+      "image": 200090,
+      "video": 200091,
+      "patch": 200092,
+      "dflash_mask": 201818
+    },
+    "stop_token_ids": [200001, 200008]
+  },
+  "chat_goldens": [
+    {
+      "name": "default_system_user_generation",
+      "current_date": "2026-08-12",
+      "messages": [
+        {"role": "user", "content": "Hello, Glimmer!"}
+      ],
+      "add_generation_prompt": true,
+      "rendered": "<|begin_of_text|><|start|>system<|message|>You are a helpful AI assistant.\nKnowledge cutoff: 2026-01-04.\nCurrent date: 2026-08-12.\n\nReasoning strength: high.\n\n# Valid recipients: \"self\", \"user\".<|eot|><|start|>user<|message|>Hello, Glimmer!<|eot|><|start|>assistant",
+      "token_ids": [200000, 200022, 15651, 200023, 4662, 583, 262, 19933, 12133, 43910, 335, 111198, 67059, 38, 220, 837, 34, 25, 1761, 25, 2468, 335, 8048, 4282, 38, 220, 837, 34, 25, 2834, 25, 738, 1574, 34956, 300, 9762, 38, 2244, 1574, 15, 14757, 73965, 38, 392, 2540, 706, 392, 1556, 4205, 200008, 200022, 1556, 200023, 19873, 24, 5342, 36886, 13, 200008, 200022, 140680]
+    },
+    {
+      "name": "explicit_system_history",
+      "current_date": "2026-08-12",
+      "messages": [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "What is 2+2?"},
+        {"role": "assistant", "content": "4"},
+        {"role": "user", "content": "And 3+3?"}
+      ],
+      "add_generation_prompt": true,
+      "rendered": "<|begin_of_text|><|start|>system<|message|>Be concise.\n\nReasoning strength: high.\n\n# Valid recipients: \"self\", \"user\".<|eot|><|start|>user<|message|>What is 2+2?<|eot|><|start|>assistant to=user<|message|>4<|eot|><|start|>user<|message|>And 3+3?<|eot|><|start|>assistant",
+      "token_ids": [200000, 200022, 15651, 200023, 3654, 81080, 1574, 34956, 300, 9762, 38, 2244, 1574, 15, 14757, 73965, 38, 392, 2540, 706, 392, 1556, 4205, 200008, 200022, 1556, 200023, 3668, 373, 220, 30, 23, 30, 43, 200008, 200022, 140680, 328, 76976, 200023, 32, 200008, 200022, 1556, 200023, 4122, 220, 31, 23, 31, 43, 200008, 200022, 140680]
+    },
+    {
+      "name": "reasoning_normalization_utf8",
+      "current_date": "2026-08-12",
+      "messages": [
+        {"role": "system", "content": "Reasoning effort: low."},
+        {"role": "user", "content": "UTF-8: café 🦋"}
+      ],
+      "add_generation_prompt": false,
+      "rendered": "<|begin_of_text|><|start|>system<|message|>Reasoning strength: low.\n\n# Valid recipients: \"self\", \"user\".<|eot|><|start|>user<|message|>UTF-8: café 🦋<|eot|>",
+      "token_ids": [200000, 200022, 15651, 200023, 34956, 300, 9762, 38, 4463, 1574, 15, 14757, 73965, 38, 392, 2540, 706, 392, 1556, 4205, 200008, 200022, 1556, 200023, 14674, 25, 36, 38, 49652, 9522, 112, 233, 200008]
+    }
+  ],
+  "tiny_text_config": {
+    "vocab_size": 64,
+    "hidden_size": 32,
+    "intermediate_size": 96,
+    "num_hidden_layers": 4,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "head_dim": 4,
+    "max_position_embeddings": 32,
+    "sliding_window": 4,
+    "rope_theta": 500000.0,
+    "rms_norm_eps": 0.00001,
+    "post_norm_eps": 1e-8,
+    "qk_scale_factor": 3.87,
+    "output_multiplier": 0.19611613513818404,
+    "final_logit_softcapping": 20.0,
+    "layer_types": [
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention"
+    ],
+    "layer_rope_theta": [500000.0, 500000.0, 500000.0, 0.0]
+  },
+  "seed": 1234,
+  "input_ids": [[1, 7, 13, 8, 4, 9, 2]]
+}

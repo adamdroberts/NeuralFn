@@ -10,6 +10,7 @@
 #include <exception>
 #include <fstream>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -63,7 +64,14 @@
 
 namespace {
 
-constexpr std::int64_t kNativeFamilyLossReportScalarCount = 6;
+constexpr std::int64_t kNativeFamilyLossReportLm = 0;
+constexpr std::int64_t kNativeFamilyLossReportJepa = 1;
+constexpr std::int64_t kNativeFamilyLossReportSemantic = 2;
+constexpr std::int64_t kNativeFamilyLossReportSemanticRouteDistill = 3;
+constexpr std::int64_t kNativeFamilyLossReportSemanticAlignment = 4;
+constexpr std::int64_t kNativeFamilyLossReportSemanticAlignmentCount = 5;
+constexpr std::int64_t kNativeFamilyLossReportRouterAux = 6;
+constexpr std::int64_t kNativeFamilyLossReportScalarCount = 7;
 
 bool native_full_geometry_build_enabled() {
     return NFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD != 0 &&
@@ -144,6 +152,7 @@ struct Config {
     std::string output_dir = "artifacts";
     std::string template_name = NFN_NATIVE_MODEL_FAMILY;
     std::string graph_file;
+    std::string graph_fingerprint;
     std::string native_checkpoint;
     std::string tile_ops_lib;
     std::int64_t max_steps = 20000;
@@ -186,6 +195,9 @@ struct Config {
     std::int64_t evo_elite_count = 1;
     double evo_layer_mutation_scale = 0.02;
     double learning_rate = 0.0006;
+    double weight_decay = 0.02;
+    double router_aux_loss_coef = -1.0;
+    bool router_aux_loss_coef_explicit = false;
     std::string lr_schedule = "cosine";
     double final_lr_fraction = 0.0;
     bool print_plan = false;
@@ -297,6 +309,173 @@ std::string json_escape(std::string_view value) {
         }
     }
     return out.str();
+}
+
+class NativeFamilySha256 {
+public:
+    NativeFamilySha256()
+        : state_{
+              0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
+              0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u} {}
+
+    void update(const std::uint8_t* data, std::size_t size) {
+        total_bytes_ += static_cast<std::uint64_t>(size);
+        while (size > 0) {
+            const std::size_t available = block_.size() - block_size_;
+            const std::size_t count = std::min(size, available);
+            std::memcpy(block_.data() + block_size_, data, count);
+            block_size_ += count;
+            data += count;
+            size -= count;
+            if (block_size_ == block_.size()) {
+                transform(block_.data());
+                block_size_ = 0;
+            }
+        }
+    }
+
+    std::string finish_hex() {
+        const std::uint64_t bit_length = total_bytes_ * 8u;
+        block_[block_size_++] = 0x80u;
+        if (block_size_ > 56) {
+            std::fill(block_.begin() + static_cast<std::ptrdiff_t>(block_size_), block_.end(), 0u);
+            transform(block_.data());
+            block_size_ = 0;
+        }
+        std::fill(
+            block_.begin() + static_cast<std::ptrdiff_t>(block_size_),
+            block_.begin() + 56,
+            0u);
+        for (std::size_t i = 0; i < 8; ++i) {
+            block_[63 - i] = static_cast<std::uint8_t>(bit_length >> (i * 8));
+        }
+        transform(block_.data());
+        std::ostringstream out;
+        out << std::hex << std::setfill('0');
+        for (std::uint32_t word : state_) {
+            out << std::setw(8) << word;
+        }
+        return out.str();
+    }
+
+private:
+    static std::uint32_t rotate_right(std::uint32_t value, std::uint32_t amount) {
+        return (value >> amount) | (value << (32u - amount));
+    }
+
+    void transform(const std::uint8_t* block) {
+        static constexpr std::array<std::uint32_t, 64> kRoundConstants = {
+            0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
+            0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
+            0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
+            0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
+            0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu,
+            0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
+            0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u,
+            0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u,
+            0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
+            0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
+            0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u,
+            0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
+            0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u,
+            0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
+            0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
+            0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u,
+        };
+        std::array<std::uint32_t, 64> schedule{};
+        for (std::size_t i = 0; i < 16; ++i) {
+            const std::size_t offset = i * 4;
+            schedule[i] =
+                (static_cast<std::uint32_t>(block[offset]) << 24u) |
+                (static_cast<std::uint32_t>(block[offset + 1]) << 16u) |
+                (static_cast<std::uint32_t>(block[offset + 2]) << 8u) |
+                static_cast<std::uint32_t>(block[offset + 3]);
+        }
+        for (std::size_t i = 16; i < schedule.size(); ++i) {
+            const std::uint32_t s0 = rotate_right(schedule[i - 15], 7u) ^
+                rotate_right(schedule[i - 15], 18u) ^ (schedule[i - 15] >> 3u);
+            const std::uint32_t s1 = rotate_right(schedule[i - 2], 17u) ^
+                rotate_right(schedule[i - 2], 19u) ^ (schedule[i - 2] >> 10u);
+            schedule[i] = schedule[i - 16] + s0 + schedule[i - 7] + s1;
+        }
+
+        std::uint32_t a = state_[0];
+        std::uint32_t b = state_[1];
+        std::uint32_t c = state_[2];
+        std::uint32_t d = state_[3];
+        std::uint32_t e = state_[4];
+        std::uint32_t f = state_[5];
+        std::uint32_t g = state_[6];
+        std::uint32_t h = state_[7];
+        for (std::size_t i = 0; i < schedule.size(); ++i) {
+            const std::uint32_t sum1 = rotate_right(e, 6u) ^ rotate_right(e, 11u) ^ rotate_right(e, 25u);
+            const std::uint32_t choose = (e & f) ^ ((~e) & g);
+            const std::uint32_t temp1 = h + sum1 + choose + kRoundConstants[i] + schedule[i];
+            const std::uint32_t sum0 = rotate_right(a, 2u) ^ rotate_right(a, 13u) ^ rotate_right(a, 22u);
+            const std::uint32_t majority = (a & b) ^ (a & c) ^ (b & c);
+            const std::uint32_t temp2 = sum0 + majority;
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+        state_[0] += a;
+        state_[1] += b;
+        state_[2] += c;
+        state_[3] += d;
+        state_[4] += e;
+        state_[5] += f;
+        state_[6] += g;
+        state_[7] += h;
+    }
+
+    std::array<std::uint32_t, 8> state_{};
+    std::array<std::uint8_t, 64> block_{};
+    std::size_t block_size_ = 0;
+    std::uint64_t total_bytes_ = 0;
+};
+
+bool native_family_sha256_file(
+    const std::filesystem::path& path,
+    std::string* sha256,
+    std::int64_t* nbytes,
+    std::string* error) {
+    if (sha256 == nullptr || nbytes == nullptr || error == nullptr) {
+        return false;
+    }
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        *error = "failed to open native family parameter sidecar for SHA-256";
+        return false;
+    }
+    NativeFamilySha256 digest;
+    std::array<char, 64 * 1024> chunk{};
+    std::int64_t total = 0;
+    while (input) {
+        input.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+        const std::streamsize count = input.gcount();
+        if (count < 0 || total > std::numeric_limits<std::int64_t>::max() - count) {
+            *error = "native family parameter sidecar size overflow";
+            return false;
+        }
+        if (count > 0) {
+            digest.update(
+                reinterpret_cast<const std::uint8_t*>(chunk.data()),
+                static_cast<std::size_t>(count));
+            total += count;
+        }
+    }
+    if (!input.eof()) {
+        *error = "failed while reading native family parameter sidecar for SHA-256";
+        return false;
+    }
+    *sha256 = digest.finish_hex();
+    *nbytes = total;
+    return true;
 }
 
 std::string require_value(int argc, char** argv, int* index, const std::string& flag) {
@@ -585,6 +764,9 @@ std::int64_t semantic_total_experts(const Config& cfg) {
     return cfg.semantic_shared_experts + cfg.semantic_vocab_dims + cfg.semantic_free_experts;
 }
 
+bool native_family_uses_auxfree_moe_balance(const std::string& family);
+bool native_family_uses_standard_moe_router_aux_loss(const Config& cfg);
+
 void apply_semantic_architecture_defaults(Config& cfg) {
     const bool semantic_moe = is_semantic_moe_template(cfg);
     const bool semantic_contract = uses_semantic_expert_contract(cfg);
@@ -596,6 +778,19 @@ void apply_semantic_architecture_defaults(Config& cfg) {
     }
     if (cfg.experts < 0) {
         cfg.experts = semantic_contract ? semantic_total_experts(cfg) : 8;
+    }
+    if (!cfg.router_aux_loss_coef_explicit) {
+        const std::string family = normalized_id(NFN_NATIVE_MODEL_FAMILY);
+        const std::string preset = normalized_id(cfg.template_name);
+        const std::string full_identity = normalized_id(
+            std::string(NFN_NATIVE_MODEL_FAMILY) + "-" + cfg.template_name);
+        const bool legacy_standard_moe =
+            !native_family_uses_auxfree_moe_balance(full_identity) &&
+            (family == "mixllama" || family == "moe-jepa-evo" ||
+             preset == "mixllama" || preset == "moe" ||
+             preset == "mixllama-fast" || preset == "mixllama-fast-megakernel" ||
+             preset == "moe-jepa-evo");
+        cfg.router_aux_loss_coef = legacy_standard_moe ? 0.01 : 0.0;
     }
 }
 
@@ -670,6 +865,53 @@ void validate_semantic_architecture(const Config& cfg) {
     }
     if (cfg.vocab_size > 0 && cfg.padded_vocab_size > 0 && cfg.padded_vocab_size < cfg.vocab_size) {
         std::cerr << "--padded-vocab-size cannot be smaller than --vocab-size\n";
+        std::exit(2);
+    }
+    if (!cfg.graph_fingerprint.empty()) {
+        const bool valid_graph_fingerprint = cfg.graph_fingerprint.size() == 64 &&
+            std::all_of(
+                cfg.graph_fingerprint.begin(),
+                cfg.graph_fingerprint.end(),
+                [](unsigned char ch) {
+                    return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+                });
+        if (!valid_graph_fingerprint) {
+            std::cerr << "--graph-fingerprint must be one lowercase SHA-256 digest\n";
+            std::exit(2);
+        }
+    }
+    if (cfg.graph_file.empty() != cfg.graph_fingerprint.empty()) {
+        std::cerr << "--graph-file and --graph-fingerprint must be supplied together\n";
+        std::exit(2);
+    }
+    if (cfg.weight_decay < 0.0 || !std::isfinite(cfg.weight_decay)) {
+        std::cerr << "--weight-decay must be finite and non-negative\n";
+        std::exit(2);
+    }
+    if (cfg.router_aux_loss_coef < 0.0 || !std::isfinite(cfg.router_aux_loss_coef)) {
+        std::cerr << "--router-aux-loss-coef must be finite and non-negative\n";
+        std::exit(2);
+    }
+    const float router_aux_loss_coef_f32 =
+        static_cast<float>(cfg.router_aux_loss_coef);
+    if (!std::isfinite(router_aux_loss_coef_f32) ||
+        (cfg.router_aux_loss_coef > 0.0 && router_aux_loss_coef_f32 == 0.0f)) {
+        std::cerr
+            << "--router-aux-loss-coef must be representable as a nonzero finite float32 when positive\n";
+        std::exit(2);
+    }
+    if (cfg.router_aux_loss_coef > 0.0 &&
+        !native_family_uses_standard_moe_router_aux_loss(cfg)) {
+        std::cerr
+            << "--router-aux-loss-coef is only supported by standard softmax-MoE native profiles\n";
+        std::exit(2);
+    }
+    if (!cfg.graph_file.empty() && !cfg.unparsed_args.empty()) {
+        std::cerr << "graph-authored native training rejects unrecognized arguments:";
+        for (const std::string& arg : cfg.unparsed_args) {
+            std::cerr << " " << arg;
+        }
+        std::cerr << "\n";
         std::exit(2);
     }
     if (cfg.semantic_vocab_dims <= 0) {
@@ -1035,6 +1277,14 @@ bool native_family_uses_auxfree_moe_balance(const std::string& family) {
          (family.find("moe") != std::string::npos ||
           family.find("mixllama") != std::string::npos ||
           family.find("deepseek") != std::string::npos));
+}
+
+bool native_family_uses_standard_moe_router_aux_loss(const Config& cfg) {
+    const std::string family = normalized_id(NFN_NATIVE_MODEL_FAMILY);
+    const std::string full_identity =
+        normalized_id(std::string(NFN_NATIVE_MODEL_FAMILY) + "-" + cfg.template_name);
+    return !native_family_uses_auxfree_moe_balance(full_identity) &&
+        (family == "mixllama" || family == "moe-jepa-evo" || family == "jamba");
 }
 
 std::vector<ParameterBufferSpec> family_parameter_buffers(const Config& cfg) {
@@ -1893,7 +2143,9 @@ NativeFamilyProductionState build_native_family_production_state(
     state.temporary_active_buffer_high_water_count =
         state.parameters.temporary_active_buffer_high_water_count();
 
-    state.optimizer = neuralfn::native_train::FamilyOptimizerState(state.parameters.buffers());
+    state.optimizer = neuralfn::native_train::FamilyOptimizerState(
+        state.parameters.buffers(),
+        static_cast<float>(cfg.weight_decay));
     state.optimizer.set_cuda_graph_capture_enabled(native_family_cuda_graph_capture_enabled());
     state.optimizer_allocated = state.optimizer.allocate(cuda_runtime_lib, tile_ops_lib, &state.error);
     if (state.optimizer_allocated && state.resume_sidecar_loaded) {
@@ -1997,6 +2249,9 @@ struct NativeFamilyProductionBootstrap {
     std::int64_t production_step_parameter_store_checksum_count = 0;
     bool production_step_parameter_store_checksum_computed = false;
     bool production_step_parameter_store_checksum_changed = false;
+    double router_aux_loss_coef = 0.0;
+    bool last_production_losses_valid = false;
+    neuralfn::native_train::FamilyProductionLosses last_production_losses;
     std::string requested_checkpoint;
     std::string resolved_resume_sidecar;
     std::string cuda_runtime_lib;
@@ -2018,6 +2273,7 @@ NativeFamilyProductionBootstrap prepare_native_family_production_bootstrap(
     const Config& cfg,
     const char* program) {
     NativeFamilyProductionBootstrap bootstrap;
+    bootstrap.router_aux_loss_coef = cfg.router_aux_loss_coef;
     const std::vector<ParameterBufferSpec> buffers = family_parameter_buffers(cfg);
     bootstrap.parameter_role_counts = native_family_parameter_role_counts(buffers);
     bootstrap.parameter_elements = parameter_element_count(buffers);
@@ -2126,6 +2382,20 @@ void write_native_family_production_bootstrap_json(
         << indent << "  \"required\": " << (bootstrap.required ? "true" : "false") << ",\n"
         << indent << "  \"attempted\": " << (bootstrap.attempted ? "true" : "false") << ",\n"
         << indent << "  \"ready\": " << (bootstrap.ready ? "true" : "false") << ",\n"
+        << indent << "  \"router_aux_loss_coef\": " << bootstrap.router_aux_loss_coef << ",\n"
+        << indent << "  \"standard_moe_router_aux_loss_formula\": "
+        << "\"experts*sum(mean_over_tokens(softmax(router_logits))^2)\",\n"
+        << indent << "  \"standard_moe_router_aux_loss_gradient\": "
+        << "\"all_expert_softmax_jacobian_accumulated_into_route_logits\",\n"
+        << indent << "  \"last_production_losses_valid\": "
+        << (bootstrap.last_production_losses_valid ? "true" : "false") << ",\n"
+        << indent << "  \"last_production_losses\": {"
+        << "\"total\":" << bootstrap.last_production_losses.total
+        << ",\"autoregressive\":" << bootstrap.last_production_losses.autoregressive
+        << ",\"router\":" << bootstrap.last_production_losses.router
+        << ",\"jepa\":" << bootstrap.last_production_losses.jepa
+        << ",\"semantic\":" << bootstrap.last_production_losses.semantic
+        << ",\"auxiliary\":" << bootstrap.last_production_losses.auxiliary << "},\n"
         << indent << "  \"parameter_store\": \"FamilyDeviceParameterStore\",\n"
         << indent << "  \"optimizer_state\": \"FamilyOptimizerState\",\n"
         << indent << "  \"temporary_activation_workspace_pool\": true,\n"
@@ -2826,9 +3096,13 @@ void print_usage(const char* program) {
         << "  --print-plan              Emit JSON with native work and schedule metadata\n"
         << "  --check-tile-ops          Check required raw Tile symbols from the trainer ABI\n"
         << "  --sample-token-batch      Resolve native token shards and emit the first token/target batch\n"
+        << "  --graph-file PATH         Bind an authoring-graph snapshot to the emitted checkpoint\n"
+        << "  --graph-fingerprint SHA   Verify the snapshot's lowercase SHA-256 provenance digest\n"
         << "  --native-checkpoint PATH  Resolve/load a native-family float32 sidecar or checkpoint directory for resume preflight\n"
         << "  --checkpoint-every-steps N Write native family checkpoints every N optimizer steps (default: 5000; 0 disables)\n"
         << "  --progress-every-steps N  Emit native dataset-loop progress every N optimizer steps (default: 1)\n"
+        << "  --weight-decay N          Set AdamW decay for non-norm/non-bias parameters (default: 0.02)\n"
+        << "  --router-aux-loss-coef N Set the standard-MoE graph router auxiliary-loss coefficient (legacy MoE default: 0.01)\n"
         << "  --model-dim N             Set production family model width for parameter layout (default: 768)\n"
         << "  --hidden-dim N            Set production family MLP width (overrides derived width)\n"
         << "  --mlp-multiplier N        Derive MLP width from model_dim (default: 8/3 for LLaMA-style families, 4 otherwise)\n"
@@ -3130,6 +3404,8 @@ Config parse_args(int argc, char** argv) {
             cfg.template_name = require_value(argc, argv, &i, arg);
         } else if (arg == "--graph-file" || arg == "--graph") {
             cfg.graph_file = require_value(argc, argv, &i, arg);
+        } else if (arg == "--graph-fingerprint") {
+            cfg.graph_fingerprint = require_value(argc, argv, &i, arg);
         } else if (arg == "--native-checkpoint" || arg == "--checkpoint") {
             cfg.native_checkpoint = require_value(argc, argv, &i, arg);
         } else if (arg == "--tile-ops-lib" || arg == "--native-cuda-tile-ops-lib") {
@@ -3221,6 +3497,12 @@ Config parse_args(int argc, char** argv) {
             cfg.evo_elite_count = parse_i64(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--learning-rate" || arg == "--lr") {
             cfg.learning_rate = parse_f64(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--weight-decay") {
+            cfg.weight_decay = parse_f64(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--router-aux-loss-coef" ||
+                   arg == "--native-cuda-router-aux-loss-coef") {
+            cfg.router_aux_loss_coef = parse_f64(require_value(argc, argv, &i, arg), arg);
+            cfg.router_aux_loss_coef_explicit = true;
         } else if (arg == "--lr-schedule" || arg == "--learning-rate-schedule") {
             cfg.lr_schedule = normalize_lr_schedule(require_value(argc, argv, &i, arg));
         } else if (arg == "--final-lr-fraction" ||
@@ -3421,6 +3703,10 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"native_token_batch_format\": \"" << (byte_token_batch ? "uint8_byte_shards" : "uint16_token_shards") << "\",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"graph_fingerprint\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+        << "  \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << ",\n"
+        << "  \"standard_moe_router_aux_loss_formula\": "
+        << "\"experts*sum(mean_over_tokens(softmax(router_logits))^2)\",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
         << "  \"output_dir\": \"" << json_escape(cfg.output_dir) << "\",\n"
         << "  \"native_checkpoint\": {\n"
@@ -3647,7 +3933,8 @@ void print_json(const Config& cfg, const char* program) {
         << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\""
         << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
         << ", \"warmup_steps\": " << cfg.warmup_steps
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"evo_hyperparameters\": {\"layer_interval\": " << cfg.evo_layer_interval
         << ", \"mutation_scale\": " << cfg.evo_layer_mutation_scale
         << ", \"tournament_size\": " << cfg.evo_tournament_size
@@ -3870,6 +4157,8 @@ int print_family_layout_checkpoint_smoke_json(const Config& cfg, const char*) {
                 << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
                 << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
                 << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+                << "  \"graph_fingerprint\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+                << "  \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << ",\n"
                 << "  \"torch_required\": false,\n"
                 << "  \"graph_editor_tensor_flow\": false,\n"
                 << "  \"parameter_buffer_count\": " << buffers.size() << ",\n"
@@ -16320,7 +16609,7 @@ bool write_cuda_optimizer_native_family_parameter_state_file(
         constexpr float kBeta1 = 0.9f;
         constexpr float kBeta2 = 0.95f;
         constexpr float kEps = 1.0e-8f;
-        constexpr float kWeightDecay = 0.02f;
+        const float weight_decay = static_cast<float>(cfg.weight_decay);
         constexpr float kBiasCorrection1 = 0.1f;
         constexpr float kSqrtBiasCorrection2 = 0.22360679775f;
         int status = adamw(
@@ -16333,7 +16622,7 @@ bool write_cuda_optimizer_native_family_parameter_state_file(
             kBeta1,
             kBeta2,
             kEps,
-            kWeightDecay,
+            weight_decay,
             kBiasCorrection1,
             kSqrtBiasCorrection2,
             nullptr);
@@ -16766,6 +17055,8 @@ struct NativeFamilyTileLlamaApi {
         const float*, const float*, const std::int64_t*, const float*, const float*, const float*,
         const float*, float*, float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, std::int64_t, void*);
+    using MoeRouterAuxLossBackwardFn = int (*)(
+        const float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
     using QuantizedMoeSwiGluForwardFn = int (*)(
         const float*, const float*, const std::int64_t*, const float*, const float*, const float*,
         float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -16890,6 +17181,7 @@ struct NativeFamilyTileLlamaApi {
     MoeSwiGluForwardFn moe_forward = nullptr;
     MoeSwiGluBackwardFn moe_backward = nullptr;
     MoeSwiGluBackwardWithRouteGradFn moe_backward_with_route_grad = nullptr;
+    MoeRouterAuxLossBackwardFn moe_router_aux_loss_backward = nullptr;
     QuantizedMoeSwiGluForwardFn moe_forward_quantized = nullptr;
     QuantizedMoeSwiGluBackwardWithRouteGradFn moe_backward_quantized_with_route_grad = nullptr;
     SemanticHashFn semantic_hash = nullptr;
@@ -17371,6 +17663,12 @@ bool load_native_family_tile_llama_api(
         NFN_LOAD_LLAMA_SYMBOL(moe_backward_with_route_grad,
                               NativeFamilyTileLlamaApi::MoeSwiGluBackwardWithRouteGradFn,
                               "nfn_native_tile_moe_swiglu_backward_with_route_grad_float32");
+        if (native_family_uses_standard_moe_router_aux_loss(cfg)) {
+            NFN_LOAD_LLAMA_SYMBOL(
+                moe_router_aux_loss_backward,
+                NativeFamilyTileLlamaApi::MoeRouterAuxLossBackwardFn,
+                "nfn_native_tile_moe_router_aux_loss_backward_float32");
+        }
         if (native_family_expert_quantization_kind(cfg) != 0) {
             NFN_LOAD_LLAMA_SYMBOL(moe_forward_quantized,
                                   NativeFamilyTileLlamaApi::QuantizedMoeSwiGluForwardFn,
@@ -17456,6 +17754,8 @@ bool load_native_family_tile_llama_api(
                         api->semantic_router_bias_backward == nullptr)) ||
                       api->moe_forward == nullptr || api->moe_backward == nullptr ||
                       api->moe_backward_with_route_grad == nullptr ||
+                      (native_family_uses_standard_moe_router_aux_loss(cfg) &&
+                       api->moe_router_aux_loss_backward == nullptr) ||
                       (native_family_expert_quantization_kind(cfg) != 0 &&
                        (api->moe_forward_quantized == nullptr ||
                         api->moe_backward_quantized_with_route_grad == nullptr)))) ||
@@ -17642,12 +17942,16 @@ bool add_native_family_persistent_tile_llama_gradients(
     const std::int64_t semantic_route_distill_loss_partials = rows;
     const std::int64_t semantic_route_distill_reduced_loss_partials = (rows + 1023) / 1024;
     const std::int64_t jepa_reduced_loss_partials = (jepa_loss_partials + 1023) / 1024;
-    constexpr std::int64_t kLossReportLm = 0;
-    constexpr std::int64_t kLossReportJepa = 1;
-    constexpr std::int64_t kLossReportSemantic = 2;
-    constexpr std::int64_t kLossReportSemanticRouteDistill = 3;
-    constexpr std::int64_t kLossReportSemanticAlignment = 4;
-    constexpr std::int64_t kLossReportSemanticAlignmentCount = 5;
+    constexpr std::int64_t kLossReportLm = kNativeFamilyLossReportLm;
+    constexpr std::int64_t kLossReportJepa = kNativeFamilyLossReportJepa;
+    constexpr std::int64_t kLossReportSemantic = kNativeFamilyLossReportSemantic;
+    constexpr std::int64_t kLossReportSemanticRouteDistill =
+        kNativeFamilyLossReportSemanticRouteDistill;
+    constexpr std::int64_t kLossReportSemanticAlignment =
+        kNativeFamilyLossReportSemanticAlignment;
+    constexpr std::int64_t kLossReportSemanticAlignmentCount =
+        kNativeFamilyLossReportSemanticAlignmentCount;
+    constexpr std::int64_t kLossReportRouterAux = kNativeFamilyLossReportRouterAux;
     constexpr std::int64_t kLossReportScalarCount = kNativeFamilyLossReportScalarCount;
     const float jepa_gradient_scale =
         2.0f / static_cast<float>(std::max<std::int64_t>(1, jepa_objective_elements));
@@ -17785,6 +18089,8 @@ bool add_native_family_persistent_tile_llama_gradients(
     float* device_loss = nullptr;
     float* device_loss_reduced = nullptr;
     float* device_lm_loss_total = nullptr;
+    float* device_router_aux_loss_total = nullptr;
+    float* device_router_aux_density = nullptr;
     float* device_loss_reporting_totals = nullptr;
     float* device_norm_zero = nullptr;
     float* device_final_norm = nullptr;
@@ -17953,6 +18259,10 @@ bool add_native_family_persistent_tile_llama_gradients(
         !allocate_float(&device_loss_reduced, lm_head_chunk_reduced_loss_partials,
                         "LM-head reduced chunk loss partials") ||
         !allocate_float(&device_lm_loss_total, 1, "LM-head total loss") ||
+        !allocate_float(&device_router_aux_loss_total, 1, "standard MoE router auxiliary loss total") ||
+        (native_family_uses_standard_moe_router_aux_loss(cfg) &&
+         !allocate_float(&device_router_aux_density, experts,
+                         "standard MoE router auxiliary density")) ||
         !allocate_float(&device_loss_reporting_totals, kLossReportScalarCount,
                         "full-family loss reporting scalar vector") ||
         !allocate_float(&device_norm_zero, model_dim, "zero norm scale") ||
@@ -21026,18 +21336,44 @@ bool add_native_family_persistent_tile_llama_gradients(
             return true;
         }
         if (!semantic_mode) {
-            const float route_scale = 0.01f / static_cast<float>(std::max<std::int64_t>(1, rows));
+            // The selected-route kernel owns only the expert-combine gradient
+            // for standard MoE.  Its historical uniform-route heuristic is
+            // disabled here; the shipped graph's all-expert softmax auxiliary
+            // objective is accumulated explicitly below.
+            const bool standard_router_aux =
+                native_family_uses_standard_moe_router_aux_loss(cfg);
+            const float route_scale = standard_router_aux
+                ? 0.0f
+                : 0.01f / static_cast<float>(std::max<std::int64_t>(1, rows));
+            bool selected_route_backward_ok = false;
             if (family_uses_sqrt_softplus_router(cfg)) {
-                return run(api.topk_route_sqrt_softplus_backward(
-                               layer.route_logits, layer.route_weights, layer.route_indices,
-                               layer.grad_route_weights, layer.grad_route_logits,
-                               rows, experts, top_k, route_scale, stream),
-                           "full DeepSeek sqrt-softplus selected route backward");
+                selected_route_backward_ok = run(api.topk_route_sqrt_softplus_backward(
+                    layer.route_logits, layer.route_weights, layer.route_indices,
+                    layer.grad_route_weights, layer.grad_route_logits,
+                    rows, experts, top_k, route_scale, stream),
+                    "full DeepSeek sqrt-softplus selected route backward");
+            } else {
+                selected_route_backward_ok = run(api.topk_route_backward(
+                    layer.route_weights, layer.route_indices, layer.grad_route_weights,
+                    layer.grad_route_logits, rows, experts, top_k, route_scale, stream),
+                    "full MoE selected route backward");
             }
-            return run(api.topk_route_backward(
-                           layer.route_weights, layer.route_indices, layer.grad_route_weights,
-                           layer.grad_route_logits, rows, experts, top_k, route_scale, stream),
-                       "full MoE selected route backward");
+            if (!selected_route_backward_ok) {
+                return false;
+            }
+            if (!standard_router_aux) {
+                return true;
+            }
+            return run(api.moe_router_aux_loss_backward(
+                           layer.route_logits,
+                           device_router_aux_density,
+                           device_router_aux_loss_total,
+                           layer.grad_route_logits,
+                           rows,
+                           experts,
+                           static_cast<float>(cfg.router_aux_loss_coef),
+                           stream),
+                       "full standard MoE all-expert router auxiliary loss/backward");
         }
         const float* route_weight_gradient_source = layer.grad_route_weights;
         if (semantic_chunk_mode) {
@@ -22022,8 +22358,13 @@ bool add_native_family_persistent_tile_llama_gradients(
         release();
         return false;
     }
-    if (!copy(device_lm_loss_total, packed_loss_reporting_totals + kLossReportLm, 1,
+    if (!zero(packed_loss_reporting_totals, kLossReportScalarCount,
+              "zero full-family loss reporting scalar vector") ||
+        !copy(device_lm_loss_total, packed_loss_reporting_totals + kLossReportLm, 1,
               "pack full-family LM loss reporting scalar") ||
+        !copy(device_router_aux_loss_total,
+              packed_loss_reporting_totals + kLossReportRouterAux, 1,
+              "pack full-family standard MoE router auxiliary loss reporting scalar") ||
         (jepa_mode &&
          !copy(device_jepa_loss_total, packed_loss_reporting_totals + kLossReportJepa, 1,
                "pack full-family JEPA loss reporting scalar")) ||
@@ -30536,6 +30877,30 @@ bool run_native_family_sparse_transition_production_step(
                 context.cuda_stream)) {
             return false;
         }
+        if (host_loss_reporting_totals.size() <
+            static_cast<std::size_t>(kNativeFamilyLossReportScalarCount) ||
+            !std::all_of(
+                host_loss_reporting_totals.begin(),
+                host_loss_reporting_totals.end(),
+                [](float value) { return std::isfinite(value); })) {
+            *error = "native family production step returned invalid deferred loss reporting scalars";
+            return false;
+        }
+        result.losses.autoregressive =
+            host_loss_reporting_totals[kNativeFamilyLossReportLm];
+        result.losses.jepa = host_loss_reporting_totals[kNativeFamilyLossReportJepa];
+        result.losses.router = host_loss_reporting_totals[kNativeFamilyLossReportRouterAux];
+        result.losses.semantic =
+            host_loss_reporting_totals[kNativeFamilyLossReportSemantic] +
+            host_loss_reporting_totals[kNativeFamilyLossReportSemanticRouteDistill] +
+            host_loss_reporting_totals[kNativeFamilyLossReportSemanticAlignment];
+        result.losses.total =
+            result.losses.autoregressive + result.losses.auxiliary +
+            result.losses.router + result.losses.jepa + result.losses.semantic;
+    }
+    if (context.report_loss_to_host) {
+        production_bootstrap->last_production_losses = result.losses;
+        production_bootstrap->last_production_losses_valid = true;
     }
     production_bootstrap->production_step_count += 1;
     if (result.family_step_binding_verified) {
@@ -30666,6 +31031,11 @@ std::string native_family_sparse_transition_step_json(
         << "\"step_name\":\"" << json_escape(step_name) << "\","
         << "\"passed\":" << (passed ? "true" : "false") << ","
         << "\"error\":\"" << json_escape(error) << "\","
+        << "\"router_aux_loss_coef\":" << production_bootstrap.router_aux_loss_coef << ","
+        << "\"last_production_losses_valid\":"
+        << (production_bootstrap.last_production_losses_valid ? "true" : "false") << ","
+        << "\"last_router_aux_loss\":" << production_bootstrap.last_production_losses.router << ","
+        << "\"last_total_loss\":" << production_bootstrap.last_production_losses.total << ","
         << "\"production_step_count\":" << production_bootstrap.production_step_count << ","
         << "\"production_optimizer_step_count\":" << production_bootstrap.production_optimizer_step_count << ","
         << "\"production_step_family_binding_verified\":"
@@ -31146,6 +31516,407 @@ void write_native_family_torch_state_dict_aliases_json(
     out << "    ]";
 }
 
+struct NativeFamilyLlamaInferenceTensor {
+    std::string name;
+    std::vector<std::int64_t> shape;
+    std::int64_t offset = 0;
+    std::int64_t nbytes = 0;
+};
+
+bool native_family_host_is_little_endian() {
+    const std::uint32_t marker = 1u;
+    return *reinterpret_cast<const std::uint8_t*>(&marker) == 1u;
+}
+
+bool build_native_family_canonical_llama_inference_tensors(
+    const Config& cfg,
+    const std::vector<ParameterBufferSpec>& buffers,
+    std::vector<NativeFamilyLlamaInferenceTensor>* tensors,
+    std::string* error) {
+    if (tensors == nullptr || error == nullptr) {
+        return false;
+    }
+    tensors->clear();
+    const std::int64_t model_dim = family_model_dim(cfg);
+    const std::int64_t hidden_dim = family_hidden_dim(cfg);
+    const std::int64_t padded_vocab = family_padded_vocab_size(cfg);
+    const std::int64_t layers = clamp_positive(cfg.num_layers, 1);
+    const std::int64_t heads = family_num_heads(cfg);
+    const std::int64_t kv_heads = family_num_kv_heads(cfg);
+    if (model_dim <= 0 || hidden_dim <= 0 || padded_vocab <= 0 || layers <= 0 || heads <= 0 ||
+        kv_heads <= 0 || model_dim % heads != 0 || heads % kv_heads != 0) {
+        *error = "canonical LLaMA inference checkpoint has invalid geometry";
+        return false;
+    }
+    const std::int64_t head_dim = model_dim / heads;
+    const std::int64_t kv_dim = kv_heads * head_dim;
+    std::vector<std::pair<std::string, std::vector<std::int64_t>>> expected = {
+        {"token_embedding.weight", {padded_vocab, model_dim}},
+        {"final_norm.weight", {model_dim}},
+        {"lm_head.weight", {padded_vocab, model_dim}},
+    };
+    for (std::int64_t layer = 0; layer < layers; ++layer) {
+        const std::string prefix = "layers." + std::to_string(layer) + ".";
+        expected.push_back({prefix + "attention_norm.weight", {model_dim}});
+        expected.push_back({prefix + "q_proj.weight", {model_dim, model_dim}});
+        expected.push_back({prefix + "k_proj.weight", {kv_dim, model_dim}});
+        expected.push_back({prefix + "v_proj.weight", {kv_dim, model_dim}});
+        expected.push_back({prefix + "attention_out.weight", {model_dim, model_dim}});
+        expected.push_back({prefix + "ffn_norm.weight", {model_dim}});
+        expected.push_back({prefix + "ffn_gate_up.weight", {2, hidden_dim, model_dim}});
+        expected.push_back({prefix + "ffn_down.weight", {model_dim, hidden_dim}});
+    }
+    if (buffers.size() != expected.size()) {
+        *error = "canonical LLaMA inference checkpoint parameter buffer count is not canonical";
+        return false;
+    }
+    std::int64_t offset = 0;
+    tensors->reserve(expected.size());
+    for (std::size_t index = 0; index < expected.size(); ++index) {
+        const ParameterBufferSpec& buffer = buffers[index];
+        const auto& [expected_name, shape] = expected[index];
+        std::int64_t elements = 1;
+        for (std::int64_t dim : shape) {
+            if (dim <= 0 || elements > std::numeric_limits<std::int64_t>::max() / dim) {
+                *error = "canonical LLaMA inference checkpoint tensor shape overflow";
+                return false;
+            }
+            elements *= dim;
+        }
+        if (buffer.name != expected_name || buffer.elements != elements || !buffer.trainable) {
+            *error = "canonical LLaMA inference checkpoint parameter layout mismatch at " + expected_name;
+            return false;
+        }
+        if (elements > std::numeric_limits<std::int64_t>::max() / 4 ||
+            offset > std::numeric_limits<std::int64_t>::max() - elements * 4) {
+            *error = "canonical LLaMA inference checkpoint byte layout overflow";
+            return false;
+        }
+        const std::int64_t nbytes = elements * 4;
+        tensors->push_back({expected_name, shape, offset, nbytes});
+        offset += nbytes;
+    }
+    return true;
+}
+
+bool build_native_family_standard_moe_inference_tensors(
+    const Config& cfg,
+    const std::vector<ParameterBufferSpec>& buffers,
+    std::vector<NativeFamilyLlamaInferenceTensor>* tensors,
+    std::string* error) {
+    if (tensors == nullptr || error == nullptr) {
+        return false;
+    }
+    tensors->clear();
+    const std::int64_t model_dim = family_model_dim(cfg);
+    const std::int64_t hidden_dim = family_hidden_dim(cfg);
+    const std::int64_t padded_vocab = family_padded_vocab_size(cfg);
+    const std::int64_t layers = clamp_positive(cfg.num_layers, 1);
+    const std::int64_t heads = family_num_heads(cfg);
+    const std::int64_t kv_heads = family_num_kv_heads(cfg);
+    const std::int64_t experts = clamp_positive(cfg.experts, 8);
+    const std::int64_t top_k = clamp_positive(cfg.top_k, 1);
+    if (model_dim <= 0 || hidden_dim <= 0 || padded_vocab <= 0 || layers <= 0 ||
+        heads <= 0 || kv_heads <= 0 || model_dim % heads != 0 || heads % kv_heads != 0 ||
+        experts <= 0 || top_k <= 0 || top_k > experts || cfg.layers_per_expert != 1) {
+        *error = "standard-MoE inference checkpoint has invalid geometry";
+        return false;
+    }
+    const std::int64_t head_dim = model_dim / heads;
+    const std::int64_t kv_dim = kv_heads * head_dim;
+    std::vector<std::pair<std::string, std::vector<std::int64_t>>> expected = {
+        {"token_embedding.weight", {padded_vocab, model_dim}},
+        {"final_norm.weight", {model_dim}},
+        {"lm_head.weight", {padded_vocab, model_dim}},
+    };
+    for (std::int64_t layer = 0; layer < layers; ++layer) {
+        const std::string prefix = "layers." + std::to_string(layer) + ".";
+        expected.push_back({prefix + "attention_norm.weight", {model_dim}});
+        expected.push_back({prefix + "q_proj.weight", {model_dim, model_dim}});
+        expected.push_back({prefix + "k_proj.weight", {kv_dim, model_dim}});
+        expected.push_back({prefix + "v_proj.weight", {kv_dim, model_dim}});
+        expected.push_back({prefix + "attention_out.weight", {model_dim, model_dim}});
+        expected.push_back({prefix + "ffn_norm.weight", {model_dim}});
+        expected.push_back({prefix + "router.weight", {experts, model_dim}});
+        expected.push_back(
+            {prefix + "experts.gate_up.weight", {2, experts, model_dim, hidden_dim}});
+        expected.push_back(
+            {prefix + "experts.down.weight", {experts, hidden_dim, model_dim}});
+    }
+    if (buffers.size() != expected.size()) {
+        *error = "standard-MoE inference checkpoint parameter buffer count is not canonical";
+        return false;
+    }
+    std::int64_t offset = 0;
+    tensors->reserve(expected.size());
+    for (std::size_t index = 0; index < expected.size(); ++index) {
+        const ParameterBufferSpec& buffer = buffers[index];
+        const auto& [expected_name, shape] = expected[index];
+        std::int64_t elements = 1;
+        for (std::int64_t dim : shape) {
+            if (dim <= 0 || elements > std::numeric_limits<std::int64_t>::max() / dim) {
+                *error = "standard-MoE inference checkpoint tensor shape overflow";
+                return false;
+            }
+            elements *= dim;
+        }
+        if (buffer.name != expected_name || buffer.elements != elements || !buffer.trainable) {
+            *error = "standard-MoE inference checkpoint parameter layout mismatch at " +
+                expected_name;
+            return false;
+        }
+        if (elements > std::numeric_limits<std::int64_t>::max() / 4 ||
+            offset > std::numeric_limits<std::int64_t>::max() - elements * 4) {
+            *error = "standard-MoE inference checkpoint byte layout overflow";
+            return false;
+        }
+        const std::int64_t nbytes = elements * 4;
+        tensors->push_back({expected_name, shape, offset, nbytes});
+        offset += nbytes;
+    }
+    return true;
+}
+
+bool validate_native_family_graph_provenance(const Config& cfg, std::string* error) {
+    if (cfg.graph_file.empty()) {
+        return true;
+    }
+    std::string actual_sha256;
+    std::int64_t graph_nbytes = 0;
+    if (!native_family_sha256_file(
+            std::filesystem::path(cfg.graph_file),
+            &actual_sha256,
+            &graph_nbytes,
+            error)) {
+        *error = "failed to hash native training source graph: " + *error;
+        return false;
+    }
+    if (graph_nbytes <= 0 || actual_sha256 != cfg.graph_fingerprint) {
+        *error = "native training source graph SHA-256 does not match --graph-fingerprint";
+        return false;
+    }
+    return true;
+}
+
+bool native_family_canonical_llama_inference_candidate(
+    const Config& cfg,
+    bool use_live_parameter_store,
+    bool architecture_forward_supported,
+    const NativeFamilyProductionBootstrap* production_bootstrap) {
+    return native_full_geometry_build_enabled() && NFN_NATIVE_PRODUCTION_LOOP != 0 &&
+        std::string_view(NFN_NATIVE_MODEL_FAMILY) == "llama" &&
+        normalized_id(cfg.template_name) == "llama" &&
+        use_live_parameter_store && architecture_forward_supported &&
+        production_bootstrap != nullptr && production_bootstrap->ready &&
+        production_bootstrap->production_step_count > 0;
+}
+
+void write_native_family_canonical_llama_inference_contract_json(
+    std::ostream& out,
+    const Config& cfg,
+    const NativeFamilyModelPaths& paths,
+    const std::vector<NativeFamilyLlamaInferenceTensor>& tensors,
+    std::int64_t parameter_nbytes,
+    std::string_view parameter_sha256,
+    std::int64_t steps_completed,
+    std::int64_t train_batches_sampled,
+    std::int64_t validation_batches_sampled) {
+    const std::int64_t model_dim = family_model_dim(cfg);
+    const std::int64_t heads = family_num_heads(cfg);
+    out << "  \"inference_contract\": {\n"
+        << "    \"schema\": \"neuralfn.native_family_llama.inference_checkpoint\",\n"
+        << "    \"version\": 2,\n"
+        << "    \"family\": \"llama\",\n"
+        << "    \"preset\": \"llama\",\n"
+        << "    \"checkpoint_kind\": \"live_full_architecture\",\n"
+        << "    \"done_marker\": \"" << json_escape(paths.done_path.filename().string()) << "\",\n"
+        << "    \"geometry\": {\n"
+        << "      \"max_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "      \"vocab_size\": " << family_vocab_size(cfg) << ",\n"
+        << "      \"padded_vocab_size\": " << family_padded_vocab_size(cfg) << ",\n"
+        << "      \"num_layers\": " << clamp_positive(cfg.num_layers, 1) << ",\n"
+        << "      \"model_dim\": " << model_dim << ",\n"
+        << "      \"hidden_dim\": " << family_hidden_dim(cfg) << ",\n"
+        << "      \"num_heads\": " << heads << ",\n"
+        << "      \"num_kv_heads\": " << family_num_kv_heads(cfg) << ",\n"
+        << "      \"head_dim\": " << (model_dim / heads) << ",\n"
+        << "      \"rope_theta\": " << cfg.rope_theta << ",\n"
+        << "      \"rope_scaling_factor\": " << family_rope_scaling_factor(cfg) << ",\n"
+        << "      \"rms_norm_eps\": 1e-06\n"
+        << "    },\n"
+        << "    \"semantics\": {\n"
+        << "      \"norm_type\": \"rmsnorm\",\n"
+        << "      \"mlp_type\": \"swiglu\",\n"
+        << "      \"pos_encoding\": \"rope\",\n"
+        << "      \"attention_variant\": \"dense\",\n"
+        << "      \"residual_type\": \"add\",\n"
+        << "      \"linear_bias\": false,\n"
+        << "      \"dropout_p\": 0.0,\n"
+        << "      \"tie_embeddings\": false\n"
+        << "    },\n"
+        << "    \"training\": {\n"
+        << "      \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "      \"steps_completed\": " << steps_completed << ",\n"
+        << "      \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+        << "      \"validation_batches_sampled\": " << validation_batches_sampled;
+    if (!cfg.graph_file.empty()) {
+        out << ",\n"
+            << "      \"source_graph\": {\n"
+            << "        \"filename\": \""
+            << json_escape(std::filesystem::path(cfg.graph_file).filename().string())
+            << "\",\n"
+            << "        \"sha256\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+            << "        \"byte_identity_verified\": true\n"
+            << "      }\n";
+    } else {
+        out << "\n";
+    }
+    out << "    },\n"
+        << "    \"artifact\": {\n"
+        << "      \"format\": \"neuralfn.native_family_llama.f32.v1\",\n"
+        << "      \"path\": \"" << json_escape(paths.parameter_path.filename().string()) << "\",\n"
+        << "      \"dtype\": \"float32\",\n"
+        << "      \"byte_order\": \"little\",\n"
+        << "      \"layout\": \"contiguous_row_major\",\n"
+        << "      \"nbytes\": " << parameter_nbytes << ",\n"
+        << "      \"sha256\": \"" << parameter_sha256 << "\"\n"
+        << "    },\n"
+        << "    \"tensors\": [\n";
+    for (std::size_t index = 0; index < tensors.size(); ++index) {
+        const NativeFamilyLlamaInferenceTensor& tensor = tensors[index];
+        out << "      {\"name\": \"" << json_escape(tensor.name) << "\", \"shape\": [";
+        for (std::size_t dim = 0; dim < tensor.shape.size(); ++dim) {
+            if (dim != 0) {
+                out << ", ";
+            }
+            out << tensor.shape[dim];
+        }
+        out << "], \"offset\": " << tensor.offset
+            << ", \"nbytes\": " << tensor.nbytes
+            << ", \"dtype\": \"float32\", \"byte_order\": \"little\", "
+               "\"layout\": \"row_major\"}";
+        if (index + 1 != tensors.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "    ]\n"
+        << "  }";
+}
+
+bool native_family_standard_moe_inference_candidate(
+    const Config& cfg,
+    bool use_live_parameter_store,
+    bool architecture_forward_supported,
+    const NativeFamilyProductionBootstrap* production_bootstrap) {
+    const std::string preset = normalized_id(cfg.template_name);
+    return native_full_moe_geometry_build_enabled() && NFN_NATIVE_PRODUCTION_LOOP != 0 &&
+        std::string_view(NFN_NATIVE_MODEL_FAMILY) == "mixllama" &&
+        (preset == "mixllama" || preset == "mixllama-fast") &&
+        !cfg.graph_file.empty() && cfg.layers_per_expert == 1 &&
+        use_live_parameter_store && architecture_forward_supported &&
+        production_bootstrap != nullptr && production_bootstrap->ready &&
+        production_bootstrap->production_step_count > 0;
+}
+
+void write_native_family_standard_moe_inference_contract_json(
+    std::ostream& out,
+    const Config& cfg,
+    const NativeFamilyModelPaths& paths,
+    const std::vector<NativeFamilyLlamaInferenceTensor>& tensors,
+    std::int64_t parameter_nbytes,
+    std::string_view parameter_sha256,
+    std::int64_t steps_completed,
+    std::int64_t train_batches_sampled,
+    std::int64_t validation_batches_sampled) {
+    const std::int64_t model_dim = family_model_dim(cfg);
+    const std::int64_t heads = family_num_heads(cfg);
+    const std::string preset = normalized_id(cfg.template_name);
+    out << "  \"inference_contract\": {\n"
+        << "    \"schema\": \"neuralfn.native_family_standard_moe.inference_checkpoint\",\n"
+        << "    \"version\": 1,\n"
+        << "    \"family\": \"mixllama\",\n"
+        << "    \"preset\": \"" << json_escape(preset) << "\",\n"
+        << "    \"checkpoint_kind\": \"live_full_architecture\",\n"
+        << "    \"done_marker\": \"" << json_escape(paths.done_path.filename().string()) << "\",\n"
+        << "    \"geometry\": {\n"
+        << "      \"max_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "      \"vocab_size\": " << family_vocab_size(cfg) << ",\n"
+        << "      \"padded_vocab_size\": " << family_padded_vocab_size(cfg) << ",\n"
+        << "      \"num_layers\": " << clamp_positive(cfg.num_layers, 1) << ",\n"
+        << "      \"model_dim\": " << model_dim << ",\n"
+        << "      \"hidden_dim\": " << family_hidden_dim(cfg) << ",\n"
+        << "      \"num_heads\": " << heads << ",\n"
+        << "      \"num_kv_heads\": " << family_num_kv_heads(cfg) << ",\n"
+        << "      \"head_dim\": " << (model_dim / heads) << ",\n"
+        << "      \"experts\": " << clamp_positive(cfg.experts, 8) << ",\n"
+        << "      \"top_k\": " << clamp_positive(cfg.top_k, 1) << ",\n"
+        << "      \"rope_theta\": " << cfg.rope_theta << ",\n"
+        << "      \"rope_scaling_factor\": " << family_rope_scaling_factor(cfg) << ",\n"
+        << "      \"rms_norm_eps\": 1e-06,\n"
+        << "      \"mlp_multiplier\": " << cfg.mlp_multiplier << ",\n"
+        << "      \"multiple_of\": " << cfg.multiple_of << ",\n"
+        << "      \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << "\n"
+        << "    },\n"
+        << "    \"semantics\": {\n"
+        << "      \"norm_type\": \"rmsnorm\",\n"
+        << "      \"mlp_type\": \"moe\",\n"
+        << "      \"pos_encoding\": \"rope\",\n"
+        << "      \"attention_variant\": \"dense\",\n"
+        << "      \"residual_type\": \"add\",\n"
+        << "      \"router_score_fn\": \"softmax\",\n"
+        << "      \"router_selection\": \"topk_renormalized\",\n"
+        << "      \"moe_balance_mode\": \"aux_loss\",\n"
+        << "      \"linear_bias\": false,\n"
+        << "      \"dropout_p\": 0.0,\n"
+        << "      \"tie_embeddings\": false,\n"
+        << "      \"use_qk_norm\": false,\n"
+        << "      \"shared_experts\": 0\n"
+        << "    },\n"
+        << "    \"training\": {\n"
+        << "      \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "      \"steps_completed\": " << steps_completed << ",\n"
+        << "      \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+        << "      \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+        << "      \"source_graph\": {\n"
+        << "        \"filename\": \""
+        << json_escape(std::filesystem::path(cfg.graph_file).filename().string()) << "\",\n"
+        << "        \"sha256\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+        << "        \"byte_identity_verified\": true\n"
+        << "      }\n"
+        << "    },\n"
+        << "    \"artifact\": {\n"
+        << "      \"format\": \"neuralfn.native_family_standard_moe.f32.v1\",\n"
+        << "      \"path\": \"" << json_escape(paths.parameter_path.filename().string()) << "\",\n"
+        << "      \"dtype\": \"float32\",\n"
+        << "      \"byte_order\": \"little\",\n"
+        << "      \"layout\": \"contiguous_row_major\",\n"
+        << "      \"nbytes\": " << parameter_nbytes << ",\n"
+        << "      \"sha256\": \"" << parameter_sha256 << "\"\n"
+        << "    },\n"
+        << "    \"tensors\": [\n";
+    for (std::size_t index = 0; index < tensors.size(); ++index) {
+        const NativeFamilyLlamaInferenceTensor& tensor = tensors[index];
+        out << "      {\"name\": \"" << json_escape(tensor.name) << "\", \"shape\": [";
+        for (std::size_t dim = 0; dim < tensor.shape.size(); ++dim) {
+            if (dim != 0) {
+                out << ", ";
+            }
+            out << tensor.shape[dim];
+        }
+        out << "], \"offset\": " << tensor.offset
+            << ", \"nbytes\": " << tensor.nbytes
+            << ", \"dtype\": \"float32\", \"byte_order\": \"little\", "
+               "\"layout\": \"row_major\"}";
+        if (index + 1 != tensors.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "    ]\n"
+        << "  }";
+}
+
 bool write_native_family_token_model(
     const Config& cfg,
     std::string_view metadata_prefix,
@@ -31243,17 +32014,65 @@ bool write_native_family_token_model(
             use_live_parameter_store &&
             parameter_info.trained_parameter_elements == parameter_elements &&
             parameter_elements > 0;
+        const bool emit_llama_inference_contract =
+            native_family_canonical_llama_inference_candidate(
+                cfg,
+                use_live_parameter_store,
+                architecture_forward_supported,
+                production_bootstrap);
+        const bool emit_standard_moe_inference_contract =
+            native_family_standard_moe_inference_candidate(
+                cfg,
+                use_live_parameter_store,
+                architecture_forward_supported,
+                production_bootstrap);
+        if ((emit_llama_inference_contract || emit_standard_moe_inference_contract) &&
+            !validate_native_family_graph_provenance(cfg, error)) {
+            return false;
+        }
+        std::vector<NativeFamilyLlamaInferenceTensor> llama_inference_tensors;
+        std::vector<NativeFamilyLlamaInferenceTensor> standard_moe_inference_tensors;
+        std::string parameter_sha256;
+        std::int64_t parameter_nbytes = 0;
+        if (emit_llama_inference_contract || emit_standard_moe_inference_contract) {
+            if (!native_family_host_is_little_endian()) {
+                *error = "native family resident inference checkpoints require a little-endian host";
+                return false;
+            }
+            const bool tensor_layout_valid = emit_llama_inference_contract
+                ? build_native_family_canonical_llama_inference_tensors(
+                      cfg, parameter_buffers, &llama_inference_tensors, error)
+                : build_native_family_standard_moe_inference_tensors(
+                      cfg, parameter_buffers, &standard_moe_inference_tensors, error);
+            if (!tensor_layout_valid || !native_family_sha256_file(
+                    paths->parameter_path, &parameter_sha256, &parameter_nbytes, error)) {
+                return false;
+            }
+            if (parameter_nbytes != parameter_info.parameter_bytes ||
+                parameter_nbytes != parameter_elements * 4 || parameter_sha256.size() != 64) {
+                *error = "native family inference checkpoint sidecar size or SHA-256 is invalid";
+                return false;
+            }
+        }
         std::ofstream out(paths->model_path);
         if (!out) {
             *error = "failed to open native family model checkpoint for writing";
             return false;
         }
+        // Checkpoint geometry is a byte-identity contract with the source
+        // graph.  Preserve round-trippable doubles (not the stream's default
+        // six significant digits), especially floating expert widths and the
+        // configured router auxiliary-loss coefficient.
+        out << std::setprecision(17);
         out << "{\n"
             << "  \"format\": \"nfn-native-family-optimizer-checkpoint-v1\",\n"
             << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
             << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
             << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
             << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+            << "  \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << ",\n"
+            << "  \"standard_moe_router_aux_loss_formula\": "
+            << "\"experts*sum(mean_over_tokens(softmax(router_logits))^2)\",\n"
             << "  \"checkpoint_kind\": \"native_family_optimizer_trained_model\",\n"
             << "  \"inference_supported\": true,\n"
             << "  \"compiled_native_boundary\": true,\n"
@@ -31331,8 +32150,33 @@ bool write_native_family_token_model(
             << "    \"path\": \"" << json_escape(paths->optimizer_path.string()) << "\",\n"
             << "    \"written\": " << (paths->optimizer_state_written ? "true" : "false") << ",\n"
             << "    \"completed_optimizer_steps\": " << paths->optimizer_step << "\n"
-            << "  },\n"
-            << "  \"native_parameter_state\": {\n"
+            << "  },\n";
+        if (emit_llama_inference_contract) {
+            write_native_family_canonical_llama_inference_contract_json(
+                out,
+                cfg,
+                *paths,
+                llama_inference_tensors,
+                parameter_nbytes,
+                parameter_sha256,
+                steps_completed,
+                train_batches_sampled,
+                validation_batches_sampled);
+            out << ",\n";
+        } else if (emit_standard_moe_inference_contract) {
+            write_native_family_standard_moe_inference_contract_json(
+                out,
+                cfg,
+                *paths,
+                standard_moe_inference_tensors,
+                parameter_nbytes,
+                parameter_sha256,
+                steps_completed,
+                train_batches_sampled,
+                validation_batches_sampled);
+            out << ",\n";
+        }
+        out << "  \"native_parameter_state\": {\n"
             << "    \"state_type\": \""
             << (use_live_parameter_store
                     ? "live_family_device_parameter_store_float32_parameter_tensors_plus_token_transition_table"
@@ -32635,7 +33479,7 @@ int print_llama_dataset_loop_json(const Config& cfg, const char* program) {
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " torch_required=false"
                   << " graph_editor_tensor_flow=false"
                   << "\n";
@@ -32725,7 +33569,7 @@ int print_llama_dataset_loop_json(const Config& cfg, const char* program) {
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " torch_required=false"
                   << " graph_editor_tensor_flow=false"
                   << "\n";
@@ -33113,7 +33957,8 @@ int print_llama_dataset_loop_json(const Config& cfg, const char* program) {
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
@@ -33278,7 +34123,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program, boo
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " torch_required=false"
                   << " graph_editor_tensor_flow=false"
                   << "\n";
@@ -33586,6 +34431,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program, boo
                         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
                         << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
                         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+                        << "  \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << ",\n"
                         << "  \"kernel_step_source\": \"" << kernel_step_source << "\"\n"
                         << "}\n";
                 }
@@ -33660,6 +34506,9 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program, boo
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"router_aux_loss_coef\": " << cfg.router_aux_loss_coef << ",\n"
+        << "  \"standard_moe_router_aux_loss_formula\": "
+        << "\"experts*sum(mean_over_tokens(softmax(router_logits))^2)\",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
         << "  \"token_shards\": ";
     if (dataset_loaded) {
@@ -33680,7 +34529,8 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program, boo
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
@@ -33768,7 +34618,7 @@ int print_semantic_router_moe_dataset_loop_json(const Config& cfg, const char* p
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " num_layers=" << cfg.num_layers
                   << " experts=" << cfg.experts
                   << " semantic_vocab_dims=" << cfg.semantic_vocab_dims
@@ -34286,7 +35136,8 @@ int print_semantic_router_moe_dataset_loop_json(const Config& cfg, const char* p
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"architecture\": {\n"
         << "    \"model_dim\": " << family_model_dim(cfg) << ",\n"
         << "    \"hidden_dim\": " << family_hidden_dim(cfg) << ",\n"
@@ -34619,7 +35470,7 @@ int print_dense_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " torch_required=false"
                   << " graph_editor_tensor_flow=false"
                   << "\n";
@@ -35070,7 +35921,8 @@ int print_dense_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
@@ -35152,7 +36004,7 @@ int print_semantic_dense_jepa_dataset_loop_json(const Config& cfg, const char* p
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " semantic_dims=" << kSemanticDims
                   << " semantic_terms=" << kSemanticTerms
                   << " torch_required=false"
@@ -35652,7 +36504,8 @@ int print_semantic_dense_jepa_dataset_loop_json(const Config& cfg, const char* p
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"semantic_target_batch\": ";
     if (!train_semantic_targets.empty()) {
         std::cout << semantic_target_batch_json(
@@ -36830,7 +37683,7 @@ int print_single_substep_dataset_loop_json(
                   << " beta1=0.9"
                   << " beta2=0.95"
                   << " adam_eps=1e-08"
-                  << " weight_decay=0.02"
+                  << " weight_decay=" << cfg.weight_decay
                   << " torch_required=false"
                   << " graph_editor_tensor_flow=false"
                   << "\n";
@@ -37270,7 +38123,8 @@ int print_single_substep_dataset_loop_json(
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
@@ -37350,7 +38204,8 @@ int print_hnet_byte_dataset_loop_json(const Config& cfg, const char* program) {
                   << " eval_every_steps=" << cfg.eval_every_steps
                   << " progress_every_steps=" << cfg.progress_every_steps
                   << " learning_rate=" << cfg.learning_rate
-                  << " optimizer=adamw beta1=0.9 beta2=0.95 adam_eps=1e-08 weight_decay=0.02"
+                  << " optimizer=adamw beta1=0.9 beta2=0.95 adam_eps=1e-08 weight_decay="
+                  << cfg.weight_decay
                   << " torch_required=false graph_editor_tensor_flow=false\n";
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME
                   << "] resolving native byte shards"
@@ -37726,7 +38581,8 @@ int print_hnet_byte_dataset_loop_json(const Config& cfg, const char* program) {
         << "  },\n"
         << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
         << cfg.learning_rate
-        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": "
+        << cfg.weight_decay << "},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
@@ -37761,6 +38617,18 @@ int print_hnet_byte_dataset_loop_json(const Config& cfg, const char* program) {
 int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
     try {
+        std::string graph_provenance_error;
+        if (!validate_native_family_graph_provenance(cfg, &graph_provenance_error)) {
+            std::cerr << graph_provenance_error << "\n";
+            return 2;
+        }
+        // Metadata and dry-run operations must dominate any accidentally
+        // co-supplied training/smoke action.  This keeps inspection strictly
+        // side-effect free even for direct family-binary invocations.
+        if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
+            print_json(cfg, argv[0]);
+            return 0;
+        }
         if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step ||
             cfg.smoke_llama_token_lm_train_step || cfg.smoke_llama_composed_train_step ||
             cfg.smoke_llama_full_loop_step) {
@@ -38040,10 +38908,6 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_family_layout_checkpoint_step) {
             return print_family_layout_checkpoint_smoke_json(cfg, argv[0]);
-        }
-        if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
-            print_json(cfg, argv[0]);
-            return 0;
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo") {
             return print_moe_jepa_dataset_loop_json(cfg, argv[0]);

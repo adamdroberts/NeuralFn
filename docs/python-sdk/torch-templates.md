@@ -122,6 +122,29 @@ It mirrors the autoregressive decoder body but uses
 
 Build the root graph for SFT: `sft_dataset_source -> model -> loss`.
 
+### `build_muse_glimmer_assistant_graph(name, target_model_spec, **kwargs) -> NeuronGraph`
+
+Build the separate five-layer DFlash assistant topology. Inputs are the five
+target residual taps, raw target embeddings for the 16-row noisy block, and
+explicit context/block positions. The output is normalized assistant hidden
+state for the frozen shared target LM head. This builder does not run the
+target or own the distillation loss.
+
+### `build_muse_glimmer_dflash_distillation_graph(name, target_model_spec, *, distillation_spec=None, **assistant_kwargs) -> NeuronGraph`
+
+Build the trainable DFlash graph with the explicit multi-anchor attention-mask
+input and serialized `MuseGlimmerDFlashDistillationSpec`. Frozen target
+forward/tap capture, anchor sampling, raw embeddings, shared LM head, weighted
+loss, checkpointing, acceptance evaluation, and native export are orchestrated
+by `DFlashDistillationTrainer`. Supplying `training_attention_mask` manually is
+an error because this builder owns that contract.
+
+### `build_muse_glimmer_vision_graph(name, target_model_spec, *, vision_spec=None) -> NeuronGraph`
+
+Build the separate Muse Glimmer patch/position/transformer/merge/adaptor vision
+graph. It remains independent from ordinary text roots and media placeholder
+fusion.
+
 ### `build_dpo_root_graph(*, name="model_root", model_spec=None) -> NeuronGraph`
 
 Build the Direct Preference Optimization root graph. It consumes chosen/rejected

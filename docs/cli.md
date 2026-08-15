@@ -7,6 +7,325 @@ the shared dataset manager, and defaults artifacts to `~/NeuralFn/artifacts`.
 
 For the longer operator runbook, see [../cli/README.md](../cli/README.md).
 
+## Migrate a graph to Native Execution IR
+
+Use the lightweight migration command to preflight a graph and lower its
+resolved topology to Native Execution IR v1:
+
+```bash
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --output-dir artifacts/model-native \
+  --dry-run
+```
+
+The dry run prints a manifest and compatibility report as JSON and writes
+nothing. `--output-dir` is still required and must not already exist. Remove
+`--dry-run` to create a new artifact directory, or add an optional legacy `.pt`
+checkpoint:
+
+```bash
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --weights artifacts/model.pt \
+  --output-dir artifacts/model-native
+
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --weights artifacts/model_00020000.bin \
+  --output-dir artifacts/model-resident
+
+nfn migrate graph-to-native \
+  --graph artifacts/gpt2-moa.json \
+  --weights artifacts/model_00020000.moa.json \
+  --output-dir artifacts/gpt2-moa-resident
+
+nfn migrate graph-to-native \
+  --graph artifacts/llama.json \
+  --weights artifacts/llama_native_family_model_00000000.json \
+  --output-dir artifacts/llama-resident
+```
+
+Graph-only migration does not import Torch, NumPy, or NetworkX. Graph structure, builtin lowerer
+coverage, custom-function rejection, and variant resolution are checked before
+the optional checkpoint is opened. `.pt` conversion uses an isolated
+`weights_only` worker and produces a 64-byte-aligned generic `weights.bin` with
+per-tensor hashes. Compatible dense-v5 `.bin` input stays Torch-free, is
+inspected against the graph, fingerprinted, and copied as owner-only
+`model.bin` with a ready resident ABI. Canonical `llama` inference-checkpoint
+v2 metadata is also inspected Torch-free; its exact contiguous float32 sidecar
+is copied as `model.f32`. Direct `.f32` and diagnostic family metadata are
+rejected. Existing destinations/symlinks are refused; source graph
+bytes are never rewritten. Compatible results exit 0. Incompatible results
+exit 2, include stable unsupported node paths, and do not create output.
+
+For `gpt2_moa`, pass the source-bound `model_XXXXXXXX.moa.json`, not its bare
+dense-v5 `.bin`. It must sit beside the matching `.bin` and empty
+`DONE_XXXXXXXX`, bind the byte-identical graph and model hashes, and record the
+canonical GELU/ReLU/SiLU/ReLU2 candidates, selected activation, and positive
+selection interval. Migration retains that selection contract and copies the
+validated model as `model.bin`.
+
+The current registry structurally lowers all 67 shipped text presets. That is
+not an all-family resident-runtime claim. Seven reviewed dense-v5 presets
+(`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, and softcap) have resident
+sessions, lossless retained K/V cache, and lean serving proof. Canonical
+`llama` additionally has a real float32 RMSNorm/RoPE/GQA/SwiGLU resident
+forward and lossless cache; tokenizer-free `--prompt-tokens` uses that path,
+while text/HTTP use still needs supported presentation metadata. Exact MoA
+also supports the packed CPU TurboQuant cache for even head dimensions; its
+training-time candidates are not reprobed during inference. Generic `.pt`,
+graph-only, differential/modern variants, bare MoA `.bin` files, and every other family remain
+closed. Compatible reviewed-dense artifacts with even head dimensions also
+support explicit native packed CPU TurboQuant. Compatible artifacts separately
+expose an opt-in hybrid Tile-CUDA attention backend through
+`--turboquant-attention-backend tile-cuda --tile-ops-lib PATH`, while CPU stays
+the default and other families remain unavailable. See
+[Native Execution IR](python-sdk/native-ir.md) for artifact and SDK details.
+
+### Muse Glimmer conversion and inference
+
+Muse Glimmer uses strict pinned family conversion rather than generic `.pt`
+migration:
+
+```bash
+nfn migrate muse-glimmer-to-native \
+  --source /models/Muse-Glimmer-30B \
+  --component full \
+  --output-dir artifacts/glimmer-bf16
+
+nfn migrate muse-glimmer-gguf-to-native \
+  --gguf /models/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
+  --gguf /models/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf \
+  --dflash /models/dflash-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --mmproj /models/mmproj-Muse-Glimmer-30B-Q4_K_M.gguf \
+  --tokenizer-source /models/Muse-Glimmer-30B \
+  --output-dir artifacts/glimmer-kquant
+```
+
+Run target-only or DFlash generation through the same one-shot and server
+surfaces:
+
+```bash
+nfn infer \
+  --checkpoint artifacts/glimmer-kquant \
+  --runtime native-cuda \
+  --weight-precision auto \
+  --speculative-decoding auto \
+  --companion-checkpoint dflash \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --prompt "Hello" \
+  --native-info
+```
+
+`--weight-precision` accepts `auto`, `bf16`, `k-quant-dynamic`, or
+`k-quant-17gb`. CUDA `auto` chooses quality-first only after current free-VRAM,
+context/session cache, companion, staging, workspace, and reserve accounting.
+An explicit value never downgrades and is not rejected merely because a
+higher-quality profile could fit: `--weight-precision k-quant-17gb` remains a
+valid pin on a 32-GB card when its measured budget fits. `--speculative-decoding` accepts `off`,
+`auto`, or `required`; `required` fails rather than using target-only decode.
+The precision/speculation choices are server startup policy and cannot be
+overridden in a request body.
+
+For whole-model CUDA, `--strict-tile-ops-lib PATH` is an alias of
+`--tile-ops-lib PATH`. Both feed `NativeModelLoadConfig.tile_ops_lib`; the
+former makes the strict-sidecar purpose explicit and now works on the exact
+Native Execution artifact dispatch path as advertised by top-level help.
+The accepted strict sidecar uses measured packed-projection/RMS→MMVQ
+megakernels, DFlash packed-weight hoisting, verifier projection overlap,
+direct transactional K/V staging, short-context attention splitting, and an
+exact cooperative multirow dual-RMS megakernel. The final current-source run
+measured 271.244 DFlash tok/s median; disabling only the cooperative RMS in the
+same binary measured 264.724 tok/s with identical output and acceptance.
+Their exact controls, hashes, memory, and RTX 5090 distributions are recorded in
+[Resident Native Artifact CLI Inference](native-cli-inference.md); launch
+reduction alone is not used as an acceptance criterion.
+
+Attach a native LoRA or QLoRA result only after its base/tokenizer/template
+lineage has been authenticated:
+
+```bash
+nfn migrate muse-glimmer-lora-to-native \
+  --artifact artifacts/glimmer-bf16 \
+  --checkpoint runs/glimmer-adapter/checkpoint-step-100
+```
+
+The command copies and publishes the adapter atomically, refuses overwrite,
+and reports its training mode and CPU/CUDA resident capability. A stock DFlash
+assistant is disabled for an adapted target unless a separately compatible
+assistant is bound.
+
+### Native Muse Glimmer training
+
+`nfn train --base-model muse-glimmer` dispatches directly to the dedicated
+Torch-free `nfn_muse_glimmer_native_train` binary. Use exact binary options for
+the pinned BF16 source and uint32/structured-SFT dataset:
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-full.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-sft \
+  --objective sft \
+  --chat-template-sha256 cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678 \
+  --adapter qlora \
+  --lora-targets q_proj,k_proj,v_proj,o_proj,attn_gate_proj,gate_proj,up_proj,down_proj \
+  --lora-rank 8 --lora-alpha 16 --qlora-group-size 64 \
+  --sequence-length 2048 --batch-size 1 --max-steps 100 \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-qlora
+```
+
+`--objective ar` consumes versioned uint32 shards. `--objective sft` consumes
+structured `.sft` records with targets, loss masks, boundaries, and exact ATEM
+lineage. DPO uses structured chosen/rejected records and requires an
+authenticated frozen reference. Reward mode trains a masked last-token scalar
+head with pairwise BCE. PPO performs online rollouts with authenticated frozen
+reference/reward checkpoints, per-token log-probabilities, KL, GAE, and clipped
+minibatch epochs. `--adapter none|lora|qlora` selects full update, dense-base
+LoRA, or a frozen deterministic NF4 group-64 base.
+
+`--kquant-profile k-quant-17gb|k-quant-dynamic` selects immutable official
+GGUF-base LoRA for SFT/DPO; it is not NF4 QLoRA. The main digest and tensor
+table are pinned in adapter state, DPO reference must be the identical packed
+base, and only adapters are saved. Packed reward/PPO is rejected.
+
+Full-BF16 AR/SFT accepts `--pipeline-parallel-size N` and
+`--pipeline-cuda-devices d0,...,dN-1`. Without an explicit rank the CLI starts
+one process per distinct device, assigns contiguous layer stages, and shares a
+temporary NCCL unique-ID file. Use `--nccl-lib`, optionally
+`--distributed-timeout-seconds`/`--distributed-reserve-bytes`, or
+`--print-distributed-plan` for admission planning. Rank-local checkpoints bind
+the world/stage layout and cannot resume under a different layout.
+
+`nfn train --runtime native-cuda --graph-file GRAPH ...` runs the same
+source-safe compatibility pass before binary resolution. Thirteen exact reviewed
+profiles report `execution_ready: true`: `gpt2`, `gpt2_megakernel`,
+`gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`,
+canonical `llama`, `llama_fast`, and standard-MoE `moe`, `mixllama`, and
+`mixllama_fast`, plus proof-bound `gpt2_diff` training. The other 53 shipped profiles fail closed with stable
+node-specific JSON and never route through a diagnostic transition sampler.
+`gpt2_diff` is training-ready only after the trusted planner emits
+`native-training-proof.json`, and it remains not graph-planned
+migration/resident execution-ready. The trainer requires the exact
+graph/fingerprint/proof triplet before plan/Tile/CUDA work; the unkeyed proof
+digest is local-handoff integrity, not caller authenticity. Its low-level compiled trainer learns one
+FP32 lambda per layer and writes a source-bound, DONE-gated five-binary bundle
+plus `model_XXXXXXXX.diff.json`. The metadata schema is
+`neuralfn.native_gpt2_diff.training_checkpoint` version 2; its unchanged binary
+formats retain `checkpoint_kind=trained_dense_v5_plus_diff_v1`. Continuation
+requires the planner-issued graph, verified lowercase fingerprint, and proof.
+Preflight completes before Tile/CUDA/H2D and binds graph and artifact identity,
+optimizer/microbatch and sampler counters, seed explicitness/value,
+batch/accumulation shape, ordered training-shard contents, optimizer/LR and
+absolute schedule horizon, LM-head chunk, effective BF16 routes, and a canonical
+numerics profile of supported effective routes. Validation shards are excluded from the training
+identity. Migration and resident inference do not consume the bundle yet, so
+their capability matrix remains 12 ready and 55 blocked even though graph
+training is 13 ready and 54 blocked.
+The learned trainer requires its
+learned-lambda ABI; the legacy fixed-lambda differential ABI remains outside
+this path with rounded-output/non-layer-local backward correctness debt.
+`nfn migrate graph-to-native` rejects `.pt`, raw `.bin`, and metadata-v2
+`.diff.json` weights paired with this graph before generic checkpoint dispatch
+or output creation. Keep the complete bundle until a differential inspector
+and resident consumer are implemented.
+Canonical LLaMA additionally requires exact RMSNorm/RoPE/MHA-or-GQA/dense-
+attention/gate-first-SwiGLU, biasless, dropout-zero, untied topology. Its plan
+owns layers, width, hidden rounding, heads, vocabulary, context, RoPE, and the
+source SHA-256. The current executables remain selector-driven, so a ready plan reports
+`trainer_consumes_native_ir: false` and `graph_preflight_enforced: true`. A
+real run snapshots the validated graph and planning sidecars under
+`OUTPUT_DIR/native-ir`, then passes that immutable graph plus canonical
+selector/geometry to the trainer. LLaMA verifies graph byte identity before
+dataset/CUDA initialization and at checkpoint write. `--dry-run`, plan/check
+actions, and command printing cannot enter the dataset loop and do not
+materialize those artifacts. Caller-selected train/smoke actions are rejected.
+
+## Legacy inference migration guard
+
+The retained graph-backed and graphless Parameter Golf paths are compatibility
+routes. Ordinary calls still reach their existing runtime, but first print a
+deprecation warning:
+
+```bash
+nfn infer --graph artifacts/model.json --weights artifacts/model.pt --prompt "Hello"
+nfn infer --checkpoint artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
+```
+
+For `--graph`, the warning derives an adjacent `<graph-stem>-native` output and
+prints the exact `nfn migrate graph-to-native` command with every supplied path
+quoted safely for a shell. Graphless `--checkpoint MODEL.pt`, and
+`--weights MODEL.pt` without `--graph`, cannot prove topology. Those warnings
+state that a matching NeuralFn graph is required and print this deliberately
+unresolved template rather than guessing a graph path:
+
+```bash
+nfn migrate graph-to-native \
+  --graph MATCHING_GRAPH.json \
+  --weights artifacts/final_model.pt \
+  --output-dir artifacts/final_model-native
+```
+
+Legacy artifacts cannot opt into resident-only features. `--serve`,
+`--kv-cache turboquant`, and `--kv-cache=turboquant` return exit code 2 before
+the native server or full legacy runtime is entered, while also printing the
+artifact-specific migration guidance. A migrated `.pt` is a validated generic
+graph/tensor bundle, not a resident model. A separately compatible resident
+native checkpoint is still required before serving or TurboQuant can be used.
+
+## Interactive inference transcripts
+
+Interactive TTY graph inference defaults to `--chat-mode transcript` and opens
+the installed Rich native-chat TUI. Its banner shows the selected runtime,
+weight precision, cache, speculation mode, renderer, context, and sampling;
+assistant panels show new/reused prefill tokens, decode tok/s, and DFlash
+acceptance. Use `--chat-mode stateless` or `/mode stateless` for independent
+turns. An initial `--prompt` is the first transcript turn;
+`--system-prompt TEXT` adds a retained leading instruction that remains active
+in stateless mode and after `/reset`. `--chat-template
+auto|plain_roles|PATH` prefers a usable artifact/tokenizer template, accepts a
+data-only marker template from a file, and warns before falling back to
+`plain_roles` in CLI sessions.
+
+The interactive commands are `/mode stateless|transcript`, `/show` (alias
+`/stats`), `/reset`, `/clear`, `/help`, and `/exit`. `/show` reads live
+resident statistics without recreating the model. For packed Glimmer CUDA,
+its `cuda_device_argmax_calls` and `cuda_device_argmax_rows` values prove that
+ordinary greedy target selection or greedy DFlash proposal/verification
+selection stayed on device. `/reset` clears transcript turns and resident
+cache state but retains the configured system prompt. The default CLI
+completion allowance is 512 tokens; pass `--max-new-tokens N` to change it.
+
+Before encoding, the CLI reserves the requested output-token capacity. It
+trims oldest complete conversation groups while retaining leading
+developer/system messages and the newest user/tool request, and fails when
+that mandatory remainder cannot fit. Configured role/EOS delimiters are
+stripped from ordinary assistant text before it enters process-local history.
+Muse Glimmer additionally uses an ATEM-aware response parser: private
+`to=self` content is hidden and never retained, while only `to=user` content
+is displayed and added to the next turn. A truncated private-only completion
+fails closed with a suggestion to increase the token allowance. Non-TTY
+inference remains one-shot, and the legacy raw native-checkpoint sampler
+remains one-shot. Native Execution manifest artifacts instead load one
+resident model/session and use the same transcript controls with exact-prefix
+cache reuse. See
+[Resident Native Artifact CLI Inference](native-cli-inference.md).
+
+For canonical LLaMA, artifact-directory, manifest, and exact contained
+`model.f32` invocations select the resident path. A non-interactive
+`--prompt-tokens` request remains tokenizer-free; when no supported text codec
+exists, the CLI warns once and prints generated token IDs as comma-separated
+integers. Text prompts and interactive transcripts do not use that fallback.
+
+The same manifest-first rule applies to graph-bound standard-MoE artifacts for
+`moe`, `mixllama`, and `mixllama_fast`. Their exact contained `model.f32` uses
+the real resident router/expert forward and lossless cache; it does not enter the
+native-family transition sampler. Raw token IDs remain tokenizer-free, while
+text and HTTP use still require compatible tokenizer/chat metadata. Explicit
+TurboQuant fails closed.
+
 ## Native text embeddings
 
 `nfn train --base-model embedding` opens model-aware embedding setup rather
@@ -990,7 +1309,7 @@ nfn-native-train --base-model jamba --native-cuda-smoke-jamba-layer-schedule-ste
 nfn-native-train --base-model hnet-lm --native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn-native-train --base-model universal-llama --native-cuda-smoke-universal-transformer-loop-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
-nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2_evo --prompt-tokens 50256 --max-new-tokens 64
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt --prompt-tokens 50256 --max-new-tokens 64
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --base-model gpt2 --dataset shakespeare
 nfn kernels list --json
@@ -1182,7 +1501,10 @@ of the same native transformer trainer and all report
 or custom graph, not the family label, chooses the effective architecture.
 NanoGPT full-transformer training adds `--template-name nanogpt` and uses the
 selected 320-wide/5-head/5-layer dense GPT geometry; explicit `--train-token-lm`
-remains implemented for token-LM diagnostics.
+remains implemented for token-LM diagnostics. This is command dispatch and
+geometry selection, not graph-faithful NanoGPT persistence/forward/residency:
+the authored bias-free/dropout contract remains blocked against biased,
+dropout-free dense-v5.
 Plan and runtime JSON include `architecture_source`,
 `architecture_contract`, `model_family_context_policy`, and
 `resolved_native_template_name` so a run makes clear that the graph/template,
@@ -1581,7 +1903,22 @@ local step. Runtime JSON reports `resume_checkpoint_loaded`,
 `resume_sampler_seek_applied`, `resume_checkpoint_step`,
 `resume_mode: "float32_parameter_and_adamw_state_resume"`, sidecar copy counts,
 and `total_optimizer_steps_completed`. Older model-only checkpoints still load
-as `resume_mode: "bf16_weight_warm_start"`.
+as `resume_mode: "bf16_weight_warm_start"`, except selector-only `gpt2_moa`
+output: its direct first-leg dense-v5 file remains valid training output, but
+an unbound resume is rejected because it cannot restore the selected
+activation. Exact MoA resume requires the graph-bound sibling `.moa.json`.
+`gpt2_diff` does not use the model-only warm-start allowance. It requires the
+complete version-2 differential bundle and rejects version-1 metadata before
+Tile/CUDA/H2D. `--max-steps` is additional work;
+`--lr-schedule-total-steps N` fixes the absolute optimizer-step horizon, and an
+omitted resume value inherits the recorded horizon. An explicit mismatch is an
+error, and a first-leg `--train-seed` must be repeated with the same value.
+Final learned-differential export refuses every existing target, fsyncs each
+exclusive no-follow regular file, fsyncs the directory, creates/fsyncs empty
+DONE last, and fsyncs the directory again. Failure attempts to remove only new
+transaction files. It does not publish through atomic rename, does not reject
+ancestor symlinks, and does not cover `--checkpoint-metadata-smoke`; use a fresh
+output/step rather than relying on overwrite.
 Use `--cuda-runtime-lib PATH` or `NFN_CUDA_RUNTIME_LIB` when libcudart is not
 on the loader path. Backend names are strict; use `tile-cuda`.
 Semantic-MoE native training keeps its expert topology explicit. `nfn train
@@ -1967,13 +2304,30 @@ The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,
 `selected_graph_support_status`, `selected_graph_native_runnable`, and the
 synchronized shipped template catalog before any graph-backed runtime import.
-It also preserves `--tile-cuda-activation-dtype nvfp4|float32|none` through the
-compiled dense GPT delegate; the dense trainer reports the selected value under
-`tile_cuda.activation_dtype` in plan/runtime JSON.
-Dense GPT-2-compatible selectors, including `gpt2_modern`, report
-`native-dense-gpt-layer-evo-delegate`; structurally different templates report
-`template-native-trainer-missing`; custom graph files report
+All selectors are currently non-runnable for GPT2-Evo training and report
+`training_execution_blocked: true`. Dense GPT-2-compatible selectors, including
+`gpt2_modern`, report
+`preflight-only-graph-faithful-layer-evo-missing`: the authored graph excludes
+every tensor in one designated transformer block from gradient/AdamW updates
+and evolves the whole block, while the current dense implementation
+AdamW-updates that block and evolves only `block_N.ln1.weight`. The plan lists
+the exact missing whole-block exclusion, mutation/evaluation/adoption, and
+checkpoint/resume gates. `--print-plan` and `--dry-run` remain successful
+inspection modes; normal execution, `--startup-only`, and `--print-command`
+fail before delegate exec, CUDA setup/allocation, or output creation.
+`--no-layer-evo` is not GPT2-Evo training and directs callers to
+`nfn_gpt_native_train` for ordinary dense training. Structurally different
+templates report `template-native-trainer-missing`; custom graph files report
 `custom-graph-native-trainer-missing`.
+
+The same safety boundary applies if callers bypass the family preflight and
+pass `--layer-evo`, `--native-cuda-layer-evo`, or any `--evo-*` option directly
+to `nfn_gpt_native_train`. Normal/startup/print-command requests return 2 with
+the blocked JSON before Tile loading, CUDA setup/allocation, `--json-out` or
+checkpoint creation, and model mutation. Print-plan/dry-run are side-effect-free
+inspection. A final `--no-layer-evo` selects ordinary dense GPT instead;
+explicit kernel/checkpoint metadata smokes remain labeled isolated diagnostics.
+
 Normal dense GPT native training requires the optimized CUDA Tile contract by
 default. The compiled trainer fails instead of silently using basic routes when
 the optimized AdamW ABI is missing, attention row/scalar fallbacks launch, or
@@ -2001,7 +2355,9 @@ the BF16 GEMMEx fallback instead of the optimized contract route.
 Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to
 verify the raw evo mutate/select/adopt ABI on CUDA device buffers without
 opening datasets, importing Python/Torch, or routing payloads through
-graph-editor nodes.
+graph-editor nodes. This is an isolated primitive diagnostic; its JSON still
+reports `selected_graph_native_runnable: false` and the whole-block missing
+gates.
 
 The same trainer samples cached token/target batches directly into one pinned
 uint16 arena, enqueues one H2D `cudaMemcpyAsync`, and widens tokens plus targets
@@ -2255,7 +2611,7 @@ tokens/sec. JSON reports
 `block_state_layout.layer_norm_backward_affine_strategy:
 "auto-chunked-atomic-accumulate"`.
 
-The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `train_gpt2.py` is the compatibility entrypoint. Direct execution with the default `compiled-cli` runner translates GPT flags to the compiled C++ CLI and runs it before importing `train_gpt_native.py`, graph-backed helpers, `server.dataset_manager`, NumPy, tiktoken, or Torch; importing the compatibility module, building its parser, and resolving defaults are also lightweight. The native GPT default dataset is TinyStoriesV2 GPT-4 (`roneneldan__TinyStories__TinyStoriesV2-GPT4`) with the GPT-2 tokenizer; `golf1` and `golf10` are explicit cached-token shortcuts, not defaults. The native path resolves the dataset alias with the shared C++ token-shard resolver, materializes `gpt2`/SentencePiece raw text into uint16 `fineweb_train_*.bin` and `fineweb_val_*.bin` shards when needed, then launches the compiled CUDA Tile trainer directly. The resolver also accepts llm.kittens-style `TinyStories_train.bin` / `TinyStories_val.bin`; `--tinystories` uses `/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories` when those files exist, `NFN_LLM_KITTENS_TINYSTORIES_DIR` overrides that location, and direct `--dataset-alias /path/to/TinyStories_train.bin` infers the sibling validation bin. The C++ sampler reads contiguous shard segments for each batch instead of reopening the shard for every sequence chunk, and native token-shard JSON reports `batch_read_strategy: "contiguous_shard_segments"`. With the default `compiled-cli` runner and existing cached train plus validation shard files, Python passes the alias/path directly to the compiled resolver without reading `meta.json`, validating shard metadata, or estimating the full training schedule first. The script sets up its own repo/script import path before native dispatch, so direct `python cli/scripts/train_gpt.py ...` and `runpy`-style native invocations do not need `PYTHONPATH`. Default dense GPT `nfn train` commands go directly to `nfn_gpt_native_train --backend tile-cuda --train-transformer-lm` before importing `train_gpt_native`, `nfn_impl`, or Torch. For the closest zero-Python equivalent to `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, run `tools/train_gpt_sm120.sh`; it execs `nfn_gpt_native_train` directly, prefers the llm.kittens TinyStories token bins when present, sets `CUDA_DEVICE_MAX_CONNECTIONS=1`, and forwards extra native flags after the SM120 defaults. Unsupported families fail from the native registry. Explicit non-default compatibility runners still use the Python native runner. Real token batches do not pass through graph-editor nodes or `TorchTrainer` on the compiled Tile-CUDA path. Defaults match the referenced SM120 run shape: 20,000 steps, sequence length 1024, microbatch 64, 524,288 tokens/step, learning rate 0.0006, weight decay 0.1, 60 warmup steps, validation every 5000 steps, sample cadence 20,000, train-loss cadence 250, checkpoint cadence 5000, cosine decay to zero, tokenizer vocab 50,257, and padded native embedding/LM-head rows 50,304. The C++ loop makes the 524,288-token step real by deriving `grad_accum_steps = ceil(train_batch_tokens / (batch_size * seq_len))`, streaming that many microbatches through CUDA Tile forward/backward, accumulating scaled gradients on device, and running clip plus AdamW once per optimizer step. Native JSON reports `model_family`, `microbatch_tokens`, `requested_train_batch_tokens`, `grad_accum_steps`, `effective_train_batch_tokens`, `train_microbatches_completed`, `gradient_accumulation_strategy`, `vocab`, and `padded_vocab`. It also reports `sample_every_steps`, `generate_tokens`, `checkpoint_every_steps`, `train_time_sampling_enabled`, `periodic_checkpoint_enabled`, `final_checkpoint_export_enabled`, and `progress_every_steps`; runtime progress itself is written to stderr so stdout remains the final JSON payload. The trainer prints the resolved schedule and optimizer settings before CUDA setup/prewarm starts, then emits `setup start` / `setup done ... elapsed_ms=...` lines for setup stages; set `NFN_NATIVE_GPT_SETUP_PROGRESS=0`, `NFN_NATIVE_GPT2_SETUP_PROGRESS=0`, or `NFN_TILE_CUDA_SETUP_PROGRESS=0` only when that setup heartbeat should be suppressed. The default optimizer-loop heartbeat is every 10 optimizer steps and includes step, tokens, elapsed seconds, and tokens/sec. Use `--progress-every-steps 1` for per-step feedback, or `--progress-every-steps 0` to silence the optimizer-loop heartbeat. The default direct-uint16 token path does not reserve the unused int64 token/target device subarena; native JSON reports `token_i64_device_arena_elided` and `token_i64_device_arena_bytes_elided` for that startup allocation reduction. Build the C++ binding with `bash tools/build_native_gpt2_binding.sh`, the launcher with `bash tools/build_native_gpt2_launcher.sh`, the no-Python cached-shard CLI with `bash tools/build_native_gpt_cli.sh`, and the unified frontend with `bash tools/build_native_train_cli.sh`. `cli/install.sh` links stable command names, so use `nfn-native-train --base-model gpt --dataset-alias PATH_OR_ALIAS` or `nfn-gpt-native --dataset-alias PATH_OR_ALIAS` to bypass Python entirely when shards already exist. Use `nfn-native-train --list-models` or `--list-models --json` to inspect native training coverage. The default runner is `compiled-cli`, which requires the no-Python cached-shard CLI; use `--native-cuda-runner auto|binding|launcher` only when you intentionally want SDK binding or launcher selection. When `CUDA_VISIBLE_DEVICES` is unset, the direct fast path defaults to ordinal `0` without spawning `nvidia-smi`; set `CUDA_VISIBLE_DEVICES`, `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES` explicitly to pin another device or request `dedicated`, `auto`, or `dedicated-auto` selector routing. Use `--warmup-steps N` or `NFN_NATIVE_GPT_WARMUP_STEPS=N` to override the reference warmup. Use `--eval-every-steps 1000` for validation loss every 1000 optimizer steps, and use `--train-loss-every-steps 1000`, `--train-log-every 1000`, or `--train-log-every-steps 1000` for sampled native training loss cadence. Training-loss cadence defaults to `250`; set it to `0` for timing-only runs; when enabled it is collected inside the folded LM-head backward recompute rather than by sending tokens through graph-editor nodes or running a duplicate forward LM-head loss pass. Use `--native-cuda-print-command` to inspect the resolved native command, `--native-cuda-config-out PATH` to persist it, `NFN_DATASETS_DIR=/path/to/datasets` to override the native alias cache root, `NFN_NATIVE_GPT2_BIN_DIR=/path/to/bin` to choose where native command symlinks are installed, `NFN_NATIVE_TRAIN_CLI=/path/to/nfn_native_train` to override the unified frontend, `NFN_NATIVE_GPT_CLI=/path/to/nfn_gpt_native_train` to override the GPT compiled CLI, and `NFN_NATIVE_GPT_LAUNCHER=/path/to/nfn_gpt_tile_train` to override the launcher. `NFN_NATIVE_GPT2_LAUNCHER` remains a compatibility fallback when the generic launcher override is unset. Guarded compatibility scripts such as `train_gpt2_evo.py` print the resolved command without executing the native binary for plain `--native-cuda-dry-run --native-cuda-print-command`; adding `--native-cuda-print-plan`, `--native-cuda-startup-only`, `--native-cuda-check-tile-ops`, or smoke flags still executes the native preflight action.
+The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `train_gpt2.py` is the compatibility entrypoint. Direct execution with the default `compiled-cli` runner translates GPT flags to the compiled C++ CLI and runs it before importing `train_gpt_native.py`, graph-backed helpers, `server.dataset_manager`, NumPy, tiktoken, or Torch; importing the compatibility module, building its parser, and resolving defaults are also lightweight. The native GPT default dataset is TinyStoriesV2 GPT-4 (`roneneldan__TinyStories__TinyStoriesV2-GPT4`) with the GPT-2 tokenizer; `golf1` and `golf10` are explicit cached-token shortcuts, not defaults. The native path resolves the dataset alias with the shared C++ token-shard resolver, materializes `gpt2`/SentencePiece raw text into uint16 `fineweb_train_*.bin` and `fineweb_val_*.bin` shards when needed, then launches the compiled CUDA Tile trainer directly. The resolver also accepts llm.kittens-style `TinyStories_train.bin` / `TinyStories_val.bin`; `--tinystories` uses `/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories` when those files exist, `NFN_LLM_KITTENS_TINYSTORIES_DIR` overrides that location, and direct `--dataset-alias /path/to/TinyStories_train.bin` infers the sibling validation bin. The C++ sampler reads contiguous shard segments for each batch instead of reopening the shard for every sequence chunk, and native token-shard JSON reports `batch_read_strategy: "contiguous_shard_segments"`. With the default `compiled-cli` runner and existing cached train plus validation shard files, Python passes the alias/path directly to the compiled resolver without reading `meta.json`, validating shard metadata, or estimating the full training schedule first. The script sets up its own repo/script import path before native dispatch, so direct `python cli/scripts/train_gpt.py ...` and `runpy`-style native invocations do not need `PYTHONPATH`. Default dense GPT `nfn train` commands go directly to `nfn_gpt_native_train --backend tile-cuda --train-transformer-lm` before importing `train_gpt_native`, `nfn_impl`, or Torch. For the closest zero-Python equivalent to `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, run `tools/train_gpt_sm120.sh`; it execs `nfn_gpt_native_train` directly, prefers the llm.kittens TinyStories token bins when present, sets `CUDA_DEVICE_MAX_CONNECTIONS=1`, and forwards extra native flags after the SM120 defaults. Unsupported families fail from the native registry. Explicit non-default compatibility runners still use the Python native runner. Real token batches do not pass through graph-editor nodes or `TorchTrainer` on the compiled Tile-CUDA path. Defaults match the referenced SM120 run shape: 20,000 steps, sequence length 1024, microbatch 64, 524,288 tokens/step, learning rate 0.0006, weight decay 0.1, 60 warmup steps, validation every 5000 steps, sample cadence 20,000, train-loss cadence 250, checkpoint cadence 5000, cosine decay to zero, tokenizer vocab 50,257, and padded native embedding/LM-head rows 50,304. The C++ loop makes the 524,288-token step real by deriving `grad_accum_steps = ceil(train_batch_tokens / (batch_size * seq_len))`, streaming that many microbatches through CUDA Tile forward/backward, accumulating scaled gradients on device, and running clip plus AdamW once per optimizer step. Native JSON reports `model_family`, `microbatch_tokens`, `requested_train_batch_tokens`, `grad_accum_steps`, `effective_train_batch_tokens`, `train_microbatches_completed`, `gradient_accumulation_strategy`, `vocab`, and `padded_vocab`. It also reports `sample_every_steps`, `generate_tokens`, `checkpoint_every_steps`, `train_time_sampling_enabled`, `periodic_checkpoint_enabled`, `final_checkpoint_export_enabled`, and `progress_every_steps`; runtime progress itself is written to stderr so stdout remains the final JSON payload. The trainer prints the resolved schedule and optimizer settings before CUDA setup/prewarm starts, then emits `setup start` / `setup done ... elapsed_ms=...` lines for setup stages; set `NFN_NATIVE_GPT_SETUP_PROGRESS=0`, `NFN_NATIVE_GPT2_SETUP_PROGRESS=0`, or `NFN_TILE_CUDA_SETUP_PROGRESS=0` only when that setup heartbeat should be suppressed. The default optimizer-loop heartbeat is every 10 optimizer steps and includes step, tokens, elapsed seconds, and tokens/sec. Use `--progress-every-steps 1` for per-step feedback, or `--progress-every-steps 0` to silence the optimizer-loop heartbeat. The default direct-uint16 token path does not reserve the unused int64 token/target device subarena; native JSON reports `token_i64_device_arena_elided` and `token_i64_device_arena_bytes_elided` for that startup allocation reduction. Build the C++ binding with `bash tools/build_native_gpt2_binding.sh`, the launcher with `bash tools/build_native_gpt2_launcher.sh`, the no-Python cached-shard CLI with `bash tools/build_native_gpt_cli.sh`, and the unified frontend with `bash tools/build_native_train_cli.sh`. `cli/install.sh` links stable command names, so use `nfn-native-train --base-model gpt --dataset-alias PATH_OR_ALIAS` or `nfn-gpt-native --dataset-alias PATH_OR_ALIAS` to bypass Python entirely when shards already exist. Use `nfn-native-train --list-models` or `--list-models --json` to inspect native training coverage. The default runner is `compiled-cli`, which requires the no-Python cached-shard CLI; use `--native-cuda-runner auto|binding|launcher` only when you intentionally want SDK binding or launcher selection. When `CUDA_VISIBLE_DEVICES` is unset, the direct fast path defaults to ordinal `0` without spawning `nvidia-smi`; set `CUDA_VISIBLE_DEVICES`, `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES` explicitly to pin another device or request `dedicated`, `auto`, or `dedicated-auto` selector routing. Use `--warmup-steps N` or `NFN_NATIVE_GPT_WARMUP_STEPS=N` to override the reference warmup. Use `--eval-every-steps 1000` for validation loss every 1000 optimizer steps, and use `--train-loss-every-steps 1000`, `--train-log-every 1000`, or `--train-log-every-steps 1000` for sampled native training loss cadence. Training-loss cadence defaults to `250`; set it to `0` for timing-only runs; when enabled it is collected inside the folded LM-head backward recompute rather than by sending tokens through graph-editor nodes or running a duplicate forward LM-head loss pass. Use `--native-cuda-print-command` to inspect the resolved native command, `--native-cuda-config-out PATH` to persist it, `NFN_DATASETS_DIR=/path/to/datasets` to override the native alias cache root, `NFN_NATIVE_GPT2_BIN_DIR=/path/to/bin` to choose where native command symlinks are installed, `NFN_NATIVE_TRAIN_CLI=/path/to/nfn_native_train` to override the unified frontend, `NFN_NATIVE_GPT_CLI=/path/to/nfn_gpt_native_train` to override the GPT compiled CLI, and `NFN_NATIVE_GPT_LAUNCHER=/path/to/nfn_gpt_tile_train` to override the launcher. `NFN_NATIVE_GPT2_LAUNCHER` remains a compatibility fallback when the generic launcher override is unset. Guarded compatibility scripts such as `train_gpt2_evo.py` print the resolved family-preflight command without executing it for the combined wrapper-only `--native-cuda-dry-run --native-cuda-print-command`; this does not expose a runnable dense delegate. When the GPT2-Evo family binary is invoked, `--print-plan` and `--dry-run` inspect the non-runnable plan, while normal execution, `--startup-only`, and `--print-command` return 2 before delegate exec, CUDA setup/allocation, or output creation; the isolated evo-kernel smoke is the only CUDA diagnostic retained.
 
 Use `--lr-schedule cosine` for warmup followed by cosine decay, or
 `--lr-schedule constant` for fixed-LR runs. `--final-lr-fraction F` sets the
@@ -2301,9 +2657,9 @@ Pass `--beta1`, `--beta2`, `--adam-eps`, or `--grad-clip-norm` to override
 them on the compiled CUDA Tile trainer. `train_gpt.py`, `train_gpt2.py`,
 `train_gpt_native.py`, `nfn train`, and the `tools/train_gpt_sm120.sh` /
 `nfn_train_gpt_sm120` launchers forward those overrides to the compiled
-frontend. Plan and runtime JSON report the effective `optimizer` object, and
-the GPT-2-evo native delegate forwards the same values when it execs the dense
-GPT `--train-transformer-lm --layer-evo` path.
+frontend. Plan and runtime JSON report the effective `optimizer` object. The
+GPT2-Evo preflight parses the same optimizer values for inspection but does not
+forward or execute them while graph-faithful whole-block evolution is blocked.
 
 Runtime JSON now emits `checkpoint_export_enabled` beside the older
 `final_checkpoint_export_enabled` alias; benchmark and CI automation should use
@@ -3958,7 +4314,15 @@ access in the current process context. Check unsandboxed `nvidia-smi` and the
 libcudart selected by `--cuda-runtime-lib` / `NFN_CUDA_RUNTIME_LIB` before
 treating it as a kernel or Tile ops failure.
 
-Non-dense-GPT `nfn train` commands now enter compiled native C++ before any legacy graph-backed imports. The top-level CLI prefers direct family binaries for compiled families: `NFN_NATIVE_<MODEL>_CLI`, then `build/nfn_<model>_native_train`, then an installed `nfn_<model>_native_train`; only if none is available does it fall back to the unified `nfn-native-train --base-model <model>` frontend. `NFN_NATIVE_TRAIN_CLI` is the explicit override when you intentionally want that unified frontend. Direct guarded training scripts (`train_llama_fast.py`, `train_llama_megakernel.py`, `train_nanogpt.py`, `train_gpt2_evo.py`, `train_jepa_semantic.py`, semantic-router MoE variants, and `train_deepseek_v4.py`) use the same native C++ boundary. Dense GPT guards prefer `build/nfn_gpt_native_train_linked` over `build/nfn_gpt_native_train` when it is present and add `--tile-ops-lib linked` unless a Tile ops library flag was already provided; set `NFN_NATIVE_GPT_CLI` to force another dense GPT binary. `train_gpt2_evo.py`, `train_nanogpt.py`, `train_llama_fast.py`, `train_llama_megakernel.py`, semantic-router MoE training scripts, and `train_deepseek_v4.py` are now Torch-free native shims on both direct execution and module import; importing `train_jepa_semantic.py` and building its parser now also avoids Torch, with the old graph-backed training runtime loaded only by helper functions that explicitly use it. The pre-import guard normalizes wrapper-level preflight aliases such as `--native-cuda-print-plan`, `--native-cuda-list-templates`, `--native-cuda-check-tile-ops`, `--native-cuda-smoke-*`, `--native-cuda-tile-ops-lib`, and `--native-cuda-cuda-runtime-lib` to the canonical C++ flags before forwarding to family binaries. The no-Torch verifier covers direct GPT, the GPT template catalog action, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4, native inference, explicit and default `nfn train`, top-level per-family `nfn train --base-model ...` dispatch for GPT-2 evo, NanoGPT token-LM, LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4, SDK handoff surfaces, and built SDK binding imports under an import blocker for Torch, NumPy, tokenizers, dataset manager imports, and `nfn_impl`; its default `ldd` artifact scan now requires the dense GPT fast-path artifacts (`build/nfn_gpt_native_train`, `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`, `build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`, `build/nfn_native_train`, `build/libnfn_native_train_tile_ops.so`, `neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and `neuralfn/_native_train.*.so`) and additionally scans optional per-family trainer binaries when they are present. It also budget-checks direct native trainer metadata startup through `build/nfn_gpt_native_train_linked --list-templates`, `build/nfn_gpt2_native_train --list-templates`, `build/nfn_native_train --list-models --json`, `build/nfn_native_train --base-model gpt --list-templates`, and `build/nfn_native_train --base-model gpt --native-cuda-list-templates`, so native binary, registry, and unified GPT catalog startup regressions fail even if wrapper dry-runs are still fast. The old `NFN_ALLOW_TORCH_TRAINING` bypass is ignored by CLI training entrypoints; legacy graph-backed experiments must call Python SDK trainer APIs directly. Normal `nfn train --base-model nanogpt ...`, `python cli/scripts/train_nanogpt.py ...`, direct `python cli/scripts/train_gpt_native.py --model-family nanogpt ...`, and raw `nfn_gpt_native_train --model-family nanogpt ...` runs dispatch to the shared dense GPT native trainer with `--model-family nanogpt --template-name nanogpt --train-transformer-lm`; pass `--train-token-lm` explicitly to use the older native tied token-LM diagnostic loop. The direct GPT-native wrapper and compiled C++ frontend preserve NanoGPT as `model_family: "nanogpt"` and inject `--template-name nanogpt` unless the caller already supplied a template or graph selector. That token-LM loop uses `--eval-every-steps`, `--eval-batches`, and `--eval-batch-size` to compute validation loss over resolved validation token shards inside the compiled C++ loop, and reports those records in the output JSON `validation.losses` list without sending validation data through graph-editor nodes or Torch. Explicit native actions such as `--print-plan`, `--list-templates`, `--check-tile-ops`, or smoke commands still run exactly as requested. GPT-2 evo has a model-aware compiled C++ preflight: `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 5000 --tile-cuda-activation-dtype nvfp4` reports the AdamW, NVFP4, validation, 60-step warmup, and evo-layer plan; the binary also accepts `--warmup-steps`, `--native-cuda-print-plan`, `--native-cuda-smoke-evo-kernels`, `--native-cuda-tile-ops-lib`, and `--native-cuda-cuda-runtime-lib` directly for wrapper-compatible preflight usage. The raw Tile-CUDA trainer ABI now provides device-side mutation, best-loss selection, and best-candidate adoption; dense GPT-2-compatible evo training delegates to the native dense GPT trainer for forward candidate evaluation.
+`cli/scripts/train_llama_megakernel.py` owns its native selector for every
+action. It adds `--template-name llama-megakernel` by default, consumes
+`--fast` and selects `llama-fast-megakernel`, and removes caller template
+aliases so the named wrapper cannot silently become another profile. This is a
+routing correction only: both selectors remain closed for graph migration and
+resident inference because the current fused ABI is a host-side composition of
+ordinary CUDA kernels, not a genuine fused or persistent megakernel.
+
+Non-dense-GPT `nfn train` commands now enter compiled native C++ before any legacy graph-backed imports. The top-level CLI prefers direct family binaries for compiled families: `NFN_NATIVE_<MODEL>_CLI`, then `build/nfn_<model>_native_train`, then an installed `nfn_<model>_native_train`; only if none is available does it fall back to the unified `nfn-native-train --base-model <model>` frontend. `NFN_NATIVE_TRAIN_CLI` is the explicit override when you intentionally want that unified frontend. Direct guarded training scripts (`train_llama_fast.py`, `train_llama_megakernel.py`, `train_nanogpt.py`, `train_gpt2_evo.py`, `train_jepa_semantic.py`, semantic-router MoE variants, and `train_deepseek_v4.py`) use the same native C++ boundary. Dense GPT guards prefer `build/nfn_gpt_native_train_linked` over `build/nfn_gpt_native_train` when it is present and add `--tile-ops-lib linked` unless a Tile ops library flag was already provided; set `NFN_NATIVE_GPT_CLI` to force another dense GPT binary. `train_gpt2_evo.py`, `train_nanogpt.py`, `train_llama_fast.py`, `train_llama_megakernel.py`, semantic-router MoE training scripts, and `train_deepseek_v4.py` are now Torch-free native shims on both direct execution and module import; importing `train_jepa_semantic.py` and building its parser now also avoids Torch, with the old graph-backed training runtime loaded only by helper functions that explicitly use it. The pre-import guard normalizes wrapper-level preflight aliases such as `--native-cuda-print-plan`, `--native-cuda-list-templates`, `--native-cuda-check-tile-ops`, `--native-cuda-smoke-*`, `--native-cuda-tile-ops-lib`, and `--native-cuda-cuda-runtime-lib` to the canonical C++ flags before forwarding to family binaries. The no-Torch verifier covers direct GPT, the GPT template catalog action, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4, native inference, explicit and default `nfn train`, top-level per-family `nfn train --base-model ...` dispatch for GPT-2 evo, NanoGPT token-LM, LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4, SDK handoff surfaces, and built SDK binding imports under an import blocker for Torch, NumPy, tokenizers, dataset manager imports, and `nfn_impl`; its default `ldd` artifact scan now requires the dense GPT fast-path artifacts (`build/nfn_gpt_native_train`, `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`, `build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`, `build/nfn_native_train`, `build/libnfn_native_train_tile_ops.so`, `neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and `neuralfn/_native_train.*.so`) and additionally scans optional per-family trainer binaries when they are present. It also budget-checks direct native trainer metadata startup through `build/nfn_gpt_native_train_linked --list-templates`, `build/nfn_gpt2_native_train --list-templates`, `build/nfn_native_train --list-models --json`, `build/nfn_native_train --base-model gpt --list-templates`, and `build/nfn_native_train --base-model gpt --native-cuda-list-templates`, so native binary, registry, and unified GPT catalog startup regressions fail even if wrapper dry-runs are still fast. The old `NFN_ALLOW_TORCH_TRAINING` bypass is ignored by CLI training entrypoints; legacy graph-backed experiments must call Python SDK trainer APIs directly. Normal `nfn train --base-model nanogpt ...`, `python cli/scripts/train_nanogpt.py ...`, direct `python cli/scripts/train_gpt_native.py --model-family nanogpt ...`, and raw `nfn_gpt_native_train --model-family nanogpt ...` runs dispatch to the shared dense GPT native trainer with `--model-family nanogpt --template-name nanogpt --train-transformer-lm`; pass `--train-token-lm` explicitly to use the older native tied token-LM diagnostic loop. The direct GPT-native wrapper and compiled C++ frontend preserve NanoGPT as `model_family: "nanogpt"` and inject `--template-name nanogpt` unless the caller already supplied a template or graph selector. That token-LM loop uses `--eval-every-steps`, `--eval-batches`, and `--eval-batch-size` to compute validation loss over resolved validation token shards inside the compiled C++ loop, and reports those records in the output JSON `validation.losses` list without sending validation data through graph-editor nodes or Torch. Explicit native actions such as `--print-plan`, `--list-templates`, `--check-tile-ops`, or smoke commands still run exactly as requested. GPT2-Evo has a model-aware compiled C++ **preflight-only** target: `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 5000 --tile-cuda-activation-dtype nvfp4` reports the blocked plan and exact whole-block missing gates. `--dry-run` is also inspection-only; normal execution, `--startup-only`, and `--print-command` fail before delegate exec, CUDA setup/allocation, or output creation. `--no-layer-evo` directs callers to the separate ordinary dense GPT workflow. The raw Tile-CUDA ABI still provides isolated device-side mutation, best-loss selection, and best-candidate adoption for `--smoke-evo-kernels`, but that diagnostic does not prove or enable graph-faithful GPT2-Evo training.
 
 Dense native plan/runtime JSON now separates requested activation dtype from the
 implemented native storage path. `--tile-cuda-activation-dtype nvfp4` is
@@ -4009,7 +4373,7 @@ using the same spellings therefore reach the shared dense GPT C++ trainer with
 the canonical NanoGPT selector instead of forwarding an unsupported
 `--model-family nano-gpt` argument.
 
-SDK callers can use `neuralfn.native_train` for the same native frontend boundary. Build `neuralfn._native_train` with `bash tools/build_native_train_binding.sh`, then call `run_native_train(build_native_train_run_config("gpt", ["--tinystories"]), runner="auto")` or inspect coverage with `native_train_model_registry()` without importing Torch. Use `exec_native_train(build_native_train_run_config("gpt", ["--tinystories"]))` or `run_native_train(config, exec_process=True)` when a script should replace itself with the selected compiled native trainer through `execvpe`, matching the process boundary used by `nfn train`; keep `run_native_train(...)` without `exec_process` for binding/subprocess calls that need a return code. Dense GPT SDK callers can also use `run_native_gpt(config, exec_process=True)` or compatibility `run_native_gpt2(config, exec_process=True)` to keep the run-helper call shape while handing the process to the compiled CLI; `runner="auto"` resolves to the compiled CLI for that exec path. Dense GPT-family configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) now resolve straight to `nfn_gpt_native_train_linked --model-family ...` when the linked binary exists, falling back to `nfn_gpt_native_train` only when no linked binary or `NFN_NATIVE_GPT_CLI` override is available, so the SDK avoids the extra generic `nfn_native_train` dispatcher process and the dynamic Tile `dlopen` startup cost on the normal workstation path; set `require_cooperative_lm_head_backward=True` on `build_native_train_run_config()` to append the strict dense-GPT `--require-cooperative-lm-head-backward` guard from Python without importing Torch. That option rejects non-dense families and still fails current dense-GPT runs until the real fused LM-head classifier/dHidden/dWeight Tile kernel replaces the diagnostic CUDA Graph wrapper. `NativeTrainRunConfig` also defaults `strict_native_command=True`, so the SDK and generic C++ binding reject Python/shell launcher executables (`python`, `bash`, `*.py`, `*.sh`) on this native path; pass `strict_native_command=False` only for diagnostic command-resolution tests. Set `NFN_NATIVE_TRAIN_CLI` or pass `native_train_cli=` to force the unified frontend. `native_train_model_registry()` reports `gpt2-evo` as implemented through the `native-dense-gpt-layer-evo-delegate` transformer status, matching the C++ family binary that execs dense GPT CUDA Tile training with `--layer-evo`; non-dense families that only have sampled native dataset-loop slices report `native-family-dataset-loop-diagnostic`, `production_training_loop: false`, and keep `optimizer-updated-full-architecture-parameter-persistence` in `native_training_missing_requirements`. Their completed smoke checklist is reported separately in `native_training_completed_requirements`. The generic C++ binding accepts `argv`, `compiled_cli_argv`, and `launcher_argv`; GPT alias-only configs prefer `compiled_cli_argv` so cached-shard resolution stays in the compiled native frontend instead of falling back to a raw external trainer command with empty train/validation paths. Like the GPT-specific binding, the generic binding launches the selected native command with `posix_spawnp()` and the subprocess fallback defaults `CUDA_DEVICE_MAX_CONNECTIONS=1` and `CUDA_MODULE_LOADING=LAZY` only when the caller has not already set them; SM120 launchers default to CUDA ordinal `0`, while explicit `dedicated`, `auto`, `dedicated-auto`, or numeric masks remain honored as overrides. For GPT compiled CLI dispatch, `build_native_gpt2_compiled_cli_run_config(dataset_alias=...)` creates that handoff config without Python-side shard inspection. `tools/bench_native_gpt_sm120_candidate.sh --help` exits after printing its environment-driven controls, and unknown positional arguments fail with exit code 2 before any CUDA run starts. If explicit low warmup or step counts override the benchmark-wrapper long-run deferred-prewarm floors, paired metadata marks the run with `default_long_run_defer_prewarm_low_warmup_diagnostic` or `default_long_run_defer_prewarm_low_step_diagnostic`, so one-step first-use checks are not mistaken for steady-state parity evidence.
+SDK callers can use `neuralfn.native_train` for the same native frontend boundary. Build `neuralfn._native_train` with `bash tools/build_native_train_binding.sh`, then call `run_native_train(build_native_train_run_config("gpt", ["--tinystories"]), runner="auto")` or inspect coverage with `native_train_model_registry()` without importing Torch. Use `exec_native_train(build_native_train_run_config("gpt", ["--tinystories"]))` or `run_native_train(config, exec_process=True)` when a script should replace itself with the selected compiled native trainer through `execvpe`, matching the process boundary used by `nfn train`; keep `run_native_train(...)` without `exec_process` for binding/subprocess calls that need a return code. Dense GPT SDK callers can also use `run_native_gpt(config, exec_process=True)` or compatibility `run_native_gpt2(config, exec_process=True)` to keep the run-helper call shape while handing the process to the compiled CLI; `runner="auto"` resolves to the compiled CLI for that exec path. Dense GPT-family configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) now resolve straight to `nfn_gpt_native_train_linked --model-family ...` when the linked binary exists, falling back to `nfn_gpt_native_train` only when no linked binary or `NFN_NATIVE_GPT_CLI` override is available, so the SDK avoids the extra generic `nfn_native_train` dispatcher process and the dynamic Tile `dlopen` startup cost on the normal workstation path; set `require_cooperative_lm_head_backward=True` on `build_native_train_run_config()` to append the strict dense-GPT `--require-cooperative-lm-head-backward` guard from Python without importing Torch. That option rejects non-dense families and still fails current dense-GPT runs until the real fused LM-head classifier/dHidden/dWeight Tile kernel replaces the diagnostic CUDA Graph wrapper. `NativeTrainRunConfig` also defaults `strict_native_command=True`, so the SDK and generic C++ binding reject Python/shell launcher executables (`python`, `bash`, `*.py`, `*.sh`) on this native path; pass `strict_native_command=False` only for diagnostic command-resolution tests. Set `NFN_NATIVE_TRAIN_CLI` or pass `native_train_cli=` to force the unified frontend. `native_train_model_registry()` reports `gpt2-evo` as `preflight-only`, with `transformer_lm_status: "blocked-graph-faithful-whole-block-evolution-missing"` and `trainer_loop_status: "blocked-before-delegate-exec"`; it does not advertise a runnable dense delegate. Canonical LLaMA and exact standard MoE report covered production loops and full architecture persistence. Standard-MoE graph plans are authoritative for floating width, `multiple_of`, expert count, top-k, router auxiliary coefficient, and source digest and route normal execution to `--train-moe-dataset-loop`. Other non-dense families that only have sampled native dataset-loop slices report `native-family-dataset-loop-diagnostic`, `production_training_loop: false`, and keep `optimizer-updated-full-architecture-parameter-persistence` in `native_training_missing_requirements`. Their completed smoke checklist is reported separately in `native_training_completed_requirements`. The generic C++ binding accepts `argv`, `compiled_cli_argv`, and `launcher_argv`; GPT alias-only configs prefer `compiled_cli_argv` so cached-shard resolution stays in the compiled native frontend instead of falling back to a raw external trainer command with empty train/validation paths. Like the GPT-specific binding, the generic binding launches the selected native command with `posix_spawnp()` and the subprocess fallback defaults `CUDA_DEVICE_MAX_CONNECTIONS=1` and `CUDA_MODULE_LOADING=LAZY` only when the caller has not already set them; SM120 launchers default to CUDA ordinal `0`, while explicit `dedicated`, `auto`, `dedicated-auto`, or numeric masks remain honored as overrides. For GPT compiled CLI dispatch, `build_native_gpt2_compiled_cli_run_config(dataset_alias=...)` creates that handoff config without Python-side shard inspection. `tools/bench_native_gpt_sm120_candidate.sh --help` exits after printing its environment-driven controls, and unknown positional arguments fail with exit code 2 before any CUDA run starts. If explicit low warmup or step counts override the benchmark-wrapper long-run deferred-prewarm floors, paired metadata marks the run with `default_long_run_defer_prewarm_low_warmup_diagnostic` or `default_long_run_defer_prewarm_low_step_diagnostic`, so one-step first-use checks are not mistaken for steady-state parity evidence.
 
 Native C++ trainers can link the raw CUDA Tile ops library built by `bash tools/build_native_train_tile_ops.sh`. It produces `libnfn_native_train_tile_ops.so` from `neuralfn/csrc/tile_cuda/kernels.cu` plus a small C ABI in `neuralfn/csrc/native_train/tile_ops.cu`, avoiding `torch/extension.h` and the PyTorch extension binding while exposing trainer-critical single-buffer and multi-buffer AdamW, single-buffer and multi-buffer sumsq partials, gradient accumulation, device-buffer fill/zeroing, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, evo candidate mutation/best-loss selection/best-candidate adoption, linear, forced-BF16 linear, BF16-output linear, BF16-input linear, linear input/forced-BF16 input/BF16-bits input plus BF16-weight input backward/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/float-input plus BF16-bits weight+bias-accumulate/BF16-bits input plus BF16-bits weight+bias accumulate/bias/bias-accumulate backward, public-vocab strided BF16-bits input plus BF16-weight LM-head dHidden and BF16-bits input plus BF16-bits dWeight accumulate diagnostics, BF16-bits bias add, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, packed GPT-2 QKV TK attention forward/backward including BF16-gradient output, reshape-heads/merge-heads, GELU forward/backward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, SwiGLU forward/backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, rotary embedding forward/backward, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, top-k routing, expert-route broadcast, latent MSE loss partials, route-balance density/loss reduction, softmax, token and masked token cross-entropy partial, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward kernels. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 and BF16-bits weight+bias accumulate ABIs use cuBLASLt `BGRADB` when supported and fall back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
 
@@ -4370,7 +4734,17 @@ architecture-forward gate now also proves the checkpoint did not merely patch a
 sampled subset of parameters. Current production family loops write
 optimizer-updated dense tensor sidecars for the shipped family binaries.
 
-`bash tools/build_native_missing_trainers.sh` builds compiled per-family entrypoints such as `nfn_gpt2_evo_native_train`, `nfn_nanogpt_native_train`, and `nfn_llama_native_train`. The unified frontend dispatches to these binaries when present, and they report native registry status or family-specific CUDA Tile train-step coverage instead of entering Torch. Top-level `nfn train --base-model FAMILY --dry-run --print-command` invokes a direct family binary when one is available, so model-aware frontends such as GPT-2-evo print their final compiled delegate command rather than the Python wrapper's intermediate argv. `build/nfn-native-train --list-templates --json` reports every shipped GPT template as native-runnable: dense GPT-compatible templates use `native-transformer-lm`; LLaMA, standard-MoE, dense-JEPA, semantic-dense-JEPA, MoE-JEPA, semantic-router-MoE, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer selectors use `native-family-dataset-loop-diagnostic` until their production loops persist optimizer-updated state for every architecture parameter. Successful diagnostic loops can still write `nfn-native-family-optimizer-checkpoint-v1` metadata and a `*_native_family_model_DONE` marker for immediate `nfn infer` checks. The checkpoint records `architecture_parameter_layout`, `native_parameter_state`, and a dense float32 sidecar updated through `nfn_native_tile_adamw_step_float32`, including `persisted_parameter_elements`, `trained_parameter_elements`, `parameter_update_checksum`, and `architecture_forward_inference_supported`. GPT-2 evo is a model-aware C++ preflight target: `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 5000 --tile-cuda-activation-dtype nvfp4` validates the dense GPT-2 shape, `adamw` optimizer profile, validation cadence, 60-step LR warmup, NVFP4 activation intent, and evo-layer index/cadence/population metadata, reports the available device-side mutation/selection/adoption ABI, and dense GPT-2-compatible evo runs delegate to `nfn_gpt_native_train --train-transformer-lm --layer-evo` for native forward candidate evaluation. Runtime JSON for delegated layer-evo runs reports `workspace_allocation_strategy: "float-arena-plus-int64-device"` plus the float workspace request and elided `cudaMalloc` counters, so startup probes can verify that candidate buffers are suballocated from the main float arena. Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to load the raw evo ABI plus CUDA runtime, run mutate/select/adopt on tiny device buffers, and verify best-candidate adoption by copyback before datasets or graph-editor nodes are opened. NanoGPT full-transformer training uses the shared dense GPT CUDA Tile trainer through `nfn_gpt_native_train --template-name nanogpt --train-transformer-lm`; the separate `nfn_nanogpt_native_train` binary remains the token-LM diagnostic target. `nfn_nanogpt_native_train --print-plan --require-token-shards --sample-token-batch` validates the NanoGPT shape with the real GPT-2 tokenizer vocabulary (`50257`), AdamW optimizer profile, cached-token shards, effective token schedule, contiguous parameter/gradient/AdamW-state buffer layout, AdamW decay/no-decay groups, forward/backward/optimizer `training_step_plan`, and first native token/target batch, then prints JSON without importing Python or Torch. Use `nfn_nanogpt_native_train --check-tile-ops --tile-ops-lib PATH` to `dlopen` `libnfn_native_train_tile_ops.so` and verify every NanoGPT-required raw ABI symbol from the compiled binary, including deterministic inverted dropout when `--dropout-p` is nonzero. Use `nfn_nanogpt_native_train --smoke-tile-ops --tile-ops-lib PATH` to also `dlopen` libcudart, allocate a tiny device buffer, execute `nfn_native_tile_fill_float32`, copy it back, and verify the value without Python or Torch. Use `nfn_nanogpt_native_train --smoke-optimizer-step --tile-ops-lib PATH` to build the NanoGPT parameter layout, allocate contiguous param/grad/AdamW moment buffers, initialize them through raw fill kernels, execute `nfn_native_tile_adamw_step_float32` once per registered parameter buffer with that buffer's decay/no-decay setting, copy param and moment buffers back, and verify the update. Use `nfn_nanogpt_native_train --smoke-training-loop-step --tile-ops-lib PATH` to exercise native optimizer-loop mechanics over that registered layout: gradient zeroing, synthetic gradient fill, global-norm clip scale finalization, device-scalar gradient scaling, and per-buffer AdamW updates. Use `nfn_nanogpt_native_train --smoke-lm-step --tile-ops-lib PATH` to run a tiny tied-embedding language-model step through token embedding, linear logits, token CE loss/backward, linear input/weight backward, token embedding weight backward, and AdamW update kernels, then verify loss, gradient, and weight update values. Use `nfn_nanogpt_native_train --smoke-token-train-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` to sample a real native uint16 token/target batch from cached shards, run the tied-LM forward/backward/update kernels over those IDs, and verify sampled-batch loss, gradient, and weight update values. Use `nfn_nanogpt_native_train --train-token-lm --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS --max-steps N` to run the same tied token-embedding LM as a real multi-step native loop over cached token shards; it streams train batches with the C++ sampler, computes validation loss on validation shards every `--eval-every-steps` optimizer steps for `--eval-batches` batches of `--eval-batch-size` rows, zeros gradients on device, applies AdamW per step, and emits JSON metrics without Python or Torch. Use `nfn_nanogpt_native_train --smoke-embedding-norm-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` to run sampled tokens through token plus absolute-position embeddings, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradients, and AdamW updates, then verify residual, norm, loss, and weight update values. Use `nfn_nanogpt_native_train --smoke-qkv-layout-step` and the other NanoGPT smoke commands to inspect individual native stages; pass `--cuda-runtime-lib PATH` or set `NFN_CUDA_RUNTIME_LIB` when CUDA runtime resolution needs an explicit path. `tools/install_native_gpt2_commands.sh` links both underscore and hyphen command names for these targets. Use `NFN_NATIVE_<MODEL>_CLI` for explicit overrides, such as `NFN_NATIVE_NANOGPT_CLI=/path/to/nfn_nanogpt_native_train` or `NFN_NATIVE_GPT2_EVO_CLI=/path/to/nfn_gpt2_evo_native_train`.
+`bash tools/build_native_missing_trainers.sh` builds compiled per-family entrypoints such as `nfn_gpt2_evo_native_train`, `nfn_nanogpt_native_train`, and `nfn_llama_native_train`. The unified frontend dispatches to these binaries when present, and they report native registry status or family-specific CUDA Tile train-step coverage instead of entering Torch. Top-level `nfn train --base-model FAMILY --dry-run --print-command` invokes a direct family binary when one is available; each binary then reports its own execution boundary. In particular, GPT2-Evo `--print-command` emits the blocked plan and returns 2 instead of printing an executable delegate. `build/nfn-native-train --list-templates --json` reports selector/family reachability, not graph-authored execution proof. All 67 shipped presets lower structurally. Exact graph training is 13 ready and 54 blocked: the seven reviewed dense GPT-2 profiles (`gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`, `gpt2_stable`, and `gpt2_zloss`), canonical `llama` plus `llama_fast`, standard-MoE `moe`, `mixllama`, and `mixllama_fast`, and trusted-planner proof-bound `gpt2_diff` training.
+
+`gpt2_diff` training requires the exact materialized `--graph-file`, lowercase `--graph-fingerprint`, and `--graph-preflight-proof` triplet before plan, Tile, or CUDA work. The canonical proof binds the bounded immutable source bytes, exact reviewed configuration/topology, shape hashes, and geometry. Its unkeyed digest is integrity for a trusted local planner handoff, not caller authentication. The learned-lambda version-2 continuation bundle remains training-only: Native IR migration and resident differential attention/cache do not consume it. Their capability matrix therefore remains 12 ready and 55 blocked.
+
+Both LLaMA profiles normalize to the canonical `llama` trainer/checkpoint ABI while retaining selector/runtime/SHA provenance and report `native-trainer-covered` with the production dataset loop; remaining selectors retain their current registry status until their production loops persist optimizer-updated state for every architecture parameter. Successful diagnostic loops can still write `nfn-native-family-optimizer-checkpoint-v1` metadata and a `*_native_family_model_DONE` marker for immediate `nfn infer` checks. The checkpoint records `architecture_parameter_layout`, `native_parameter_state`, and a dense float32 sidecar updated through `nfn_native_tile_adamw_step_float32`, including `persisted_parameter_elements`, `trained_parameter_elements`, `parameter_update_checksum`, and `architecture_forward_inference_supported`. GPT2-Evo is a model-aware C++ preflight-only target: `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 5000 --tile-cuda-activation-dtype nvfp4` validates metadata and reports `selected_graph_native_runnable: false` plus the exact whole-block semantic gaps. The authored graph excludes every tensor in the designated block from AdamW and evolves the whole block; the current dense code AdamW-updates it and evolves only `block_N.ln1.weight`. Normal/startup/print-command execution is rejected before exec, CUDA, allocation, or output. Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` only to load the raw evo ABI plus CUDA runtime, run mutate/select/adopt on tiny device buffers, and verify best-candidate adoption by copyback; this isolated diagnostic does not make training runnable. NanoGPT full-transformer training uses the shared dense GPT CUDA Tile trainer through `nfn_gpt_native_train --template-name nanogpt --train-transformer-lm`; the separate `nfn_nanogpt_native_train` binary remains the token-LM diagnostic target. `nfn_nanogpt_native_train --print-plan --require-token-shards --sample-token-batch` validates the NanoGPT shape with the real GPT-2 tokenizer vocabulary (`50257`), AdamW optimizer profile, cached-token shards, effective token schedule, contiguous parameter/gradient/AdamW-state buffer layout, AdamW decay/no-decay groups, forward/backward/optimizer `training_step_plan`, and first native token/target batch, then prints JSON without importing Python or Torch. Use `nfn_nanogpt_native_train --check-tile-ops --tile-ops-lib PATH` to `dlopen` `libnfn_native_train_tile_ops.so` and verify every NanoGPT-required raw ABI symbol from the compiled binary, including deterministic inverted dropout when `--dropout-p` is nonzero. Use `nfn_nanogpt_native_train --smoke-tile-ops --tile-ops-lib PATH` to also `dlopen` libcudart, allocate a tiny device buffer, execute `nfn_native_tile_fill_float32`, copy it back, and verify the value without Python or Torch. Use `nfn_nanogpt_native_train --smoke-optimizer-step --tile-ops-lib PATH` to build the NanoGPT parameter layout, allocate contiguous param/grad/AdamW moment buffers, initialize them through raw fill kernels, execute `nfn_native_tile_adamw_step_float32` once per registered parameter buffer with that buffer's decay/no-decay setting, copy param and moment buffers back, and verify the update. Use `nfn_nanogpt_native_train --smoke-training-loop-step --tile-ops-lib PATH` to exercise native optimizer-loop mechanics over that registered layout: gradient zeroing, synthetic gradient fill, global-norm clip scale finalization, device-scalar gradient scaling, and per-buffer AdamW updates. Use `nfn_nanogpt_native_train --smoke-lm-step --tile-ops-lib PATH` to run a tiny tied-embedding language-model step through token embedding, linear logits, token CE loss/backward, linear input/weight backward, token embedding weight backward, and AdamW update kernels, then verify loss, gradient, and weight update values. Use `nfn_nanogpt_native_train --smoke-token-train-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` to sample a real native uint16 token/target batch from cached shards, run the tied-LM forward/backward/update kernels over those IDs, and verify sampled-batch loss, gradient, and weight update values. Use `nfn_nanogpt_native_train --train-token-lm --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS --max-steps N` to run the same tied token-embedding LM as a real multi-step native loop over cached token shards; it streams train batches with the C++ sampler, computes validation loss on validation shards every `--eval-every-steps` optimizer steps for `--eval-batches` batches of `--eval-batch-size` rows, zeros gradients on device, applies AdamW per step, and emits JSON metrics without Python or Torch. Use `nfn_nanogpt_native_train --smoke-embedding-norm-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` to run sampled tokens through token plus absolute-position embeddings, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradients, and AdamW updates, then verify residual, norm, loss, and weight update values. Use `nfn_nanogpt_native_train --smoke-qkv-layout-step` and the other NanoGPT smoke commands to inspect individual native stages; pass `--cuda-runtime-lib PATH` or set `NFN_CUDA_RUNTIME_LIB` when CUDA runtime resolution needs an explicit path. `tools/install_native_gpt2_commands.sh` links both underscore and hyphen command names for these targets. Use `NFN_NATIVE_<MODEL>_CLI` for explicit overrides, such as `NFN_NATIVE_NANOGPT_CLI=/path/to/nfn_nanogpt_native_train` or `NFN_NATIVE_GPT2_EVO_CLI=/path/to/nfn_gpt2_evo_native_train`.
+
+NanoGPT's shared dense command route is likewise not one of the 12 reviewed
+persistence-and-resident adapters. It selects geometry but does not implement
+the graph's
+bias-free linear and dropout semantics in checkpoint persistence, architecture
+forward, or resident inference.
 
 For the LLaMA RoPE/SwiGLU block train-step slice, use `nfn_llama_native_train --smoke-llama-rope-block-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-rope-block-train-step`; it launches SDPA backward, RoPE backward, fused-QKV linear backward, RMSNorm backward, SwiGLU backward, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 
@@ -4380,7 +4754,7 @@ For the LLaMA composed token/block/LM train-step slice, use `nfn_llama_native_tr
 
 For the LLaMA full forward/backward-loop slice, use `nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-full-loop-step`; it reports the token/block/LM full-loop smoke through token embedding, RMSNorm, RoPE, SwiGLU, LM-head CE/backward, embedding backward, and AdamW without Torch or graph-editor tensor flow.
 
-For the LLaMA native dataset loop, use `nfn_llama_native_train --train-llama-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-train-llama-dataset-loop`; the bare LLaMA family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, and runs the composed LLaMA CUDA Tile train-step slice. Stdout is reserved for the final JSON payload; stderr prints shard resolution, resolved hyperparameters, per-phase step progress, validation phases, metadata/model writing, elapsed seconds, and steps/sec. Use `--print-plan` to inspect the settings without training, `--progress-every-steps 1` for per-step visibility, and `--progress-every-steps 0` only for quiet automation. The default family-loop settings are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`, `train_batch_tokens=524288`, `eval_every_steps=5000`, `learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`, `eps=1e-08`, and `weight_decay=0.02`. LLaMA selectors report `native-family-dataset-loop` with `optimizer-updated-full-architecture-parameter-persistence` retained until full optimizer-updated dense tensor persistence lands; the loop writes a native-family transition checkpoint that `nfn infer` can load.
+For the LLaMA native dataset loop, use `nfn_llama_native_train --train-llama-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-train-llama-dataset-loop`; the bare LLaMA family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, and runs the composed LLaMA CUDA Tile train-step slice. Stdout is reserved for the final JSON payload; stderr prints shard resolution, resolved hyperparameters, per-phase step progress, validation phases, metadata/model writing, elapsed seconds, and steps/sec. Use `--print-plan` to inspect the settings without training, `--progress-every-steps 1` for per-step visibility, and `--progress-every-steps 0` only for quiet automation. The default family-loop settings are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`, `train_batch_tokens=524288`, `eval_every_steps=5000`, `learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`, `eps=1e-08`, and `weight_decay=0.02`; `--weight-decay N` changes decay for trainable non-norm/non-bias buffers. For direct graph-bound family-binary use, pair `--graph-file` with its lowercase SHA-256 in `--graph-fingerprint`; the high-level `nfn train --graph-file` path does this after topology preflight. A successful canonical full-architecture LLaMA step emits inference-checkpoint v2 metadata plus the float32 parameter sidecar and DONE marker; use the metadata JSON for migration, not the raw `.f32`.
 
 For the standard MoE transformer-LM train-step slice, use `nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-transformer-lm-train-step`; it runs the MoE block forward path into LM-head logits, token CE forward/backward, LM-head backward, routed expert backward, and AdamW without Torch or graph-editor tensor flow.
 
@@ -4388,7 +4762,7 @@ For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_
 
 For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`. It wraps the standard MoE full forward/backward-loop smoke in JSON without Torch or graph-editor tensor flow.
 
-For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`; bare standard-MoE family commands such as `nfn_mixllama_native_train ...` and `nfn_deepseek_v4_native_train ...` also default to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled standard-MoE CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance loss, and AdamW. It writes native loop metadata and a loadable native-family transition checkpoint under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report standard-MoE selectors as `native-family-dataset-loop`, with `optimizer-updated-full-architecture-parameter-persistence` retained until full optimizer-updated dense tensor persistence lands.
+For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`. Exact graph-bound `moe`, `mixllama`, and `mixllama_fast` runs require `--graph-file` plus its lowercase SHA-256 `--graph-fingerprint`, preserve floating `hidden_dim`, require `layers_per_expert=1`, and run all-expert router auxiliary loss with the graph-authored coefficient. Successful exact-cluster runs write strict `neuralfn.native_family_standard_moe.inference_checkpoint` v1 metadata, the complete float32 `*.f32` parameter sidecar, and a DONE marker under `--output-dir`; the plan reports covered production training and full optimizer-updated architecture persistence. Bare neighboring selectors such as `deepseek-v4` remain diagnostic family loops and may still write transition metadata rather than the strict inference checkpoint. The exact-cluster CPU migration, resident inference, cache, SDK/CLI, graph-oracle checks, and a bounded one-step RTX 5090 train/migrate/reload/generate acceptance are covered. Rebuild the family binary and Tile sidecar together before the live workflow; remaining families and CUDA performance stay open. The resident Tile-CUDA TurboQuant attention backend applies only to separately gated reviewed-dense artifacts, not standard MoE.
 
 For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, route-balance density/loss, and the combined weighted objective check through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 
@@ -4547,6 +4921,119 @@ The canonical wrapper preserves its own argparse program name, so
 compatibility `infer_gpt2.py` name is reserved for direct compatibility-script
 execution.
 
+## Native artifact serving
+
+`nfn infer --checkpoint ARTIFACT --serve` routes through the lightweight CLI
+before one-shot native checkpoint detection or graph-backed `nfn_impl` import.
+Install the dedicated dependencies first:
+
+```bash
+pip install -e '.[serve]'
+nfn infer \
+  --checkpoint artifacts/model-native \
+  --serve \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --served-model-name my-model \
+  --session-limit 9 \
+  --chat-template plain_roles \
+  --kv-cache auto \
+  --state-db ./native-inference-state.sqlite3 \
+  --prefix-cache-capacity 64
+```
+
+Serving accepts only a Native Execution artifact whose manifest and in-process
+binding jointly prove resident ABI v1. Before Uvicorn binds, startup validates
+the tokenizer, supported chat renderer, positive context limit, contained
+checkpoint path, requested cache capability, and remote-auth policy. The
+current dense-v5 CPU reference binding defaults `auto` to its preallocated
+lossless full cache; explicit `full` selects the same cache, `off` selects
+full-prefix recomputation, and `turboquant` selects the jointly proved native
+packed CPU cache. Unsupported artifacts and head geometry fail closed.
+For a compatible reviewed-dense artifact, add
+`--turboquant-attention-backend tile-cuda --tile-ops-lib
+/absolute/path/libnfn_native_train_tile_ops_strict.so` (plus optional
+`--cuda-runtime-lib` and `--cuda-device`) to move compressed historical
+attention to CUDA. CPU remains the default and an explicit request never falls
+back.
+Canonical LLaMA uses the same resident ABI with `auto`/`full`/`off` and rejects
+TurboQuant. Its raw-token CLI path does not imply text serving: startup still
+requires an artifact-declared supported tiktoken codec and chat renderer.
+
+Useful flags:
+
+- `--queue-capacity N` bounds waiting generations in front of one compute worker.
+- `--session-limit N` bounds all admitted request-session reservations, including the running generation and queued work. It defaults to `queue_capacity + 1`; saturation returns `session_limit_exceeded` rather than blocking.
+- `--max-output-tokens N` sets the server request ceiling (default 256). When a
+  Responses request omits `max_output_tokens`, constrained schema/forced-call
+  generation defaults to `min(256, ceiling)` while ordinary text and the
+  function-result continuation default to `min(16, ceiling)`.
+- `--chat-template auto|plain_roles|PATH` selects artifact metadata or an explicit fallback; template files contain the literal `{messages}` placeholder.
+- `--api-key-file PATH` or `NFN_INFER_API_KEY` enables Bearer auth on every route.
+- `--state-db PATH` enables the private WAL-backed Responses/Conversations store, restart-safe background jobs, and resumable background-stream event ledger.
+- `--prefix-cache-capacity N` retains at most `N` sealed foreground Responses
+  sessions in a process-local deterministic LRU. It defaults to `0`, requires
+  `--state-db`, and accepts only proven full-cache COW or reviewed dense CPU
+  TurboQuant COW. Tile-CUDA is rejected while this option is positive.
+- `--allow-unauthenticated-remote` explicitly overrides the rule that a non-loopback host must have a key.
+- `--turboquant-profile mse-3.5|qjl-3.5` selects the explicit compressed profile and becomes effective only with joint artifact/binding/cache-ABI proof.
+- `--turboquant-attention-backend cpu|tile-cuda` selects CPU by default; the
+  Tile option additionally requires `--tile-ops-lib PATH` and the separate
+  strict feature ABI. `--cuda-runtime-lib` and `--cuda-device` pin runtime and
+  device when needed.
+
+The state file is schema v4. It retains typed function-call/result history and
+adds a monotonic conversation-item revision for snapshot/CAS completion.
+Opening an existing v1/v2/v3 file adds the revision in place and treats prior
+history as revision zero. Back up the file before first use with this version
+if rollback matters; older binaries reject v4. A conversation-linked
+background response queued by an older binary has no historical revision
+snapshot to migrate and is terminalized as failed with
+`conversation_snapshot_unavailable` rather than running against current items.
+A legacy previous-response-only job reconstructs only a currently
+completed/incomplete lineage or fails with `response_lineage_unavailable`.
+
+The isolated app exposes `/health`, model list/retrieve, and bounded OpenAI
+Chat Completions. Chat is text by default; a jointly proven CPU or whole-model
+CUDA Muse Glimmer vision artifact also accepts base64 image data URLs. SSE emits committed-token `chat.completion.chunk` records and
+terminates with `data: [DONE]`. With `--state-db`, it also exposes the bounded
+text Responses and Conversations resources, API-key-scoped lineage, semantic
+Responses SSE, local response compaction, and durable background/cancel
+processing. A response created with `background: true`, `stream: true`, and
+`store: true` continues after its subscriber disconnects and can be replayed
+strictly after a saved `sequence_number` with
+`GET /v1/responses/{id}?stream=true&starting_after=N`; replay includes persisted
+delta obfuscation unless `include_obfuscation=false` is requested. When the
+artifact/binding/tokenizer jointly prove the exact constrained profiles and
+`--chat-template auto` selects the artifact presentation, Responses also accept
+stored buffered foreground strict flat JSON-schema output and one forced
+client-executed function call plus its later string result. NeuralFn never
+executes that function. General/parallel/hosted tools, nested/array schemas,
+constrained streams/background work, Chat Completions tools, Responses
+multimedia, audio/files/server-video, logprobs, penalties, and unimplemented
+`/v1` resources return OpenAI-shaped capability errors rather than being
+ignored.
+
+With prefix capacity enabled, a foreground `previous_response_id` or
+conversation request can fork the exact verified rendered-token LCP. Only
+stored completed/incomplete responses publish after durable completion;
+failed, cancelled, non-stored, and background work does not enter the cache.
+`store: false` may hit but cannot admit, Chat and background stay cold, and a
+restart has no resident cache entries. Usage reports native-bounded exact-LCP
+`cached_tokens` and prompt-only `cache_write_tokens`, never decoded rows.
+`/health.prefix_cache` exposes LRU and capacity-observation counters; its byte
+values may double-represent COW-shared allocations and are not physical
+process memory. Response/conversation/item deletion purges the whole API-key
+scope. Keep one owning server/service process per cache-enabled state database;
+out-of-band store mutations cannot notify the process-local fence. A racing
+conversation mutation produces `conversation_conflict` (buffered 409 or a
+semantic failed terminal for already-open stream/background work). Every
+`previous_response_id` lineage is re-read at terminalization; deleted or changed
+ancestry produces `response_lineage_conflict` before output/cache publication.
+Shutdown awaits the background driver and tracked foreground stream drivers,
+drains the queue, then closes cache, model, and state in that order. See
+[Native Inference Serving](rest-api/native-inference-serving.md).
+
 ## Datasets and tokenizers
 
 Dataset shortcuts are resolved by the shared selector logic in
@@ -4666,6 +5153,15 @@ weights. Runtime JSON exposes `moa_selected_activation`, `moa_probe_runs`,
 lazy validation-only MLP float scratch because its training probes need the split
 `fc_out`/activation buffers; the Tile BF16 GELU fallback kernels accept no-bias
 probe calls with null bias pointers.
+
+For a graph-authored production run, completion is the source-bound
+`model_XXXXXXXX.moa.json` beside its named dense-v5 `.bin` and empty DONE
+marker, not the bare model. The metadata records the canonical candidates,
+selected activation, positive interval, and exact graph/model hashes. Resume
+requires that same sidecar, restores its activation without a fresh probe, and
+fails closed when the metadata is missing or changed. Direct selector-only
+`--template-name gpt2_moa` first-leg training still writes ordinary dense-v5,
+but that unbound output cannot be resumed activation-faithfully.
 
 This reports the native header shape, precision, expected size, and `DONE_*`
 marker state. The compiled `nfn_gpt_native_train` forms emit JSON and return
@@ -4868,7 +5364,7 @@ were passed explicitly.
 |------|---------|
 | `--training-mode sft` | Supervised fine-tuning with `sft_dataset_source` and masked token CE. |
 | `--training-mode dpo` | Direct Preference Optimization with policy/reference forwards. |
-| `--training-mode ppo` | PPO graph skeleton for rollout-buffer optimization. |
+| `--training-mode ppo` | PPO inner graph plus real `PPOTrainer` rollout/reference/reward/KL/GAE orchestration. |
 | `--training-mode reward_model` | Preference reward-head training. |
 | `--adapter-type lora` | Insert trainable LoRA projections. |
 | `--adapter-type qlora` | Use nf4 base projection buffers plus LoRA deltas. |

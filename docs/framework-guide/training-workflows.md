@@ -50,11 +50,191 @@ GPT template selection is explicit on the native path. The default public
 template alias is `gpt`, which currently resolves to the implemented dense GPT
 native topology and is reported separately as `resolved_native_template_name` in
 compiled JSON. Pass `--template-name NAME` / `--preset NAME` to select any name
-in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
-custom graph JSON. `gpt`, `gpt2`, and `gpt2_megakernel`, plus `gpt2_moa` with
-native MoA activation, use the implemented compiled CUDA Tile trainer; unsupported
-templates and graph files fail fast with native missing-trainer JSON instead of
-falling back to Torch.
+in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`. A `--graph-file PATH`
+request is stricter: the CLI first performs source-inert Native IR lowering,
+then validates the exact trainer-facing graph contract. Twelve reviewed graphs
+are execution-ready: `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
+`gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`, canonical `llama`, and its exact
+compile-runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`,
+and `mixllama_fast`, route to a
+compiled CUDA Tile trainer. LLaMA requires the exact proved RMSNorm/RoPE/MHA-
+or-GQA/dense-attention/gate-first-SwiGLU, biasless, dropout-zero, untied graph.
+The graph controls the selector and geometry even when conflicting
+CLI flags are supplied. A real run snapshots the validated graph and plan in
+`OUTPUT_DIR/native-ir`; dry-run and command-printing modes do not create it.
+The LLaMA family binary rehashes that snapshot before dataset/CUDA setup and at
+checkpoint write, applies caller `--weight-decay` to non-norm/non-bias
+parameters, and emits graph provenance in its inference-checkpoint v2 metadata.
+Both source profiles use native template/checkpoint identity `llama`; the plan
+retains the original selector, preset, runtime, and source SHA-256.
+Standard-MoE planning additionally proves softmax top-k-renormalized routing,
+auxiliary-loss balance, no shared experts, floating expert width, and exact
+root/block/attention/MLP edge wiring. It maps graph `multiple_of=None` to
+`--multiple-of 0`, passes the configured router coefficient, and selects
+`--train-moe-dataset-loop`; its strict metadata binds the ordered tensor table
+and float32 sidecar to the same graph digest. CPU/build/migration/resident parity
+is verified.
+
+Exact `gpt2_moa` plans also pass the graph fingerprint, canonical
+GELU/ReLU/SiLU/ReLU2 candidates, and positive probe interval to the dense
+trainer. A completed run writes `model_XXXXXXXX.moa.json` beside the dense-v5
+model and empty DONE marker. Downstream migration must use that metadata JSON,
+which records the final selected activation and binds it to the exact source
+graph/model; inference does not rerun candidate probes. A resumed run must find
+and validate the sibling metadata, restores that activation without a fresh
+probe, and rejects missing or tampered metadata. This strict workflow is
+graph-bound: direct selector-only `gpt2_moa` first-leg training remains
+supported and emits ordinary dense-v5, but an unbound resume fails explicitly
+instead of resetting the activation to GELU.
+
+`gpt2_diff` is the thirteenth execution-ready **graph-training** profile, but
+only through `plan_native_graph_training(..., materialize=True)`. The trusted
+planner validates the exact serialized configuration and active differential
+topology from one source-byte snapshot, then writes a canonical
+`native-training-proof.json` that binds the source SHA-256, validator and shape
+contracts, and native geometry. The trainer requires the materialized graph,
+fingerprint, and proof paths together before plan/Tile/CUDA work. The proof
+digest is an unkeyed local-handoff integrity check, not an authenticity or
+signature mechanism; do not trust arbitrary caller-created graph/proof pairs.
+
+Its low-level compiled path learns one FP32 lambda
+per layer and writes graph-bound differential parameter, optimizer, and strict
+metadata sidecars while keeping dense-v5 byte-compatible. The metadata is
+`neuralfn.native_gpt2_diff.training_checkpoint` version 2, with the unchanged
+binary-artifact kind `trained_dense_v5_plus_diff_v1`. Resume is
+continuation-only and verifies, before Tile/CUDA/H2D, the source graph and all
+five binaries, optimizer/microbatch and sampler counters, seed contract,
+batch/accumulation shape, ordered training-shard identity, optimizer/LR and
+absolute schedule horizon, LM-head chunk, effective BF16 routes, and a canonical
+numerics profile of supported effective routes. Stable no-follow descriptors are retained
+for the training shards; validation shards are not identity-bound. `--max-steps` is
+additional work. Omit `--lr-schedule-total-steps` on resume to inherit the
+version-2 horizon, and repeat an explicit first-leg `--train-seed` value.
+Version-1 metadata is rejected.
+
+The public dense-GPT Python builders accept an explicit
+`final_lr_fraction`. It takes precedence over a fraction derived from
+`min_lr`; schedule, final-LR, and train-loss aliases are normalized before
+quality defaults so caller intent is not overwritten on configured or direct
+launch paths.
+
+Final differential export is create-only and DONE-gated: exclusive no-follow
+regular files are fsynced, the directory is fsynced, DONE is created/fsynced
+last, and the directory is fsynced again. In-process failure attempts to clean
+up only newly created targets. This is not an atomic-rename protocol, ancestor
+symlinks are outside its guarantee, and metadata-smoke output is not covered.
+The trainer also fails before Tile load or state mutation unless packed QKV,
+sequence length at least 16, divisible/even head geometry, BF16 QKV-gradient
+handoff, and the learned-lambda differential forward, backward, and
+workspace-release Tile ABI symbols are present.
+The retained legacy fixed-lambda ABI is outside this learned path and still has
+rounded-output/non-layer-local backward correctness debt.
+Exact graph-training plans report local persistence/execution readiness true
+only after issuing the proof. Generic Native IR capability, migration, and
+resident inference remain false because those consumers do not yet consume the
+additive state or implement differential attention. The graph-training split is
+13 ready and 54 blocked; persistence plus resident inference remain 12 ready
+and 55 blocked.
+
+NanoGPT command routing is likewise not graph-faithful execution proof. The
+shared dense target can select NanoGPT geometry, but its persisted and executed
+contract still has GPT-2 linear biases and no authored dropout. Because the
+shipped NanoGPT graphs require bias-free linears and dropout, all three NanoGPT
+selectors retain explicit persistence, native-forward, and resident blockers.
+Do not migrate or serve those outputs as exact NanoGPT artifacts until the
+bias/dropout and selector-specific contracts are independently proved.
+
+A bounded RTX 5090 acceptance ran one real optimizer step for an
+exact tiny canonical-LLaMA graph and an exact tiny standard-MoE graph, inspected
+their graph-bound production checkpoints, migrated them losslessly, rebuilt the
+resident extension, and generated raw tokens with the ordinary full-cache CLI.
+Build the family trainer and Tile sidecar from the same sources before running
+this workflow; a stale sidecar without the standard-MoE router-auxiliary symbol
+is rejected before the optimizer step. This acceptance covers those exact
+reviewed profiles only, not the remaining families, resident TurboQuant GPU
+integration, or performance.
+Dry-run/plan/check operations dominate training actions, and caller-selected
+smoke/train modes are rejected by the graph-authoritative CLI.
+Other graph profiles fail before trainer resolution with node-specific
+compatibility JSON instead of falling back to Torch or a diagnostic transition
+sampler. The adapter records that graph preflight is enforced while the current
+trainer remains selector-driven and does not parse Native IR directly.
+
+### Muse Glimmer native training and post-training
+
+The production `muse_glimmer` graph has a dedicated source-bound native target,
+`nfn_muse_glimmer_native_train`. Unlike generic preview-preset planning, it
+requires the exact 52-layer/627-tensor topology and pinned BF16 source digest.
+It consumes versioned uint32 shards for AR pretraining or structured SFT
+records carrying `input_ids`, targets, loss masks, boundaries, tokenizer/chat
+hashes, and split/objective metadata.
+
+The C++/CUDA loop implements full parameter updates, all-eight-projection LoRA,
+frozen NF4 group-64 QLoRA, DPO, sequence-masked reward modeling, and online
+PPO. It persists optimizer moments, RNG/sampler/rollout cursor, data identity,
+graph/source/reference/reward hashes, objective/adapter mode, and
+activation-recomputation settings. Resume validates those fields before Tile or
+CUDA state is created. QLoRA reconstructs immutable packed base rows from the
+same BF16 source, computes packed base forward and backward-input only, and
+saves adapter matrices rather than a second base model.
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-full.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-sft \
+  --objective sft \
+  --chat-template-sha256 cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678 \
+  --adapter qlora \
+  --lora-targets q_proj,k_proj,v_proj,o_proj,attn_gate_proj,gate_proj,up_proj,down_proj \
+  --qlora-group-size 64 \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-qlora
+```
+
+Native DPO consumes structured chosen/rejected masks, performs policy and
+frozen-reference forwards, reduces sequence log-probabilities, and applies
+sigmoid/hinge/IPO loss. Reward training updates a last-selected-token scalar
+head with Bradley-Terry loss while the LM head stays frozen. PPO collects real
+online rollouts, evaluates frozen reference and reward checkpoints, subtracts
+per-token KL, computes GAE/returns, and performs clipped value/policy minibatch
+epochs; it never synthesizes zero placeholder rollouts.
+
+Official `k-quant-17gb` and `k-quant-dynamic` bases support native LoRA SFT and
+DPO. Their GGUF codes are immutable and distinct from NF4 QLoRA. Every adapter
+checkpoint pins the profile, base digest and tensor type table; packed DPO uses
+the identical base as its frozen reference. Packed reward/PPO and lossy adapter
+merge remain rejected.
+
+Full-BF16 AR/SFT also supports contiguous pipeline parallelism:
+
+```bash
+nfn train --base-model muse-glimmer \
+  --checkpoint artifacts/glimmer-bf16/muse-glimmer-text.bf16 \
+  --checkpoint-sha256 SHA256 \
+  --dataset datasets/glimmer-pretrain \
+  --objective ar \
+  --pipeline-parallel-size 8 \
+  --pipeline-cuda-devices 0,1,2,3,4,5,6,7 \
+  --nccl-lib /absolute/path/libnccl.so \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --output-dir runs/glimmer-8stage
+```
+
+The launcher creates one process per stage. Rank 0 owns embeddings, the final
+rank owns norm/head, NCCL carries activations/gradients and global reductions,
+and each rank performs an independent free-memory admission check. Rank-local
+BF16 model shards, F32 moment shards, cursor/RNG state, manifest and final
+`DONE` marker resume only under the identical world/stage layout. The current
+distributed contract is full-BF16 AR/SFT; adapters, preference objectives,
+tensor parallelism and data parallelism remain separately gated.
+
+`build_muse_glimmer_dflash_distillation_graph()` and
+`DFlashDistillationTrainer` provide separate target-frozen DFlash training with
+random anchors, five taps, shared embedding/head, D-PACE or decay weighting,
+self-logit distillation, exact resume, acceptance audit and native assistant
+export. This is NeuralFn's recorded recipe, not a claim about Meta's unpublished
+training provenance. Native multimodal tuning remains fail-closed.
 
 Dense GPT native transformer training now fuses token embedding, absolute
 position embedding, and the scaled embedding residual add in the raw Tile-CUDA

@@ -986,6 +986,7 @@ class TileCudaRotaryEmbeddingStage(nn.Module):
         head_dim: int,
         rope_base: float,
         rope_scaling: dict[str, object] | None = None,
+        convention: str = "legacy",
         config: TileCudaConfig | None = None,
     ) -> None:
         super().__init__()
@@ -993,6 +994,9 @@ class TileCudaRotaryEmbeddingStage(nn.Module):
             raise ValueError("head_dim must be even for rotary embeddings")
         inv_freq = self._compute_inv_freq(int(head_dim), float(rope_base), rope_scaling)
         self.register_buffer("inv_freq", inv_freq, persistent=False)
+        if convention not in {"legacy", "hf"}:
+            raise ValueError("rotary convention must be 'legacy' or 'hf'")
+        self.convention = convention
         self.config = config or TileCudaConfig()
 
     @staticmethod
@@ -1025,17 +1029,57 @@ class TileCudaRotaryEmbeddingStage(nn.Module):
         return inv_freq
 
     def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
+        if self.convention == "hf":
+            seq_len = q.size(2)
+            freqs = torch.outer(
+                torch.arange(seq_len, device=q.device, dtype=self.inv_freq.dtype),
+                self.inv_freq.to(q.device),
+            )
+            cos = freqs.cos()[None, None, :, :].to(dtype=q.dtype)
+            sin = freqs.sin()[None, None, :, :].to(dtype=q.dtype)
+
+            def _apply(x: Tensor) -> Tensor:
+                half = x.size(-1) // 2
+                x1, x2 = x[..., :half], x[..., half:]
+                return torch.cat((x1 * cos - x2 * sin, x2 * cos + x1 * sin), dim=-1)
+
+            return _apply(q), _apply(k)
         return tile_rotary_embedding_module(q, k, self.inv_freq.to(device=q.device), self.config)
 
 
 class TileCudaRMSNormStage(nn.Module):
-    def __init__(self, eps: float = 1e-6, config: TileCudaConfig | None = None) -> None:
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        config: TileCudaConfig | None = None,
+        *,
+        model_dim: int | None = None,
+        centered: bool = False,
+    ) -> None:
         super().__init__()
         self.eps = float(eps)
+        self.centered = bool(centered)
+        if model_dim is None:
+            self.register_parameter("weight", None)
+        else:
+            init = torch.zeros if self.centered else torch.ones
+            self.weight = nn.Parameter(init(int(model_dim), dtype=torch.float32))
         self.config = config or TileCudaConfig()
 
     def forward(self, x: Tensor) -> Tensor:
-        return tile_rms_norm_module(x, self.eps, self.config)
+        normalized = tile_rms_norm_module(x, self.eps, self.config)
+        if self.weight is None:
+            return normalized
+        if self.centered:
+            return normalized * (1.0 + self.weight.to(dtype=normalized.dtype))
+        return tile_vector_binary_module(
+            "residual_add",
+            torch.zeros_like(normalized),
+            normalized,
+            self.weight,
+            None,
+            self.config,
+        )
 
 
 class TileCudaQKNormStage(nn.Module):
@@ -1519,9 +1563,15 @@ class TileCudaMLPReluSquaredStage(nn.Module):
 
 
 class TileCudaSwiGLUStage(nn.Module):
-    def __init__(self, model_dim: int, mlp_mult: int, multiple_of: int | None = None, config: TileCudaConfig | None = None) -> None:
+    def __init__(
+        self,
+        model_dim: int,
+        mlp_mult: float,
+        multiple_of: int | None = None,
+        config: TileCudaConfig | None = None,
+    ) -> None:
         super().__init__()
-        hidden = int(8.0 * int(model_dim) / 3.0)
+        hidden = int(int(model_dim) * float(mlp_mult))
         if multiple_of is not None:
             multiple = int(multiple_of)
             hidden = multiple * ((hidden + multiple - 1) // multiple)
@@ -2383,9 +2433,25 @@ class TileCudaSoftmaxDistillationLossStage(nn.Module):
 
 
 class TileCudaExpertDispatchStage(nn.Module):
-    def __init__(self, model_dim: int, experts: int, mlp_mult: int, config: TileCudaConfig | None = None) -> None:
+    def __init__(
+        self,
+        model_dim: int,
+        experts: int,
+        mlp_mult: float,
+        multiple_of: int | None = None,
+        config: TileCudaConfig | None = None,
+    ) -> None:
         super().__init__()
-        hidden_dim = int(model_dim) * int(mlp_mult)
+        multiplier = float(mlp_mult)
+        if not math.isfinite(multiplier) or multiplier <= 0.0:
+            raise ValueError("mlp_mult must be finite and positive")
+        hidden_dim = max(1, int(int(model_dim) * multiplier))
+        if multiple_of is not None:
+            multiple = int(multiple_of)
+            if multiple < 0:
+                raise ValueError("multiple_of must be non-negative")
+            if multiple > 0:
+                hidden_dim = multiple * ((hidden_dim + multiple - 1) // multiple)
         self.w1 = nn.Parameter(torch.empty(int(experts), int(model_dim), hidden_dim))
         self.w2 = nn.Parameter(torch.empty(int(experts), hidden_dim, int(model_dim)))
         self.w3 = nn.Parameter(torch.empty(int(experts), int(model_dim), hidden_dim))
@@ -2652,8 +2718,8 @@ def build_tile_module(module_type: str, module_config: dict[str, object], config
     cfg = dict(module_config)
     if module_type == "logit_softcap":
         return TileCudaLogitSoftcapStage(float(cfg.get("softcap", 30.0)), config)
-    if module_type == "loss_scale":
-        return TileCudaLossScaleStage(float(cfg.get("coef", 1.0)), config)
+    if module_type in {"loss_scale", "tensor_scale"}:
+        return TileCudaLossScaleStage(float(cfg.get("coef", cfg.get("scale", 1.0))), config)
     if module_type == "aux_loss_add":
         return TileCudaAuxLossAddStage(float(cfg.get("coef", 1.0)), config)
     if module_type == "kl_penalty":
@@ -2690,10 +2756,17 @@ def build_tile_module(module_type: str, module_config: dict[str, object], config
             int(cfg["head_dim"]),
             float(cfg.get("rope_base", 10000.0)),
             cfg.get("rope_scaling"),
+            str(cfg.get("convention", "legacy")),
             config,
         )
     if module_type == "rms_norm":
-        return TileCudaRMSNormStage(float(cfg.get("eps", 1e-6)), config)
+        model_dim = cfg.get("model_dim")
+        return TileCudaRMSNormStage(
+            float(cfg.get("eps", 1e-6)),
+            config,
+            model_dim=int(model_dim) if model_dim is not None else None,
+            centered=bool(cfg.get("centered", False)),
+        )
     if module_type == "layer_norm":
         return TileCudaLayerNormStage(int(cfg["model_dim"]), float(cfg.get("eps", 1e-5)), config)
     if module_type == "group_norm":
@@ -2782,7 +2855,7 @@ def build_tile_module(module_type: str, module_config: dict[str, object], config
     if module_type == "swiglu":
         return TileCudaSwiGLUStage(
             int(cfg["model_dim"]),
-            int(cfg["mlp_mult"]),
+            float(cfg["mlp_mult"]),
             int(cfg["multiple_of"]) if cfg.get("multiple_of") is not None else None,
             config,
         )
@@ -3058,7 +3131,8 @@ def build_tile_module(module_type: str, module_config: dict[str, object], config
         return TileCudaExpertDispatchStage(
             int(cfg["model_dim"]),
             int(cfg["experts"]),
-            int(cfg.get("mlp_mult", 4)),
+            float(cfg.get("mlp_mult", 4.0)),
+            int(cfg["multiple_of"]) if cfg.get("multiple_of") is not None else None,
             config,
         )
     if module_type == "expert_combine":

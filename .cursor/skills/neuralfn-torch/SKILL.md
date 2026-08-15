@@ -87,6 +87,7 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `nanogpt` | GPT-2 style | LayerNorm, GELU MLP, absolute position embeddings |
 | `gpt2` | GPT-2 | LayerNorm, GELU MLP, absolute pos, linear bias |
 | `llama` | LLaMA | RMSNorm, SwiGLU, RoPE, GQA |
+| `muse_glimmer` | Muse Glimmer 30B text decoder | Asymmetric GQA, 3-local/1-global RoPE/NoPE, gated attention, centered sandwich RMSNorms, exact untied logit transform |
 | `moe` / `mixllama` | LLaMA + MoE | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | LLaMA + compile | Like llama with `torch.compile` |
 | `mixllama_fast` | MoE + compile | Like moe with `torch.compile` |
@@ -107,7 +108,34 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `kv_pca_llama` | PCA KV cache | PCA-compressed keys/values |
 | `deepseek_v3` | DeepSeek-V3 | MLA + auxfree-balanced MoE + shared experts |
 | `deepseek_v4` | DeepSeek-V4-Pro | NSA attention + auxfree MoE + mHC residuals + QK-norm + FP8 |
+
+Muse Glimmer additionally exposes separate
+`build_muse_glimmer_assistant_graph()`,
+`build_muse_glimmer_dflash_distillation_graph()`,
+`build_muse_glimmer_vision_graph()`, and media-fusion builders. Keep them
+separate from the ordinary autoregressive root. DFlash distillation must use
+`MuseGlimmerDFlashDistillationSpec` plus `DFlashDistillationTrainer`; the target
+is frozen and complete target/config/tokenizer/ATEM lineage is mandatory. Its
+SFT, LoRA/NF4-QLoRA, DPO, reward, and PPO wrappers must all use the shared exact
+Glimmer body; never rebuild a generic two-norm LLaMA body inside a fine-tuning
+root. Native K-Quant, DFlash and CUDA vision execution are independently
+artifact/binding-gated, not capabilities the Torch preset may infer.
 | `gemma3` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + softcap |
+
+For MoE presets, `mlp_multiplier` remains floating-point through graph
+serialization and both Torch/Tile module builders. Expert width is
+`max(1, int(model_dim * mlp_multiplier))`, rounded upward only when
+`multiple_of > 0`; `None` and `0` mean unaligned. The shipped standard-MoE
+presets default to unaligned `8/3`. Do not load a checkpoint created under the
+former integer-truncated expert-width behavior without rebuilding or remapping
+its `w1`, `w2`, and `w3` tensors.
+
+The exact native graph adapter currently covers only `moe`, `mixllama`, and
+`mixllama_fast`. It maps unaligned graph width to `--multiple-of 0`, carries the
+configured all-expert softmax router auxiliary loss, and requires a strict
+source-SHA/tensor-table checkpoint before resident inference. Do not infer the
+same contract for modern, megakernel, DeepSeek, aux-free, shared-expert, or JEPA
+variants.
 | `diff_transformer` | Differential TX | Two-softmax differential attention + head-wise norm |
 | `qwen3_longctx` | Qwen long-ctx | GQA + YaRN RoPE scaling + QK-norm |
 | `longctx_sparse_llama` | Long-ctx sparse | NSA / block-sparse / sliding-window / streaming |
@@ -115,6 +143,12 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `fp8_llama` / `mxfp4_llama` | Blackwell precision | FP8 E4M3 / MXFP4 microscaled weight linears |
 | `auxfree_moe_jepa_evo`, `diff_semantic_moe_jepa_evo`, `dyt_geglu_semantic_dense_jepa_evo` | NeuralFn crosses | Modern kernels × JEPA/semantic/route-evo stacks |
 | `<preset>_modern` | Modernized | Any base preset + RMSNorm/QK-norm/RoPE-YaRN/GeGLU/auxfree (see `MODERN_BASE_PRESETS`) |
+
+Treat `longctx_sparse_llama` as recompute-only sparse attention until a
+resident adapter with physical eviction is proved. Tile sparse attention has a
+1024-key launch ceiling: strict Python rejects longer prefixes and the raw
+float32 sparse forward/backward C ABIs return `cudaErrorInvalidValue` before
+launch. Do not describe right-aligned mask/recompute parity as a resident cache.
 
 ## Common config keys
 
@@ -125,8 +159,8 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `n_embd` / `model_dim` | 128 | Model dimension |
 | `vocab_size` | 256 | Vocabulary (auto-adjusted by trainer) |
 | `num_kv_heads` | 2 | GQA key/value heads |
-| `mlp_multiplier` | 8/3 (llama) or 4 (gpt2) | MLP hidden multiplier |
-| `multiple_of` | 256 | Round MLP width to multiple |
+| `mlp_multiplier` | 8/3 (llama) or 4 (gpt2) | MLP hidden multiplier; fractional SwiGLU values are preserved |
+| `multiple_of` | 256 | Round the computed MLP width up to this multiple |
 | `experts` | 8 | MoE: number of experts |
 | `top_k` | 2 | MoE: experts per token |
 | `dropout_p` | 0.0 or 0.1 | Dropout rate |
@@ -135,6 +169,14 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `ttt_hidden_dim` | 32 | TTT hidden dimension |
 | `byte_patch_size` | 4 | H-Net byte patch size |
 | `max_recurrence_steps` | 4 | Universal TX max steps |
+
+For LLaMA-style template graphs, Torch and CUDA Tile instantiate affine
+RMSNorm whenever the node config contains `model_dim`; the learnable float32
+scale starts at ones. A legacy node without `model_dim` remains parameter-free.
+SwiGLU computes `int(model_dim * mlp_mult)` and then rounds up to `multiple_of`,
+so do not coerce fractional multipliers to integers. Older template checkpoints
+need one-valued norm weights added, and custom non-`8/3` SwiGLU checkpoints may
+need their three projection tensors remapped before strict loading.
 
 ## Programmatic spec building
 
@@ -218,6 +260,83 @@ export_quantized_pt(graph, "model_q.pt", scheme="int8")   # or "ternary"
 import_quantized_pt(graph, "model_q.pt")
 ```
 
+## Migrate graph and `.pt` weights to Native Execution IR
+
+Use the versioned Native IR migration boundary instead of treating `.pt` plus
+graph JSON as a native runtime artifact:
+
+```python
+from neuralfn import migrate_graph_to_native
+
+result = migrate_graph_to_native(
+    "model.json",
+    weights_path="model.pt",
+    output_dir="model-native",
+    dry_run=False,
+)
+assert result.report.compatible
+```
+
+The graph is validated and all variants are resolved before the checkpoint is
+opened. `.pt` loading happens only in an isolated `weights_only` worker, and
+the destination must not exist. The source graph/checkpoint are unchanged.
+Structural lowering covers all 67 shipped text presets. Trainer registration
+does not prove execution: NanoGPT's bias-free/dropout graph is not represented
+by the biased, dropout-free dense-v5 loop, so all NanoGPT selectors retain
+false persistence/forward/resident gates. Canonical LLaMA is separately
+promoted by its exact topology/checkpoint proof. A
+successful migration proves resident sessions, retained lossless
+K/V, and lean serving only when one of the seven reviewed dense preset topologies
+(`gpt2`, megakernel, MoA, z-loss, QK-norm, stable, or softcap) is paired with a
+compatible native dense-v5 `.bin`; exact QK/softcap nodes/configs are required,
+and supported even head geometry also proves native packed CPU TurboQuant cache
+ABI v1. MoA specifically requires migration of source-bound
+`model_XXXXXXXX.moa.json` beside its named dense-v5 model and empty DONE marker;
+the metadata fixes canonical candidates, selected activation, and positive
+interval for CPU resident inference. Resume validates that metadata and
+restores its activation without probing; missing or tampered metadata fails
+closed. This is graph-bound: direct selector-only MoA first-leg training still
+emits ordinary dense-v5, but an unbound resume is not exact and must fail.
+Canonical `llama` is a separate proved path when the graph is paired
+with native-family inference-checkpoint v2 metadata: migration validates and
+copies `model.f32`, and its resident adapter implements lossless
+RMSNorm/RoPE/GQA/SwiGLU inference with TurboQuant rejected. Generic `.pt`,
+graph-only, bare MoA `.bin` files, differential/modern variants, and other
+non-dense families remain closed. Compatible reviewed-dense artifacts now
+advertise the separately versioned Tile-sidecar attention feature; explicit
+strict-sidecar configuration moves only packed historical attention to CUDA,
+with CPU still owning model compute and encoding. See
+`docs/python-sdk/native-ir.md`.
+
+For training orchestration, use `plan_native_graph_training()` to obtain the
+same compatibility report and canonical target. Launch only when
+`execution_ready` and `graph_preflight_enforced` are true. The seven reviewed
+GPT-2 graph profiles plus exact canonical `llama`, its graph-equivalent
+compile-runtime alias `llama_fast`, and exact standard-MoE
+`moe`/`mixllama`/`mixllama_fast`, plus proof-bound `gpt2_diff` training, make
+13 ready profiles and use an immutable validated
+graph snapshot plus canonical selector/geometry. LLaMA requires the proved
+RMSNorm/RoPE/MHA-or-GQA/dense-attention/gate-first-SwiGLU contract and binds
+the source SHA through training, checkpoint discovery, and migration. Both
+LLaMA source profiles use native identity `llama` and retain their source
+selector/runtime in provenance. Because
+the current executables do not parse Native IR, these ready plans honestly
+report `trainer_consumes_native_ir` false. Unsupported
+profiles must fail with their node-specific issue and must not route to a
+diagnostic transition sampler.
+`gpt2_diff` graph training is allowed only through the trusted planner's
+canonical source/configuration/topology/shape/geometry proof. The native child
+requires graph, fingerprint, and proof before plan/Tile/CUDA work; its unkeyed
+digest is local-handoff integrity, not authenticity. The low-level packed trainer writes learned per-layer
+lambda/moments in an additive graph-bound bundle with version-2 strict
+continuation metadata over the source, five binaries, ordered training shards,
+counters/sampler, seed, accumulation, optimizer/LR horizon, BF16 routes, and
+a canonical profile of supported effective numerics. Validation shards are excluded, and resume
+preflight finishes before Tile/CUDA/H2D. This does not provide a Torch fallback:
+the learned path requires the learned-lambda ABI, while the legacy fixed-lambda
+ABI retains rounded-output/non-layer-local backward debt. Migration and resident
+inference still do not validate or execute the bundle.
+
 ## InferenceCache (autoregressive generation)
 
 ```python
@@ -228,11 +347,35 @@ cache = InferenceCache(graph, device="cuda")
 prompt = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
 logits = cache.step(prompt)         # full prompt
 next_tok = logits.argmax(dim=-1)
-logits2 = cache.step(next_tok.unsqueeze(1))  # single token step
-cache.reset()                       # clear for new sequence
+prefix = torch.cat((prompt, next_tok.unsqueeze(1)), dim=1)
+logits2 = cache.step(prefix)         # current wrapper recomputes the full prefix
+cache.reset()                        # clears the reserved compatibility state
 ```
 
-Works with graphs that have `kv_cache_read` / `kv_cache_write` nodes. For training graphs (2 inputs), dummy targets are supplied automatically.
+Despite its historical name, the current `InferenceCache` does not populate or
+read retained K/V state across calls. Graphs may contain `kv_cache_read` /
+`kv_cache_write` declarations, but the wrapper does not bind them to a
+lossless cache. Pass the full prefix for context-correct generation. For
+training graphs (2 inputs), dummy targets are supplied automatically. This API
+is separate from the additive `neuralfn.native_inference` model/session
+contract. That Python contract is implemented, but current artifacts do not
+all prove a production resident binding or lossless cache. The seven reviewed
+dense-v5 preset topologies (`gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_zloss`,
+`gpt2_qknorm`, `gpt2_stable`, and `gpt2_softcap`) do, with compiled
+cache/recompute parity tests. Canonical LLaMA does as well when backed by the
+exact v2 float32 checkpoint contract; its raw-token CLI/SDK route is proved,
+but its text-serving presentation metadata and TurboQuant are not. Generic
+`.pt`, graph-only, bare MoA `.bin` files, differential/modern variants, and other non-dense
+artifacts do not. See
+`docs/python-sdk/native-inference.md`.
+
+The portable `neuralfn.turboquant` module is the correctness oracle and shared
+table source for the exact-dense native packed CPU resident cache. It does not
+change the Torch/Tile graph `kv_quant_pack` or `kv_quant_unpack` dtype/shape
+contract. Its records now have an independently proved additive CUDA attention
+feature ABI in the trainer Tile sidecar. Explicit reviewed-dense resident
+dispatch is live-proved for MSE/QJL; non-dense cache support and
+transfer-inclusive performance remain unproved.
 
 ## Experimental Presets
 

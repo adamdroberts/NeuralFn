@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GPT_BINDING_OUT="${NFN_NATIVE_GPT_BINDING_OUT:-}"
 GPT2_BINDING_OUT="${NFN_NATIVE_GPT2_BINDING_OUT:-}"
+NATIVE_INFERENCE_BINDING_OUT="${NFN_NATIVE_INFERENCE_BINDING_OUT:-}"
 NATIVE_TRAIN_BINDING_OUT="${NFN_NATIVE_TRAIN_BINDING_OUT:-}"
 LAUNCHER_OUT="${NFN_NATIVE_GPT2_LAUNCHER_OUT:-}"
 GPT_CLI_OUT="${NFN_NATIVE_GPT_CLI_OUT:-}"
@@ -28,6 +29,12 @@ if [[ -n "${GPT2_BINDING_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh" "${GPT2_BINDING_OUT}"
 else
   bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh"
+fi
+
+if [[ -n "${NATIVE_INFERENCE_BINDING_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_inference_binding.sh" "${NATIVE_INFERENCE_BINDING_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_native_inference_binding.sh"
 fi
 
 if [[ -n "${NATIVE_TRAIN_BINDING_OUT}" ]]; then

@@ -42,6 +42,7 @@ A Monaco Editor panel for writing and editing custom neuron source code. Appears
 
 - Python syntax highlighting and IntelliSense.
 - Live updates pushed to the selected node's `neuron_def.source_code` via `updateNodeData`.
+- Graph settings include an explicit `scalar`, `torch`, or `native-cuda` runtime selector. Selecting native CUDA does not imply compatibility; the Training panel owns preflight.
 
 ## LibraryPanel
 
@@ -63,7 +64,7 @@ Top-of-canvas toolbar providing:
 - Node insertion buttons (custom, subgraph, variant).
 - Graph-level actions: save, execute, trace, clear.
 - Breadcrumb navigation bar for subgraph depth.
-- Training method and runtime selectors.
+- Training method selection; runtime selection lives in CodePanel graph settings.
 
 ## TrainingPanel
 
@@ -76,6 +77,8 @@ Right-side panel for training controls and visualization:
 - Live loss chart (Recharts line chart fed from `lossHistory`).
 - Torch trace display showing per-layer timing and shape statistics.
 - Error display for failed runs.
+- Native CUDA project-dataset selector and pre-start Native IR compatibility report with exact node paths.
+- Native Stop is disabled because the current compiled trainer ABI does not expose cooperative cancellation.
 
 ## ChatPanel
 

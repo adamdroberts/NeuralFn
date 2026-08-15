@@ -77,6 +77,75 @@ get_training_status()
 
 That's it -- four tool calls for a complete train run.
 
+### Native CUDA graph training
+
+Use native graph training only when the user explicitly wants the compiled
+native path. It is fail-closed and currently has exact reviewed graph adapters
+for `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
+`gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`, canonical `llama`, and its exact
+compile-runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`,
+and `mixllama_fast`, plus trusted-planner proof-bound `gpt2_diff` training (13
+ready; 54 blocked). `gpt2_diff` migration and resident inference remain
+unready because they do not consume its graph-bound learned-lambda bundle; its exact
+low-level native path is packed-QKV-only. Its version-2 continuation metadata
+binds all five binaries, the source, training-only shard identity,
+counters/sampler, seed, accumulation, optimizer/LR horizon, BF16 routes, and
+a canonical profile of supported effective numerics before Tile/CUDA/H2D. MCP
+uses the same trusted planner and strict `.diff.json` bundle discovery as the
+server; the graph/fingerprint/proof triplet is required and its unkeyed digest
+is local-handoff integrity, not caller authenticity. The learned trainer requires the
+learned-lambda ABI; the legacy fixed-lambda ABI remains outside it with
+rounded-output/non-layer-local backward debt. Canonical LLaMA binds graph-derived geometry
+and SHA through planner-backed SDK command
+construction and validated v2 checkpoint discovery. Do not claim that another
+structurally lowerable preset can train natively.
+Both LLaMA selectors invoke native identity `llama`; retain the source
+selector/runtime in returned artifact provenance.
+Standard-MoE runs retain floating width, `multiple_of=None` as native `0`,
+experts, top-k, router auxiliary coefficient, runtime alias, and graph SHA in
+the returned plan. They select the production MoE dataset loop and accept only
+strict graph-bound checkpoint metadata; do not promote neighboring MoE presets.
+For `gpt2_moa`, completion returns source-bound
+`model_XXXXXXXX.moa.json`, not the sibling `.bin`; require the named dense-v5
+model, empty DONE marker, canonical candidates, selected activation, positive
+interval, and exact graph/model hashes. A resumed graph-bound MoA run must
+validate that same sidecar and restore its activation without a new probe;
+missing or changed metadata is a hard failure. Do not confuse that with direct selector-only
+first-leg training, which may write ordinary dense-v5 but cannot resume
+activation-faithfully without the graph-bound contract.
+
+Keep the model graph topology unchanged. Download/register the dataset with
+`download_dataset` rather than inserting a `dataset_source` node into the exact
+reviewed graph, set the runtime, then pass the alias directly:
+
+```
+load_gpt_template(name="native_gpt2", preset="gpt2", config={
+  "model_dim": 128,
+  "num_layers": 4,
+  "num_heads": 4,
+  "num_kv_heads": 4,
+  "vocab_size": 50257
+})
+download_dataset(hf_path="roneneldan/TinyStories", alias="native_tiny")
+update_graph_settings(runtime="native-cuda")
+train_start(
+  runtime="native-cuda",
+  dataset_names=["native_tiny"],
+  epochs=10,
+  learning_rate=0.001
+)
+```
+
+Inspect the returned `execution_ready`, `issues`, `compatibility_report`, and
+`artifact_metadata`. If the response is `status="incompatible"`, report the
+exact `issues[].path` and stop; never switch to Torch, rewrite the graph, or
+choose a nearby preset without user direction. A started native run returns
+`status="started"`, `run_status="running"`, and the materialized
+manifest/training-plan paths immediately; polling adds `checkpoint_path` on
+completion. Native training currently accepts exactly one cached dataset
+alias, supports pretraining only, and cannot be cooperatively stopped through
+the current compiled ABI.
+
 ## Tool reference
 
 ### Graph
@@ -127,7 +196,7 @@ That's it -- four tool calls for a complete train run.
 | `execute_trace(inputs)` | Run and trace intermediates. |
 | `trace_torch(inputs)` | Torch tensor statistics. |
 | `probe_node(node_id, n_samples)` | Sample a node's response curve. |
-| `train_start(method, epochs, learning_rate, train_inputs, train_targets, dataset_names)` | Start training. Methods: surrogate, evolutionary, hybrid, torch. |
+| `train_start(method, epochs, learning_rate, train_inputs, train_targets, dataset_names, runtime)` | Preflight and start training. Runtime accepts scalar, torch, or fail-closed native-cuda. |
 | `get_training_status()` | Read the active training snapshot, latest loss, and recent events. |
 | `poll_training_status(since_event_id, timeout_seconds, interval_seconds)` | Wait for the next training update or until the run finishes. |
 | `train_stop()` | Stop training. |
@@ -149,6 +218,7 @@ That's it -- four tool calls for a complete train run.
 | `nanogpt` | GPT-2 style (LayerNorm, GELU, absolute pos) | AR |
 | `gpt2` | GPT-2 (with bias) | AR |
 | `llama` | LLaMA (RMSNorm, SwiGLU, RoPE, GQA) | AR |
+| `muse_glimmer` | Exact Muse Glimmer 30B decoder; strict native BF16/K-Quant/DFlash, post-training, pipeline AR/SFT and CPU/CUDA vision capabilities are independently artifact/ABI-gated | AR |
 | `moe` / `mixllama` | LLaMA + Mixture of Experts | AR |
 | `llama_fast` | LLaMA with torch.compile | AR |
 | `mixllama_fast` | MoE with torch.compile | AR |

@@ -39,6 +39,39 @@ See [native-embedding.md](native-embedding.md) for the lightweight embedding
 manifest compiler, tokenizer compatibility helper, executable resolver, and
 checkpoint-header inspector used by the native embedding CLI.
 
+See [native-ir.md](native-ir.md) for the versioned Native Execution IR v1
+manifest, fail-closed graph/legacy-`.pt` migration, and conservative native
+capability registry.
+
+See [native-inference.md](native-inference.md) for the fail-closed resident
+model/session SDK contract, exact-prefix synchronization, cache-selection
+gates, callbacks, cancellation, and the compiled CPU resident binding boundary.
+Compatible native `.bin` migrations stamp the ready resident ABI and use a
+preallocated lossless K/V cache by default. The reviewed set is `gpt2`,
+`gpt2_megakernel`, `gpt2_moa`, `gpt2_zloss`, `gpt2_qknorm`, `gpt2_stable`, and
+`gpt2_softcap`; exact QK/softcap active-node configs are required. Those
+artifacts with even head dimensions also stamp native packed CPU TurboQuant
+cache ABI v1. MoA additionally requires migration through its source-bound
+`model_XXXXXXXX.moa.json`, named dense-v5 sibling, empty DONE marker, canonical
+candidates, selected activation, and positive interval. Canonical LLaMA backed by inference-checkpoint v2 metadata is the
+one non-dense resident exception: migration copies `model.f32` and supports
+lossless `off`/`auto`/`full`; TurboQuant and text serving without presentation
+metadata remain unavailable. Under generic graph migration, `.pt`/graph-only
+artifacts, bare MoA `.bin` files, differential/modern variants, other
+unreviewed non-dense adapters, and CUDA/Tile TurboQuant remain unavailable.
+
+Muse Glimmer is a separate strict family boundary. Pinned BF16 and official
+K-Quant-Dynamic/K-Quant-17GB bundles support resident C++ CPU and whole-model
+CUDA text execution, optional BF16 or packed DFlash, VRAM-aware weight-profile
+selection, and CPU image/video helpers under independent capability bits. See
+[native-inference.md](native-inference.md) and
+[glimmer-support-todo.md](../glimmer-support-todo.md) for the exact supported
+and remaining profiles.
+
+See [turboquant-reference.md](turboquant-reference.md) for the portable
+paper-aligned MSE/QJL codec oracle, deterministic tables, mixed-bit packing,
+and the distinction between reference coverage and native runtime capability.
+
 ## Package Exports
 
 All public symbols are available from the top-level `neuralfn` module:
@@ -60,6 +93,25 @@ from neuralfn import (
     NativeGpt2CheckpointInfo, NativeGpt2RunConfig, NativeGpt2RunnerStatus,
     build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, capture_native_gpt, is_native_gpt_checkpoint,
     NativeTrainCaptureResult, NativeTrainRunConfig, NativeTrainRunnerStatus,
+    NativeCompatibilityReport, NativeExecutionManifest, NativeLoweringIssue,
+    NativeMigrationResult, NativeTensorSpec, NativeGraphTrainPlan,
+    GenerationConfig, GenerationEvent, GenerationResult, KVCacheConfig,
+    NativeModelLoadConfig,
+    NativeInferenceCapabilities, NativeInferenceCapabilityError,
+    NativeInferenceClosedError, NativeInferenceError,
+    NativeInferenceModel, NativeInferenceSession,
+    TurboQuantEncodedVector, TurboQuantError, TurboQuantReferenceCodec,
+    deterministic_qjl_projection, deterministic_random_rotation,
+    lloyd_max_centroids, pack_mixed_bit_indices,
+    unpack_mixed_bit_indices,
+    NativeCapabilityProof, NativeGraphTrainingAdapter,
+    NativeLoweringSpec, NativeTrainerSpec,
+    compile_graph_to_native_manifest, compile_native_graph_payload,
+    migrate_graph_to_native, plan_native_graph_training,
+    preflight_native_graph_training,
+    capability_proof_for, classify_native_graph_training_selector,
+    classify_native_model, native_graph_training_adapters,
+    native_lowering_specs, native_trainer_specs, registered_native_module_types,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, capture_native_gpt2, is_native_gpt2_checkpoint,
     build_native_train_run_config, capture_native_sm120_gpt,
     exec_native_gpt, exec_native_gpt2, exec_native_train,
@@ -130,12 +182,20 @@ pinned to device `"0"`. The direct `train_gpt_native.py` compiled-CLI shim
 uses the same explicit-config-wins environment handoff before `exec`, while the
 C++ binding uses `posix_spawnp()` instead of `fork()` and defaults
 `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
-The generic `NativeTrainRunConfig` builders also accept `template_name=` and
-`graph_file=` for dense GPT families, appending `--template-name` and
-`--graph-file` to the compiled native command once so SDK callers can select GPT
-presets or compatible custom graphs without manually editing raw CLI args. When
+The generic `NativeTrainRunConfig` builders accept `template_name=` and
+`graph_file=` for the reviewed dense GPT adapters, exact canonical `llama`, and
+its graph-equivalent compile-runtime alias `llama_fast`. Dense GPT callers may
+select a compatible graph directly.
+Canonical LLaMA callers must first call `plan_native_graph_training(graph)` and
+pass that plan's complete `trainer_arguments` together with
+`model_family="llama"` and the same `graph_file`; `NativeTrainRunConfig.argv()`
+reopens and replans the graph, rejects a fabricated or conflicting fingerprint,
+and requires every graph-owned selector and geometry argument exactly once.
+The `llama_fast` plan preserves its source selector/runtime but normalizes the
+native template and checkpoint identity to `llama`.
+Pass the graph only through `graph_file`, not through raw `args`. When
 `model_family="gpt"` selects a known non-dense GPT template and no custom graph
-is supplied, the resolver now chooses that template's compiled family binary
+is supplied, the resolver chooses that template's compiled family binary
 instead of the dense GPT trainer while forwarding the template selector.
 For the SM120 workstation path, `capture_native_sm120_gpt(...)` builds that
 direct SM120 config and immediately captures stdout/stderr through the generic
@@ -327,7 +387,10 @@ all report `dense-gpt-template-geometry` because the selected template or
 custom graph chooses the effective architecture. `nanogpt` is `implemented`
 because the shared dense GPT transformer loop uses the selected NanoGPT
 320-wide/5-head/5-layer geometry, while its explicit token-LM path remains
-available for diagnostics.
+available for diagnostics. Here `implemented` means command dispatch and
+geometry selection only: Native IR keeps NanoGPT persistence, architecture
+forward, and resident inference false because the authored bias-free/dropout
+contract does not match biased, dropout-free dense-v5.
 If an older local `neuralfn._native_train` extension shadows the rebuilt one,
 binding discovery skips it unless it exposes both `run_train` and
 `resolve_command`, then probes the remaining package search path before falling
@@ -368,6 +431,7 @@ route or a returned exit code.
 | [config](config.md) | `TemplateSpec`, `BlockSpec`, `ModelSpec` and preset builder functions |
 | [torch-backend](torch-backend.md) | `CompiledTorchGraph`, `TorchTrainer`, `TorchTrainConfig`, and all `*Stage` modules |
 | [tile-cuda](tile-cuda.md) | Optional CUDA Tile backend configuration, diagnostics, kernel coverage registry, and native GPT trainer handoff helpers |
+| [native-ir](native-ir.md) | Native Execution IR v1, graph/`.pt` migration artifacts, compatibility reports, and capability registries |
 | [torch-templates](torch-templates.md) | Graph builders for attention, MLP, decoder blocks, and full model architectures |
 | [training/](training/README.md) | Training methods: surrogate, evolutionary, and hybrid |
 | [inference](inference.md) | Weight export/import, quantization, and `InferenceCache` for autoregressive generation |

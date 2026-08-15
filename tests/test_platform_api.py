@@ -521,6 +521,149 @@ class PlatformApiTest(unittest.TestCase):
         self.assertEqual(["tiny_tokens"], latest.json()["dataset_names"])
         self.assertEqual(8, latest.json()["seq_len"])
 
+    def test_native_editor_run_preflights_and_persists_artifacts(self) -> None:
+        bootstrap = self._bootstrap_admin()
+        project_id = bootstrap["project"]["id"]
+        session_id = bootstrap["session"]["id"]
+
+        uploaded = self.client.post(
+            f"/api/projects/{project_id}/datasets/upload",
+            data={"name": "native_tokens", "project_ids": json.dumps([project_id])},
+            files={"file": ("native.txt", b"native graph training\n" * 16, "text/plain")},
+        )
+        self.assertEqual(200, uploaded.status_code, uploaded.text)
+
+        template = self.client.post(
+            f"/api/projects/{project_id}/sessions/{session_id}/templates/gpt/apply",
+            json={
+                "name": "native_gpt2",
+                "config": {
+                    "preset": "gpt2",
+                    "model_dim": 32,
+                    "num_layers": 1,
+                    "num_heads": 4,
+                    "num_kv_heads": 4,
+                    "multiple_of": 16,
+                    "vocab_size": 50257,
+                },
+            },
+        )
+        self.assertEqual(200, template.status_code, template.text)
+        current = self.client.get(f"/api/projects/{project_id}/sessions/{session_id}/graph").json()
+        graph = current["graph"]
+        graph["runtime"] = "native-cuda"
+        updated = self.client.put(
+            f"/api/projects/{project_id}/sessions/{session_id}/graph",
+            json={
+                "graph": graph,
+                "expected_revision": current["revision"],
+                "persist_snapshot": False,
+            },
+        )
+        self.assertEqual(200, updated.status_code, updated.text)
+
+        preflight = self.client.post(
+            f"/api/projects/{project_id}/sessions/{session_id}/runs/preflight",
+            json={"runtime": "native-cuda", "dataset_names": ["native_tokens"], "epochs": 1},
+        )
+        self.assertEqual(200, preflight.status_code, preflight.text)
+        self.assertTrue(preflight.json()["execution_ready"])
+        self.assertEqual("gpt2", preflight.json()["training_selector"])
+
+        def fake_native_train(preparation):
+            preparation.checkpoint_dir.mkdir()
+            checkpoint = preparation.checkpoint_dir / "model.bin"
+            checkpoint.write_bytes(b"editor-native-checkpoint")
+            return checkpoint.resolve()
+
+        with patch("server.services.run_service.execute_native_training", side_effect=fake_native_train):
+            started = self.client.post(
+                f"/api/projects/{project_id}/sessions/{session_id}/runs",
+                json={
+                    "runtime": "native-cuda",
+                    "dataset_names": ["native_tokens"],
+                    "epochs": 1,
+                    "batch_size": 1,
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0,
+                },
+            )
+        self.assertEqual(200, started.status_code, started.text)
+        self.assertIn('"done": true', started.text)
+
+        latest = self.client.get(
+            f"/api/projects/{project_id}/sessions/{session_id}/runs/active"
+        )
+        self.assertEqual(200, latest.status_code, latest.text)
+        payload = latest.json()
+        self.assertEqual("completed", payload["status"])
+        self.assertEqual("native-cuda", payload["runtime"])
+        self.assertTrue(payload["compatibility_report"]["compatible"])
+        self.assertTrue(Path(payload["artifact_metadata"]["manifest_path"]).is_file())
+        self.assertTrue(Path(payload["checkpoint_path"]).is_file())
+        self.assertEqual(payload["checkpoint_path"], payload["artifact_metadata"]["checkpoint_path"])
+
+        # A request-level runtime override must not silently rewrite the saved
+        # graph setting when the completed graph snapshot is persisted.
+        current = self.client.get(f"/api/projects/{project_id}/sessions/{session_id}/graph").json()
+        override_graph = current["graph"]
+        override_graph["runtime"] = "torch"
+        updated = self.client.put(
+            f"/api/projects/{project_id}/sessions/{session_id}/graph",
+            json={
+                "graph": override_graph,
+                "expected_revision": current["revision"],
+                "persist_snapshot": False,
+            },
+        )
+        self.assertEqual(200, updated.status_code, updated.text)
+        with patch("server.services.run_service.execute_native_training", side_effect=fake_native_train):
+            overridden = self.client.post(
+                f"/api/projects/{project_id}/sessions/{session_id}/runs",
+                json={
+                    "runtime": "native-cuda",
+                    "dataset_names": ["native_tokens"],
+                    "epochs": 1,
+                    "batch_size": 1,
+                },
+            )
+        self.assertEqual(200, overridden.status_code, overridden.text)
+        self.assertIn('"done": true', overridden.text)
+        saved_after_override = self.client.get(
+            f"/api/projects/{project_id}/sessions/{session_id}/graph"
+        ).json()
+        self.assertEqual("torch", saved_after_override["graph"]["runtime"])
+
+        current = self.client.get(f"/api/projects/{project_id}/sessions/{session_id}/graph").json()
+        incompatible_graph = current["graph"]
+        incompatible_graph["nodes"]["model"]["neuron_def"]["subgraph"]["nodes"]["token_embed"][
+            "neuron_def"
+        ]["module_type"] = "unregistered_future_op"
+        updated = self.client.put(
+            f"/api/projects/{project_id}/sessions/{session_id}/graph",
+            json={
+                "graph": incompatible_graph,
+                "expected_revision": current["revision"],
+                "persist_snapshot": False,
+            },
+        )
+        self.assertEqual(200, updated.status_code, updated.text)
+        with patch("server.services.run_service.execute_native_training") as native_runner:
+            rejected = self.client.post(
+                f"/api/projects/{project_id}/sessions/{session_id}/runs/start",
+                json={
+                    "runtime": "native-cuda",
+                    "dataset_names": ["native_tokens"],
+                    "epochs": 1,
+                    "batch_size": 1,
+                },
+            )
+        self.assertEqual(409, rejected.status_code, rejected.text)
+        issue = rejected.json()["detail"]["issues"][0]
+        self.assertEqual("unsupported_module", issue["code"])
+        self.assertTrue(issue["path"].endswith("/nodes/token_embed"))
+        native_runner.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

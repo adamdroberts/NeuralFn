@@ -32,6 +32,12 @@ MCP tools follow a consistent scoping convention:
 
 Most tools operate at the session level and require both `project_id` and `session_id`. Dataset catalog tools operate at the project level. `list_builtins` is the only global tool.
 
+`train_start` accepts the graph/runtime union `scalar | torch | native-cuda`.
+Native requests synchronously preflight the saved graph before creating a run
+and return the same compatibility report and artifact metadata as the editor
+REST workflow. Unsupported native adapters return `status: incompatible` with
+stable node paths and never launch a trainer.
+
 ## Tool Reference
 
 - [Graph tools](graph-tools.md) -- read, replace, and configure graphs

@@ -353,7 +353,8 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
 
     custom_graph_entry = python_entries["nfn_train_gpt_custom_graph_command"]
     assert custom_graph_entry["passed"] is True
-    assert "--model-family gpt3" in str(custom_graph_entry["stdout"])
+    assert "--model-family gpt2" in str(custom_graph_entry["stdout"])
+    assert "--template-name gpt2" in str(custom_graph_entry["stdout"])
     assert "--graph-file" in str(custom_graph_entry["stdout"])
     assert "--backend tile-cuda" in str(custom_graph_entry["stdout"])
 
@@ -372,7 +373,9 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
     assert compiled_graph_entry["passed"] is True
     assert "--model-family gpt" in str(compiled_graph_entry["stdout"])
     assert "--template-name gpt2_moa" in str(compiled_graph_entry["stdout"])
-    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in str(compiled_graph_entry["stdout"])
+    assert "--graph-file " in str(compiled_graph_entry["stdout"])
+    assert "native-custom-gpt-graph.json" in str(compiled_graph_entry["stdout"])
+    assert "--graph-fingerprint " in str(compiled_graph_entry["stdout"])
     assert "--backend tile-cuda" in str(compiled_graph_entry["stdout"])
 
     catalog_entry = shell_entries["native_gpt_linked_list_templates"]

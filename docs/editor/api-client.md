@@ -7,11 +7,13 @@
 ```typescript
 class ApiError extends Error {
   status: number;
-  detail: string;
+  payload: unknown;
 }
 ```
 
-Thrown by API methods when the server returns a non-2xx response. Route-level error handling can inspect `status` for 401/403/404 distinctions.
+Thrown by API methods when the server returns a non-2xx response. Route-level
+error handling can inspect `status` for 401/403/404 distinctions and `payload`
+for structured `detail`, including node-specific native compatibility issues.
 
 ## DTO Interfaces
 
@@ -38,6 +40,7 @@ These interfaces mirror the server-side Pydantic models and are used for request
 | `MembershipInfo` | Project membership record |
 | `ProjectAnalytics` | Aggregated training statistics |
 | `RunSnapshot` | Training run status, loss, step, events |
+| `TrainingPreflightResponse` | Native compatibility, node-specific issues, and artifact metadata |
 | `BootstrapResponse` | First-run bootstrap result |
 | `InferenceComputePolicy` | Versioned strict/standard backend and CUDA precision-control telemetry |
 | `ChatGenerateResponse` | Generated text/tokens plus the applied `compute_policy` |
@@ -50,6 +53,7 @@ autocast, so its `autocast_disabled` field is true in either mode.
 ## Types
 
 - **`TrainingMethod`** -- string union of supported training methods.
+- **`GraphRuntime`** -- `"scalar" | "torch" | "native-cuda"`.
 - **`VariantLibraryData`** -- `Record<string, Record<string, GraphData>>`, mapping family names to version-keyed subgraphs.
 
 ## API Methods
@@ -88,10 +92,16 @@ The exported `api` object provides the following methods:
 | `executeTrace(sessionId, req)` | `POST /api/sessions/:id/execute-trace` | Runs a traced forward pass with edge telemetry. |
 | `traceTorchPreview(sessionId, req)` | `POST /api/sessions/:id/trace-torch` | Compiles to Torch and runs a traced preview. |
 | `chatGenerate(projectId, sessionId, req)` | `POST /api/projects/:projectId/sessions/:sessionId/chat/generate` | Generates from the session graph; exact temperature zero requests strict deterministic compute and returns policy telemetry. |
-| `startTraining(sessionId, req)` | `POST /api/sessions/:id/train` | Starts training via SSE. Returns an `AbortController` for cancellation. |
-| `getActiveRun(sessionId)` | `GET /api/sessions/:id/active-run` | Returns the active run for a session. |
-| `listRuns(projectId)` | `GET /api/runs?project_id=...` | Lists training runs. |
-| `stopTraining(runId)` | `POST /api/runs/:id/stop` | Stops a running training job. |
+| `startTraining(projectId, sessionId, req, onMessage, onError)` | `POST /api/projects/:projectId/sessions/:sessionId/runs` | Starts training via SSE. Returns an `AbortController` for disconnecting the client stream; this is not server-side native cancellation. |
+| `preflightTraining(projectId, sessionId, req)` | `POST /api/projects/:projectId/sessions/:sessionId/runs/preflight` | Checks Native IR and trainer-adapter compatibility before a native run. |
+| `getActiveRun(projectId, sessionId)` | `GET /api/projects/:projectId/sessions/:sessionId/runs/active` | Returns the active or latest persisted run. |
+| `listRuns(projectId, sessionId)` | `GET /api/projects/:projectId/sessions/:sessionId/runs` | Lists persisted session runs. |
+| `stopTraining(projectId, sessionId, runId)` | `POST /api/projects/:projectId/sessions/:sessionId/runs/:runId/stop` | Requests cooperative stop; native runs currently return `unsupported`. |
+
+Native preflight issues retain `path`, `code`, `operation`, and `message` so
+the Training panel can identify the exact unsupported graph node. Run
+snapshots additionally carry `runtime`, `compatibility_report`,
+`artifact_metadata`, and `checkpoint_path`.
 
 ### Catalog and Datasets
 

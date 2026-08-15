@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -23,6 +24,53 @@ from neuralfn.torch_backend import (
     build_module,
     _sparse_attn_mask,
 )
+
+
+_SPARSE_REFERENCE_CASES = (
+    (
+        "sliding_window_attention",
+        {"window_size": 4, "is_causal": True, "dropout_p": 0.0},
+        {"window": 4, "num_sinks": 0, "block": None, "compress_stride": None},
+    ),
+    (
+        "block_sparse_attention",
+        {"sparse_block_size": 4, "num_sinks": 2, "is_causal": True, "dropout_p": 0.0},
+        {"window": None, "num_sinks": 2, "block": 4, "compress_stride": None},
+    ),
+    (
+        "streaming_attention_sinks",
+        {"window_size": 4, "num_sinks": 2, "is_causal": True, "dropout_p": 0.0},
+        {"window": 4, "num_sinks": 2, "block": None, "compress_stride": None},
+    ),
+    (
+        "native_sparse_attention",
+        {
+            "window_size": 4,
+            "num_sinks": 2,
+            "compress_stride": 3,
+            "is_causal": True,
+            "dropout_p": 0.0,
+        },
+        {"window": 4, "num_sinks": 2, "block": None, "compress_stride": 3},
+    ),
+)
+
+
+def _right_aligned_allowed_key_indices(
+    key_count: int,
+    mask_kwargs: dict[str, int | None],
+) -> tuple[int, ...]:
+    """Return visible keys for one query aligned to the end of its key prefix."""
+
+    mask = _sparse_attn_mask(
+        1,
+        key_count,
+        is_causal=True,
+        device="cpu",
+        dtype=torch.float32,
+        **mask_kwargs,
+    )
+    return tuple(torch.nonzero(torch.isfinite(mask[0]), as_tuple=False).flatten().tolist())
 
 
 def test_g1_norm_and_gate_shapes_and_grads() -> None:
@@ -87,6 +135,157 @@ def test_sliding_window_matches_manual_masked_sdpa() -> None:
     mask = torch.zeros(8, 8).masked_fill(~allowed, float("-inf"))
     ref = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)
     assert torch.allclose(got, ref, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    ("module_type", "module_config", "mask_kwargs"),
+    _SPARSE_REFERENCE_CASES,
+    ids=("sliding-window", "block-sparse", "streaming-sinks", "nsa"),
+)
+def test_right_aligned_sparse_gqa_chunks_match_full_prefix_recompute_slices(
+    module_type: str,
+    module_config: dict[str, object],
+    mask_kwargs: dict[str, int | None],
+) -> None:
+    del mask_kwargs  # Geometry is included in the parametrization for the companion tests.
+    torch.manual_seed(7)
+    token_count = 19
+    query = torch.randn(1, 4, token_count, 4)
+    key = torch.randn(1, 2, token_count, 4)
+    value = torch.randn(1, 2, token_count, 4)
+    stage = build_module(module_type, module_config).eval()
+
+    # These are cache-shaped inputs, not a resident cache: each query chunk is
+    # right-aligned to the complete K/V prefix available at that point.
+    for _region, start, end in (
+        ("left", 0, 3),
+        ("middle", 5, 10),
+        ("right", 15, 19),
+    ):
+        recomputed_prefix = stage(
+            query[:, :, :end],
+            key[:, :, :end],
+            value[:, :, :end],
+        )
+        chunk = stage(
+            query[:, :, start:end],
+            key[:, :, :end],
+            value[:, :, :end],
+        )
+        torch.testing.assert_close(
+            chunk,
+            recomputed_prefix[:, :, start:end],
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+
+
+def test_sparse_masks_select_exact_window_block_and_partial_boundary_keys() -> None:
+    window = {"window": 4, "num_sinks": 0, "block": None, "compress_stride": None}
+    block = {"window": None, "num_sinks": 2, "block": 4, "compress_stride": None}
+    streaming = {"window": 4, "num_sinks": 2, "block": None, "compress_stride": None}
+    nsa = {"window": 4, "num_sinks": 2, "block": None, "compress_stride": 3}
+    cases = (
+        ("window-filled", 4, window, (0, 1, 2, 3)),
+        ("window-first-shift", 5, window, (1, 2, 3, 4)),
+        ("block-last-row", 8, block, (0, 1, 4, 5, 6, 7)),
+        ("block-first-next-row", 9, block, (0, 1, 8)),
+        ("block-partial-right-edge", 19, block, (0, 1, 16, 17, 18)),
+        ("streaming-first-old-non-sink-exclusion", 7, streaming, (0, 1, 3, 4, 5, 6)),
+        ("nsa-window-sink-stride-union", 11, nsa, (0, 1, 3, 6, 7, 8, 9, 10)),
+    )
+
+    for boundary, key_count, mask_kwargs, expected in cases:
+        assert _right_aligned_allowed_key_indices(key_count, mask_kwargs) == expected, boundary
+
+
+@pytest.mark.parametrize(
+    ("module_type", "module_config", "mask_kwargs"),
+    _SPARSE_REFERENCE_CASES,
+    ids=("sliding-window", "block-sparse", "streaming-sinks", "nsa"),
+)
+def test_sparse_attention_ignores_excluded_old_kv_and_uses_allowed_values(
+    module_type: str,
+    module_config: dict[str, object],
+    mask_kwargs: dict[str, int | None],
+) -> None:
+    token_count = 19
+    query = torch.ones(1, 4, 1, 4)
+    key = torch.zeros(1, 2, token_count, 4)
+    value = torch.linspace(-1.0, 1.0, 2 * token_count * 4).reshape(1, 2, token_count, 4)
+    stage = build_module(module_type, module_config).eval()
+    baseline = stage(query, key, value)
+
+    allowed = _right_aligned_allowed_key_indices(token_count, mask_kwargs)
+    excluded = tuple(index for index in range(token_count) if index not in set(allowed))
+    assert excluded
+
+    excluded_key = key.clone()
+    excluded_value = value.clone()
+    excluded_key[:, :, excluded, :] += 100.0
+    excluded_value[:, :, excluded, :] -= 100.0
+    torch.testing.assert_close(
+        stage(query, excluded_key, excluded_value),
+        baseline,
+        rtol=0.0,
+        atol=0.0,
+    )
+
+    allowed_value = value.clone()
+    allowed_value[:, :, allowed[-1], :] += 10.0
+    sensitive = stage(query, key, allowed_value)
+    assert torch.max(torch.abs(sensitive - baseline)).item() > 1.0e-3
+
+
+def test_sparse_mask_long_history_cardinality_bounds_and_nsa_growth() -> None:
+    window_size = 128
+    num_sinks = 4
+    block_size = 64
+    compress_stride = 16
+    nsa_counts: list[int] = []
+
+    for history in (257, 769):
+        recent = set(range(history - window_size, history))
+        sinks = set(range(num_sinks))
+        block_start = ((history - 1) // block_size) * block_size
+        current_block = set(range(block_start, history))
+        compressed = set(range(0, history, compress_stride))
+
+        sliding_allowed = set(_right_aligned_allowed_key_indices(
+            history,
+            {"window": window_size, "num_sinks": 0, "block": None, "compress_stride": None},
+        ))
+        streaming_allowed = set(_right_aligned_allowed_key_indices(
+            history,
+            {"window": window_size, "num_sinks": num_sinks, "block": None, "compress_stride": None},
+        ))
+        block_allowed = set(_right_aligned_allowed_key_indices(
+            history,
+            {"window": None, "num_sinks": num_sinks, "block": block_size, "compress_stride": None},
+        ))
+        nsa_allowed = set(_right_aligned_allowed_key_indices(
+            history,
+            {
+                "window": window_size,
+                "num_sinks": num_sinks,
+                "block": None,
+                "compress_stride": compress_stride,
+            },
+        ))
+
+        assert sliding_allowed == recent
+        assert streaming_allowed == recent | sinks
+        assert block_allowed == current_block | sinks
+        assert nsa_allowed == recent | sinks | compressed
+        assert len(sliding_allowed) == window_size
+        assert len(streaming_allowed) <= window_size + num_sinks
+        assert len(block_allowed) <= block_size + num_sinks
+        nsa_counts.append(len(nsa_allowed))
+
+    # NSA's strided-history rule deliberately grows its visible-key set as the
+    # prefix grows. This is a logical mask bound, not K/V storage or eviction.
+    assert nsa_counts == [140, 172]
+    assert nsa_counts[1] > nsa_counts[0]
 
 
 def test_differential_attention_shape_grad_and_even_head_dim() -> None:

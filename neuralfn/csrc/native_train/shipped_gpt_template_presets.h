@@ -20,6 +20,7 @@ inline const std::vector<std::string>& shipped_gpt_template_presets() {
         "gpt2_diff",
         "gpt2_stable",
         "llama",
+        "muse_glimmer",
         "modern_norms_llama",
         "mixllama",
         "moe",

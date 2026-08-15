@@ -8,9 +8,11 @@ integer sequences suitable for GPT-style training.
 from __future__ import annotations
 
 from functools import lru_cache
+import hashlib
 import json
 import os
 import shutil
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,21 @@ RAW_TEXT_DEFAULT_ENCODING = "o200k_base"
 RAW_TEXT_CL100K_ENCODING = "cl100k_base"
 RAW_TEXT_EOT_TOKEN = "<|endoftext|>"
 RAW_TEXT_FILE_SUFFIXES = frozenset({".txt", ".json", ".jsonl", ".csv"})
+TOKEN_SHARD_DATA_FORMATS = frozenset({"uint16_shards", "uint32_shards"})
+TOKEN_SHARD_V2_MAGIC = b"NFNTSH2\0"
+TOKEN_SHARD_V2_VERSION = 2
+TOKEN_SHARD_V2_HEADER_BYTES = 512
+TOKEN_SHARD_V2_DTYPE_UINT32_LE = 2
+TOKEN_SHARD_V2_ENDIAN_MARKER = 0x01020304
+STRUCTURED_SFT_V1_MAGIC = b"NFNSFT1\0"
+STRUCTURED_SFT_V1_VERSION = 1
+STRUCTURED_SFT_V1_HEADER_BYTES = 512
+STRUCTURED_PREFERENCE_V1_MAGIC = b"NFNPRF1\0"
+STRUCTURED_PREFERENCE_V1_VERSION = 1
+STRUCTURED_PREFERENCE_V1_HEADER_BYTES = 512
+STRUCTURED_PPO_PROMPT_V1_MAGIC = b"NFNPPO1\0"
+STRUCTURED_PPO_PROMPT_V1_VERSION = 1
+STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES = 512
 SENTENCEPIECE_TOKENIZER_VARIANTS = (
     "sp1024",
     "sp2048",
@@ -97,6 +114,881 @@ _LOCAL_TIKTOKEN_SPECS: dict[str, dict[str, Any]] = {
 
 class DatasetTokenizerMismatchError(ValueError):
     """Raised when a tokenizer-backed cached dataset alias is internally inconsistent."""
+
+
+def _write_fixed_ascii(header: bytearray, offset: int, width: int, value: str, *, field: str) -> None:
+    try:
+        encoded = value.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"Token shard field {field} must be ASCII") from exc
+    if not encoded or len(encoded) >= width or b"\0" in encoded:
+        raise ValueError(f"Token shard field {field} must contain 1..{width - 1} non-NUL ASCII bytes")
+    header[offset : offset + len(encoded)] = encoded
+
+
+def build_token_shard_v2_header(
+    *,
+    token_count: int,
+    tokenizer_vocab_size: int,
+    tokenizer_sha256: str,
+    tokenizer_revision: str,
+    tokenizer_name: str,
+    split: str,
+    objective: str = "ar",
+) -> bytes:
+    """Build the fixed, little-endian header for a native uint32 token shard."""
+
+    if token_count <= 0:
+        raise ValueError("token_count must be positive")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if len(tokenizer_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in tokenizer_sha256):
+        raise ValueError("tokenizer_sha256 must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    if objective not in {"ar", "pretrain"}:
+        raise ValueError("flat token shard v2 supports only ar/pretrain objectives")
+    header = bytearray(TOKEN_SHARD_V2_HEADER_BYTES)
+    header[:8] = TOKEN_SHARD_V2_MAGIC
+    struct.pack_into(
+        "<IIIIQII",
+        header,
+        8,
+        TOKEN_SHARD_V2_VERSION,
+        TOKEN_SHARD_V2_HEADER_BYTES,
+        TOKEN_SHARD_V2_DTYPE_UINT32_LE,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        int(token_count),
+        int(tokenizer_vocab_size),
+        0,
+    )
+    _write_fixed_ascii(header, 40, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(header, 105, 96, tokenizer_revision, field="tokenizer_revision")
+    _write_fixed_ascii(header, 201, 32, split, field="split")
+    _write_fixed_ascii(header, 233, 32, objective, field="objective")
+    _write_fixed_ascii(header, 265, 128, tokenizer_name, field="tokenizer_name")
+    return bytes(header)
+
+
+def build_structured_sft_v1_header(
+    *,
+    record_count: int,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> bytes:
+    """Build the authenticated fixed-width native SFT record header."""
+
+    if record_count <= 0 or sequence_length <= 0:
+        raise ValueError("record_count and sequence_length must be positive")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if not 0 <= pad_token_id < tokenizer_vocab_size:
+        raise ValueError("pad_token_id must be inside tokenizer_vocab_size")
+    for label, digest in (
+        ("tokenizer_sha256", tokenizer_sha256),
+        ("chat_template_sha256", chat_template_sha256),
+    ):
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError(f"{label} must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    header = bytearray(STRUCTURED_SFT_V1_HEADER_BYTES)
+    header[:8] = STRUCTURED_SFT_V1_MAGIC
+    struct.pack_into(
+        "<IIIIQIII",
+        header,
+        8,
+        STRUCTURED_SFT_V1_VERSION,
+        STRUCTURED_SFT_V1_HEADER_BYTES,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        0,
+        int(record_count),
+        int(sequence_length),
+        int(tokenizer_vocab_size),
+        int(pad_token_id),
+    )
+    _write_fixed_ascii(header, 48, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(
+        header, 113, 65, chat_template_sha256, field="chat_template_sha256"
+    )
+    _write_fixed_ascii(
+        header, 178, 96, tokenizer_revision, field="tokenizer_revision"
+    )
+    _write_fixed_ascii(header, 274, 32, split, field="split")
+    _write_fixed_ascii(header, 306, 32, "sft", field="objective")
+    return bytes(header)
+
+
+def _validated_structured_sft_arrays(
+    record: dict[str, Any],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    required = {"input_ids", "targets", "loss_mask", "sequence_ids"}
+    if set(record) != required:
+        raise ValueError(
+            "Each structured SFT record must contain exactly input_ids, targets, "
+            "loss_mask, and sequence_ids"
+        )
+    input_ids = np.asarray(record["input_ids"], dtype=np.dtype("<u4"))
+    targets = np.asarray(record["targets"], dtype=np.dtype("<i4"))
+    loss_mask = np.asarray(record["loss_mask"], dtype=np.dtype("<f4"))
+    sequence_ids = np.asarray(record["sequence_ids"], dtype=np.dtype("<i4"))
+    arrays = (input_ids, targets, loss_mask, sequence_ids)
+    if any(array.ndim != 1 or array.shape[0] != sequence_length for array in arrays):
+        raise ValueError("Every structured SFT array must have exactly sequence_length items")
+    if bool(np.any(input_ids >= tokenizer_vocab_size)):
+        raise ValueError("Structured SFT input_ids contain an out-of-vocabulary ID")
+    invalid_targets = (targets != -100) & (
+        (targets < 0) | (targets >= tokenizer_vocab_size)
+    )
+    if bool(np.any(invalid_targets)):
+        raise ValueError("Structured SFT targets contain an invalid ID")
+    if not bool(np.all(np.isfinite(loss_mask))) or bool(np.any(loss_mask < 0)):
+        raise ValueError("Structured SFT loss_mask must be finite and non-negative")
+    if bool(np.any((targets == -100) & (loss_mask != 0))) or not float(loss_mask.sum()) > 0:
+        raise ValueError("Ignored targets require zero mask and each SFT record needs positive loss")
+    if sequence_ids[0] != 0 or bool(np.any(sequence_ids < 0)):
+        raise ValueError("Structured SFT sequence_ids must start at zero and be non-negative")
+    deltas = np.diff(sequence_ids.astype(np.int64, copy=False))
+    if bool(np.any((deltas != 0) & (deltas != 1))):
+        raise ValueError("Structured SFT sequence_ids must be contiguous packed segments")
+    return arrays
+
+
+def write_structured_sft_v1(
+    path: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> Path:
+    """Atomically publish exact masked/segmented records for native Glimmer SFT."""
+
+    destination = Path(path).expanduser().resolve()
+    if destination.exists():
+        raise FileExistsError(f"Refusing to overwrite structured SFT file: {destination}")
+    if not records:
+        raise ValueError("records must not be empty")
+    validated = [
+        _validated_structured_sft_arrays(
+            record,
+            sequence_length=sequence_length,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+        )
+        for record in records
+    ]
+    header = build_structured_sft_v1_header(
+        record_count=len(validated),
+        sequence_length=sequence_length,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        pad_token_id=pad_token_id,
+        tokenizer_sha256=tokenizer_sha256,
+        chat_template_sha256=chat_template_sha256,
+        tokenizer_revision=tokenizer_revision,
+        split=split,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    if temporary.exists():
+        raise FileExistsError(f"Structured SFT staging file already exists: {temporary}")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(header)
+            for arrays in validated:
+                for array in arrays:
+                    stream.write(array.tobytes(order="C"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return destination
+
+
+def inspect_structured_sft_v1(
+    path: str | Path,
+    *,
+    validate_records: bool = True,
+) -> dict[str, Any]:
+    """Strictly inspect a native structured-SFT file and its lineage."""
+
+    source = Path(path).expanduser().resolve()
+    size = source.stat().st_size
+    with source.open("rb") as stream:
+        header = stream.read(STRUCTURED_SFT_V1_HEADER_BYTES)
+    if len(header) != STRUCTURED_SFT_V1_HEADER_BYTES or header[:8] != STRUCTURED_SFT_V1_MAGIC:
+        raise DatasetTokenizerMismatchError(f"Invalid structured SFT header: {source}")
+    version, header_bytes, endian, flags, records, sequence_length, vocab, pad = struct.unpack_from(
+        "<IIIIQIII", header, 8
+    )
+    if (
+        version != STRUCTURED_SFT_V1_VERSION
+        or header_bytes != STRUCTURED_SFT_V1_HEADER_BYTES
+        or endian != TOKEN_SHARD_V2_ENDIAN_MARKER
+        or flags != 0
+        or records <= 0
+        or sequence_length <= 0
+        or vocab <= 0
+        or pad >= vocab
+        or size != header_bytes + records * sequence_length * 16
+        or any(header[338:])
+    ):
+        raise DatasetTokenizerMismatchError(f"Invalid structured SFT geometry/extent: {source}")
+    tokenizer_sha = _read_fixed_ascii(header, 48, 65, field="tokenizer_sha256")
+    template_sha = _read_fixed_ascii(header, 113, 65, field="chat_template_sha256")
+    revision = _read_fixed_ascii(header, 178, 96, field="tokenizer_revision")
+    split = _read_fixed_ascii(header, 274, 32, field="split")
+    objective = _read_fixed_ascii(header, 306, 32, field="objective")
+    if (
+        any(len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value)
+            for value in (tokenizer_sha, template_sha))
+        or split not in {"train", "validation", "test"}
+        or objective != "sft"
+    ):
+        raise DatasetTokenizerMismatchError(f"Invalid structured SFT lineage: {source}")
+    if validate_records:
+        record_dtype = np.dtype(
+            [
+                ("input_ids", "<u4", (sequence_length,)),
+                ("targets", "<i4", (sequence_length,)),
+                ("loss_mask", "<f4", (sequence_length,)),
+                ("sequence_ids", "<i4", (sequence_length,)),
+            ]
+        )
+        payload = np.memmap(
+            source,
+            dtype=record_dtype,
+            mode="r",
+            offset=STRUCTURED_SFT_V1_HEADER_BYTES,
+            shape=(records,),
+        )
+        for record in payload:
+            _validated_structured_sft_arrays(
+                {name: record[name] for name in record_dtype.names or ()},
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=vocab,
+            )
+    return {
+        "schema": "neuralfn.native_structured_sft.v1",
+        "record_count": int(records),
+        "sequence_length": int(sequence_length),
+        "tokenizer_vocab_size": int(vocab),
+        "pad_token_id": int(pad),
+        "tokenizer_sha256": tokenizer_sha,
+        "chat_template_sha256": template_sha,
+        "tokenizer_revision": revision,
+        "split": split,
+        "objective": objective,
+    }
+
+
+def build_structured_ppo_prompt_v1_header(
+    *,
+    record_count: int,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> bytes:
+    """Build the fixed-width prompt header used by native online PPO."""
+
+    if record_count <= 0 or sequence_length <= 1:
+        raise ValueError("record_count must be positive and sequence_length must exceed one")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if not 0 <= pad_token_id < tokenizer_vocab_size:
+        raise ValueError("pad_token_id must be inside tokenizer_vocab_size")
+    for label, digest in (
+        ("tokenizer_sha256", tokenizer_sha256),
+        ("chat_template_sha256", chat_template_sha256),
+    ):
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError(f"{label} must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    header = bytearray(STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES)
+    header[:8] = STRUCTURED_PPO_PROMPT_V1_MAGIC
+    struct.pack_into(
+        "<IIIIQIII",
+        header,
+        8,
+        STRUCTURED_PPO_PROMPT_V1_VERSION,
+        STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        0,
+        int(record_count),
+        int(sequence_length),
+        int(tokenizer_vocab_size),
+        int(pad_token_id),
+    )
+    _write_fixed_ascii(header, 48, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(
+        header, 113, 65, chat_template_sha256, field="chat_template_sha256"
+    )
+    _write_fixed_ascii(
+        header, 178, 96, tokenizer_revision, field="tokenizer_revision"
+    )
+    _write_fixed_ascii(header, 274, 32, split, field="split")
+    _write_fixed_ascii(header, 306, 32, "ppo_prompt", field="objective")
+    return bytes(header)
+
+
+def _validated_structured_ppo_prompt_arrays(
+    record: dict[str, Any],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if set(record) != {"input_ids", "attention_mask"}:
+        raise ValueError(
+            "Each structured PPO prompt must contain exactly input_ids and attention_mask"
+        )
+    input_ids = np.asarray(record["input_ids"], dtype=np.dtype("<u4"))
+    attention_mask = np.asarray(record["attention_mask"], dtype=np.dtype("<f4"))
+    if (
+        input_ids.ndim != 1
+        or attention_mask.ndim != 1
+        or input_ids.shape[0] != sequence_length
+        or attention_mask.shape[0] != sequence_length
+    ):
+        raise ValueError("Every structured PPO prompt array must match sequence_length")
+    if bool(np.any(input_ids >= tokenizer_vocab_size)):
+        raise ValueError("Structured PPO prompt contains an out-of-vocabulary ID")
+    if not bool(np.all(np.isfinite(attention_mask))) or bool(
+        np.any((attention_mask != 0.0) & (attention_mask != 1.0))
+    ):
+        raise ValueError("Structured PPO attention_mask must contain only finite zero/one values")
+    prompt_length = int(attention_mask.sum())
+    if not 0 < prompt_length < sequence_length:
+        raise ValueError("Structured PPO prompt must leave at least one completion slot")
+    if not bool(np.all(attention_mask[:prompt_length] == 1.0)) or not bool(
+        np.all(attention_mask[prompt_length:] == 0.0)
+    ):
+        raise ValueError("Structured PPO attention_mask must be one contiguous prefix")
+    if not bool(np.all(input_ids[prompt_length:] == pad_token_id)):
+        raise ValueError("Structured PPO prompt padding must use pad_token_id exactly")
+    return input_ids, attention_mask
+
+
+def write_structured_ppo_prompt_v1(
+    path: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> Path:
+    """Atomically publish authenticated prompt records for native online PPO."""
+
+    destination = Path(path).expanduser().resolve()
+    if destination.exists():
+        raise FileExistsError(f"Refusing to overwrite structured PPO prompts: {destination}")
+    if not records:
+        raise ValueError("records must not be empty")
+    validated = [
+        _validated_structured_ppo_prompt_arrays(
+            record,
+            sequence_length=sequence_length,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+            pad_token_id=pad_token_id,
+        )
+        for record in records
+    ]
+    header = build_structured_ppo_prompt_v1_header(
+        record_count=len(validated),
+        sequence_length=sequence_length,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        pad_token_id=pad_token_id,
+        tokenizer_sha256=tokenizer_sha256,
+        chat_template_sha256=chat_template_sha256,
+        tokenizer_revision=tokenizer_revision,
+        split=split,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    if temporary.exists():
+        raise FileExistsError(f"Structured PPO staging file already exists: {temporary}")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(header)
+            for arrays in validated:
+                for array in arrays:
+                    stream.write(array.tobytes(order="C"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return destination
+
+
+def inspect_structured_ppo_prompt_v1(
+    path: str | Path,
+    *,
+    validate_records: bool = True,
+) -> dict[str, Any]:
+    """Strictly inspect native PPO prompts and their tokenizer/template lineage."""
+
+    source = Path(path).expanduser().resolve()
+    size = source.stat().st_size
+    with source.open("rb") as stream:
+        header = stream.read(STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES)
+    if (
+        len(header) != STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES
+        or header[:8] != STRUCTURED_PPO_PROMPT_V1_MAGIC
+    ):
+        raise DatasetTokenizerMismatchError(f"Invalid structured PPO prompt header: {source}")
+    version, header_bytes, endian, flags, records, sequence_length, vocab, pad = (
+        struct.unpack_from("<IIIIQIII", header, 8)
+    )
+    if (
+        version != STRUCTURED_PPO_PROMPT_V1_VERSION
+        or header_bytes != STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES
+        or endian != TOKEN_SHARD_V2_ENDIAN_MARKER
+        or flags != 0
+        or records <= 0
+        or sequence_length <= 1
+        or vocab <= 0
+        or pad >= vocab
+        or size != header_bytes + records * sequence_length * 8
+        or any(header[338:])
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured PPO prompt geometry/extent: {source}"
+        )
+    tokenizer_sha = _read_fixed_ascii(header, 48, 65, field="tokenizer_sha256")
+    template_sha = _read_fixed_ascii(header, 113, 65, field="chat_template_sha256")
+    revision = _read_fixed_ascii(header, 178, 96, field="tokenizer_revision")
+    split = _read_fixed_ascii(header, 274, 32, field="split")
+    objective = _read_fixed_ascii(header, 306, 32, field="objective")
+    if (
+        any(
+            len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+            for value in (tokenizer_sha, template_sha)
+        )
+        or split not in {"train", "validation", "test"}
+        or objective != "ppo_prompt"
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured PPO prompt lineage: {source}"
+        )
+    if validate_records:
+        record_dtype = np.dtype(
+            [
+                ("input_ids", "<u4", (sequence_length,)),
+                ("attention_mask", "<f4", (sequence_length,)),
+            ]
+        )
+        payload = np.memmap(
+            source,
+            dtype=record_dtype,
+            mode="r",
+            offset=STRUCTURED_PPO_PROMPT_V1_HEADER_BYTES,
+            shape=(records,),
+        )
+        for record in payload:
+            _validated_structured_ppo_prompt_arrays(
+                {name: record[name] for name in record_dtype.names or ()},
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=vocab,
+                pad_token_id=pad,
+            )
+    return {
+        "schema": "neuralfn.native_structured_ppo_prompt.v1",
+        "record_count": int(records),
+        "sequence_length": int(sequence_length),
+        "tokenizer_vocab_size": int(vocab),
+        "pad_token_id": int(pad),
+        "tokenizer_sha256": tokenizer_sha,
+        "chat_template_sha256": template_sha,
+        "tokenizer_revision": revision,
+        "split": split,
+        "objective": objective,
+    }
+
+
+def build_structured_preference_v1_header(
+    *,
+    record_count: int,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> bytes:
+    """Build the authenticated fixed-width native preference-record header."""
+
+    if record_count <= 0 or sequence_length <= 0:
+        raise ValueError("record_count and sequence_length must be positive")
+    if not 0 < tokenizer_vocab_size <= np.iinfo(np.uint32).max:
+        raise ValueError("tokenizer_vocab_size must fit uint32 and be positive")
+    if not 0 <= pad_token_id < tokenizer_vocab_size:
+        raise ValueError("pad_token_id must be inside tokenizer_vocab_size")
+    for label, digest in (
+        ("tokenizer_sha256", tokenizer_sha256),
+        ("chat_template_sha256", chat_template_sha256),
+    ):
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError(f"{label} must be 64 lowercase hexadecimal characters")
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test")
+    header = bytearray(STRUCTURED_PREFERENCE_V1_HEADER_BYTES)
+    header[:8] = STRUCTURED_PREFERENCE_V1_MAGIC
+    struct.pack_into(
+        "<IIIIQIII",
+        header,
+        8,
+        STRUCTURED_PREFERENCE_V1_VERSION,
+        STRUCTURED_PREFERENCE_V1_HEADER_BYTES,
+        TOKEN_SHARD_V2_ENDIAN_MARKER,
+        0,
+        int(record_count),
+        int(sequence_length),
+        int(tokenizer_vocab_size),
+        int(pad_token_id),
+    )
+    _write_fixed_ascii(header, 48, 65, tokenizer_sha256, field="tokenizer_sha256")
+    _write_fixed_ascii(
+        header, 113, 65, chat_template_sha256, field="chat_template_sha256"
+    )
+    _write_fixed_ascii(
+        header, 178, 96, tokenizer_revision, field="tokenizer_revision"
+    )
+    _write_fixed_ascii(header, 274, 32, split, field="split")
+    _write_fixed_ascii(header, 306, 32, "preference", field="objective")
+    return bytes(header)
+
+
+def _validated_structured_preference_record(
+    record: dict[str, Any],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+) -> tuple[
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+]:
+    if set(record) != {"chosen", "rejected"}:
+        raise ValueError(
+            "Each structured preference record must contain exactly chosen and rejected"
+        )
+    branches = []
+    for branch_name in ("chosen", "rejected"):
+        branch = record[branch_name]
+        if not isinstance(branch, dict):
+            raise ValueError(f"Structured preference {branch_name} must be a record object")
+        try:
+            arrays = _validated_structured_sft_arrays(
+                branch,
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=tokenizer_vocab_size,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Invalid structured preference {branch_name}: {exc}") from exc
+        branches.append(arrays)
+    return branches[0], branches[1]
+
+
+def write_structured_preference_v1(
+    path: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    sequence_length: int,
+    tokenizer_vocab_size: int,
+    pad_token_id: int,
+    tokenizer_sha256: str,
+    chat_template_sha256: str,
+    tokenizer_revision: str,
+    split: str,
+) -> Path:
+    """Atomically publish paired chosen/rejected records for native preference training."""
+
+    destination = Path(path).expanduser().resolve()
+    if destination.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite structured preference file: {destination}"
+        )
+    if not records:
+        raise ValueError("records must not be empty")
+    validated = [
+        _validated_structured_preference_record(
+            record,
+            sequence_length=sequence_length,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+        )
+        for record in records
+    ]
+    header = build_structured_preference_v1_header(
+        record_count=len(validated),
+        sequence_length=sequence_length,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        pad_token_id=pad_token_id,
+        tokenizer_sha256=tokenizer_sha256,
+        chat_template_sha256=chat_template_sha256,
+        tokenizer_revision=tokenizer_revision,
+        split=split,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    if temporary.exists():
+        raise FileExistsError(
+            f"Structured preference staging file already exists: {temporary}"
+        )
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(header)
+            for chosen, rejected in validated:
+                for arrays in (chosen, rejected):
+                    for array in arrays:
+                        stream.write(array.tobytes(order="C"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return destination
+
+
+def inspect_structured_preference_v1(
+    path: str | Path,
+    *,
+    validate_records: bool = True,
+) -> dict[str, Any]:
+    """Strictly inspect a native chosen/rejected preference file and lineage."""
+
+    source = Path(path).expanduser().resolve()
+    size = source.stat().st_size
+    with source.open("rb") as stream:
+        header = stream.read(STRUCTURED_PREFERENCE_V1_HEADER_BYTES)
+    if (
+        len(header) != STRUCTURED_PREFERENCE_V1_HEADER_BYTES
+        or header[:8] != STRUCTURED_PREFERENCE_V1_MAGIC
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference header: {source}"
+        )
+    version, header_bytes, endian, flags, records, sequence_length, vocab, pad = (
+        struct.unpack_from("<IIIIQIII", header, 8)
+    )
+    if (
+        version != STRUCTURED_PREFERENCE_V1_VERSION
+        or header_bytes != STRUCTURED_PREFERENCE_V1_HEADER_BYTES
+        or endian != TOKEN_SHARD_V2_ENDIAN_MARKER
+        or flags != 0
+        or records <= 0
+        or sequence_length <= 0
+        or vocab <= 0
+        or pad >= vocab
+        or size != header_bytes + records * sequence_length * 32
+        or any(header[338:])
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference geometry/extent: {source}"
+        )
+    tokenizer_sha = _read_fixed_ascii(header, 48, 65, field="tokenizer_sha256")
+    template_sha = _read_fixed_ascii(
+        header, 113, 65, field="chat_template_sha256"
+    )
+    revision = _read_fixed_ascii(header, 178, 96, field="tokenizer_revision")
+    split = _read_fixed_ascii(header, 274, 32, field="split")
+    objective = _read_fixed_ascii(header, 306, 32, field="objective")
+    if (
+        any(
+            len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+            for value in (tokenizer_sha, template_sha)
+        )
+        or split not in {"train", "validation", "test"}
+        or objective != "preference"
+    ):
+        raise DatasetTokenizerMismatchError(
+            f"Invalid structured preference lineage: {source}"
+        )
+    if validate_records:
+        branch_fields = [
+            ("input_ids", "<u4", (sequence_length,)),
+            ("targets", "<i4", (sequence_length,)),
+            ("loss_mask", "<f4", (sequence_length,)),
+            ("sequence_ids", "<i4", (sequence_length,)),
+        ]
+        record_dtype = np.dtype(
+            [
+                (f"{branch}_{name}", dtype, shape)
+                for branch in ("chosen", "rejected")
+                for name, dtype, shape in branch_fields
+            ]
+        )
+        payload = np.memmap(
+            source,
+            dtype=record_dtype,
+            mode="r",
+            offset=STRUCTURED_PREFERENCE_V1_HEADER_BYTES,
+            shape=(records,),
+        )
+        for record in payload:
+            structured = {
+                branch: {
+                    name: record[f"{branch}_{name}"]
+                    for name, _, _ in branch_fields
+                }
+                for branch in ("chosen", "rejected")
+            }
+            _validated_structured_preference_record(
+                structured,
+                sequence_length=sequence_length,
+                tokenizer_vocab_size=vocab,
+            )
+    return {
+        "schema": "neuralfn.native_structured_preference.v1",
+        "record_count": int(records),
+        "sequence_length": int(sequence_length),
+        "tokenizer_vocab_size": int(vocab),
+        "pad_token_id": int(pad),
+        "tokenizer_sha256": tokenizer_sha,
+        "chat_template_sha256": template_sha,
+        "tokenizer_revision": revision,
+        "split": split,
+        "objective": objective,
+    }
+
+
+def _read_fixed_ascii(header: bytes, offset: int, width: int, *, field: str) -> str:
+    raw = header[offset : offset + width]
+    nul = raw.find(b"\0")
+    if nul < 0:
+        raise DatasetTokenizerMismatchError(f"Token shard v2 field {field} is not NUL-terminated")
+    if any(raw[nul:]):
+        raise DatasetTokenizerMismatchError(f"Token shard v2 field {field} has nonzero padding")
+    try:
+        value = raw[:nul].decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise DatasetTokenizerMismatchError(f"Token shard v2 field {field} is not ASCII") from exc
+    if not value:
+        raise DatasetTokenizerMismatchError(f"Token shard v2 field {field} is empty")
+    return value
+
+
+def inspect_token_shard(shard_path: Path, *, validate_ids: bool = True) -> dict[str, Any]:
+    """Inspect one legacy uint16 or versioned uint32 shard without ambiguity."""
+
+    file_bytes = shard_path.stat().st_size
+    with shard_path.open("rb") as handle:
+        prefix = handle.read(8)
+        if prefix == TOKEN_SHARD_V2_MAGIC:
+            handle.seek(0)
+            header = handle.read(TOKEN_SHARD_V2_HEADER_BYTES)
+            if len(header) != TOKEN_SHARD_V2_HEADER_BYTES:
+                raise DatasetTokenizerMismatchError(f"Token shard v2 header is truncated: {shard_path}")
+            version, header_bytes, dtype_code, endian, token_count, vocab_size, flags = struct.unpack_from(
+                "<IIIIQII", header, 8
+            )
+            if version != TOKEN_SHARD_V2_VERSION or header_bytes != TOKEN_SHARD_V2_HEADER_BYTES:
+                raise DatasetTokenizerMismatchError(f"Unsupported token shard v2 version/header: {shard_path}")
+            if dtype_code != TOKEN_SHARD_V2_DTYPE_UINT32_LE:
+                raise DatasetTokenizerMismatchError(f"Unsupported token shard v2 dtype {dtype_code}: {shard_path}")
+            if endian != TOKEN_SHARD_V2_ENDIAN_MARKER:
+                raise DatasetTokenizerMismatchError(f"Token shard v2 endian marker mismatch: {shard_path}")
+            if token_count <= 0 or vocab_size <= 0 or flags != 0:
+                raise DatasetTokenizerMismatchError(f"Invalid token shard v2 count/vocab/flags: {shard_path}")
+            if file_bytes != header_bytes + token_count * 4:
+                raise DatasetTokenizerMismatchError(f"Token shard v2 byte size does not match token_count: {shard_path}")
+            tokenizer_sha256 = _read_fixed_ascii(header, 40, 65, field="tokenizer_sha256")
+            tokenizer_revision = _read_fixed_ascii(header, 105, 96, field="tokenizer_revision")
+            split = _read_fixed_ascii(header, 201, 32, field="split")
+            objective = _read_fixed_ascii(header, 233, 32, field="objective")
+            tokenizer_name = _read_fixed_ascii(header, 265, 128, field="tokenizer_name")
+            if len(tokenizer_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in tokenizer_sha256):
+                raise DatasetTokenizerMismatchError(f"Invalid token shard v2 tokenizer SHA-256: {shard_path}")
+            if split not in {"train", "validation", "test"} or objective not in {"ar", "pretrain"}:
+                raise DatasetTokenizerMismatchError(f"Invalid token shard v2 split/objective: {shard_path}")
+            if any(header[393:]):
+                raise DatasetTokenizerMismatchError(f"Token shard v2 reserved header bytes are nonzero: {shard_path}")
+            max_token_id = -1
+            if validate_ids:
+                payload = np.memmap(
+                    shard_path,
+                    dtype=np.dtype("<u4"),
+                    mode="r",
+                    offset=TOKEN_SHARD_V2_HEADER_BYTES,
+                    shape=(int(token_count),),
+                )
+                max_token_id = int(np.max(payload))
+                if max_token_id >= int(vocab_size):
+                    raise DatasetTokenizerMismatchError(
+                        f"Token shard {shard_path} contains token id {max_token_id} outside tokenizer vocab {vocab_size}"
+                    )
+            return {
+                "schema": "neuralfn.native_token_shard.v2",
+                "dtype": "uint32_le",
+                "element_bytes": 4,
+                "header_bytes": int(header_bytes),
+                "token_count": int(token_count),
+                "tokenizer_vocab_size": int(vocab_size),
+                "tokenizer_sha256": tokenizer_sha256,
+                "tokenizer_revision": tokenizer_revision,
+                "tokenizer_name": tokenizer_name,
+                "split": split,
+                "objective": objective,
+                "max_token_id": max_token_id,
+            }
+
+    if file_bytes % 2:
+        raise DatasetTokenizerMismatchError(f"Legacy uint16 token shard has odd byte size: {shard_path}")
+    header_values = _shard_header_offset_uint16(shard_path)
+    token_count = file_bytes // 2 - header_values
+    max_token_id = -1
+    if validate_ids and token_count:
+        payload = np.memmap(shard_path, dtype=np.dtype("<u2"), mode="r", offset=header_values * 2)
+        max_token_id = int(np.max(payload))
+    return {
+        "schema": "legacy.uint16",
+        "dtype": "uint16_le",
+        "element_bytes": 2,
+        "header_bytes": header_values * 2,
+        "token_count": int(token_count),
+        "tokenizer_vocab_size": 65_536,
+        "tokenizer_sha256": "",
+        "tokenizer_revision": "",
+        "tokenizer_name": "",
+        "split": "",
+        "objective": "",
+        "max_token_id": max_token_id,
+    }
 
 
 def _ensure_datasets_dir() -> None:
@@ -346,12 +1238,21 @@ def _load_dataset_meta(ds_path: Path) -> dict[str, Any]:
     return json.loads(meta_file.read_text(encoding="utf-8"))
 
 
-def _tokenizer_backed_uint16_shards(dataset_meta: dict[str, Any]) -> bool:
-    if dataset_meta.get("data_format") != "uint16_shards":
+def _tokenizer_backed_token_shards(dataset_meta: dict[str, Any]) -> bool:
+    if dataset_meta.get("data_format") not in TOKEN_SHARD_DATA_FORMATS:
         return False
     tokenizer_files = dataset_meta.get("tokenizer_files")
     tokenizer_name = dataset_meta.get("tokenizer_name")
-    return bool(tokenizer_name) or (isinstance(tokenizer_files, list) and len(tokenizer_files) > 0)
+    tokenizer_encoding = dataset_meta.get("tokenizer_encoding")
+    return bool(tokenizer_name or tokenizer_encoding) or (
+        isinstance(tokenizer_files, list) and len(tokenizer_files) > 0
+    )
+
+
+def _tokenizer_backed_uint16_shards(dataset_meta: dict[str, Any]) -> bool:
+    """Compatibility predicate retained for callers that require legacy shards."""
+
+    return dataset_meta.get("data_format") == "uint16_shards" and _tokenizer_backed_token_shards(dataset_meta)
 
 
 def _raw_text_metadata_matches_encoding(dataset_meta: dict[str, Any], encoding_name: str) -> bool:
@@ -439,7 +1340,7 @@ def _shard_header_offset_uint16(shard_path: Path) -> int:
     return 0
 
 
-def _max_token_id_in_uint16_shards(dataset_path: Path) -> int:
+def _max_token_id_in_token_shards(dataset_path: Path) -> int:
     shard_paths = sorted(dataset_path.glob("fineweb_*.bin"))
     if not shard_paths:
         raise DatasetTokenizerMismatchError(
@@ -450,12 +1351,10 @@ def _max_token_id_in_uint16_shards(dataset_path: Path) -> int:
     for shard_path in shard_paths:
         if shard_path.stat().st_size == 0:
             continue
-        shard = np.memmap(shard_path, dtype=np.uint16, mode="r")
-        offset = _shard_header_offset_uint16(shard_path)
-        shard = shard[offset:]
-        if shard.size == 0:
+        inspected = inspect_token_shard(shard_path, validate_ids=True)
+        if inspected["token_count"] == 0:
             continue
-        shard_max = int(np.max(shard))
+        shard_max = int(inspected["max_token_id"])
         if shard_max > max_token_id:
             max_token_id = shard_max
     return max_token_id
@@ -467,6 +1366,26 @@ def _uint16_shard_token_count(shard_path: Path) -> int:
 
 def _uint16_shard_sequence_count(shard_paths: list[Path], seq_len: int) -> int:
     return sum(max(0, (_uint16_shard_token_count(path) - 1) // seq_len) for path in shard_paths)
+
+
+def _token_shard_token_count(shard_path: Path) -> int:
+    return int(inspect_token_shard(shard_path, validate_ids=False)["token_count"])
+
+
+def _token_shard_sequence_count(shard_paths: list[Path], seq_len: int) -> int:
+    return sum(max(0, (_token_shard_token_count(path) - 1) // seq_len) for path in shard_paths)
+
+
+def _token_shard_memmap(shard_path: Path) -> np.memmap:
+    inspected = inspect_token_shard(shard_path, validate_ids=False)
+    dtype = np.dtype("<u4") if inspected["dtype"] == "uint32_le" else np.dtype("<u2")
+    return np.memmap(
+        shard_path,
+        dtype=dtype,
+        mode="r",
+        offset=int(inspected["header_bytes"]),
+        shape=(int(inspected["token_count"]),),
+    )
 
 
 def _tokenizer_mismatch_message(
@@ -511,12 +1430,16 @@ def validate_cached_tokenizer_contract(
         return None
 
     meta = dataset_meta if dataset_meta is not None else _load_dataset_meta(ds_path)
-    if not _tokenizer_backed_uint16_shards(meta):
+    if not _tokenizer_backed_token_shards(meta):
         return None
 
     model_path, vocab_path = resolve_cached_tokenizer_artifacts(ds_path, meta)
-    tokenizer_vocab_size = _tokenizer_vocab_size_from_artifacts(model_path, vocab_path)
-    max_token_id = _max_token_id_in_uint16_shards(ds_path)
+    tokenizer_encoding = str(meta.get("tokenizer_encoding") or "").strip().lower()
+    if tokenizer_encoding:
+        tokenizer_vocab_size = raw_text_encoding_vocab_size(tokenizer_encoding)
+    else:
+        tokenizer_vocab_size = _tokenizer_vocab_size_from_artifacts(model_path, vocab_path)
+    max_token_id = _max_token_id_in_token_shards(ds_path)
     if max_token_id >= tokenizer_vocab_size:
         raise DatasetTokenizerMismatchError(
             _tokenizer_mismatch_message(
@@ -536,6 +1459,27 @@ def validate_cached_tokenizer_contract(
                 model_vocab_size=int(model_vocab_size),
             )
         )
+    if meta.get("data_format") == "uint32_shards":
+        expected_sha = str(meta.get("tokenizer_sha256") or "")
+        expected_revision = str(meta.get("tokenizer_revision") or "")
+        for shard_path in sorted(ds_path.glob("fineweb_*.bin")):
+            inspected = inspect_token_shard(shard_path, validate_ids=False)
+            if inspected["dtype"] != "uint32_le":
+                raise DatasetTokenizerMismatchError(
+                    f"Dataset {dataset_name!r} declares uint32_shards but {shard_path.name} is {inspected['dtype']}"
+                )
+            if int(inspected["tokenizer_vocab_size"]) != tokenizer_vocab_size:
+                raise DatasetTokenizerMismatchError(
+                    f"Dataset {dataset_name!r} shard vocab does not match tokenizer metadata"
+                )
+            if expected_sha and inspected["tokenizer_sha256"] != expected_sha:
+                raise DatasetTokenizerMismatchError(
+                    f"Dataset {dataset_name!r} shard tokenizer SHA-256 does not match meta.json"
+                )
+            if expected_revision and inspected["tokenizer_revision"] != expected_revision:
+                raise DatasetTokenizerMismatchError(
+                    f"Dataset {dataset_name!r} shard tokenizer revision does not match meta.json"
+                )
     return {
         "dataset_name": dataset_name,
         "dataset_path": ds_path,
@@ -569,6 +1513,9 @@ def _meta_to_summary(name: str, meta: dict[str, Any], *, default_source: str) ->
         "tokenizer_name": meta.get("tokenizer_name"),
         "tokenizer_encoding": meta.get("tokenizer_encoding"),
         "tokenizer_vocab_size": meta.get("tokenizer_vocab_size"),
+        "tokenizer_sha256": meta.get("tokenizer_sha256"),
+        "tokenizer_revision": meta.get("tokenizer_revision"),
+        "token_shard_schema": meta.get("token_shard_schema"),
     }
 
 
@@ -997,7 +1944,7 @@ def refresh_raw_text_dataset_metadata(
     _ensure_datasets_dir()
     ds_path = dataset_path or (DATASETS_DIR / dataset_name)
     meta = dict(dataset_meta or _load_dataset_meta(ds_path))
-    if not ds_path.is_dir() or meta.get("data_format") == "uint16_shards":
+    if not ds_path.is_dir() or meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
         return meta
 
     tokenizer_vocab_size = raw_text_encoding_vocab_size(encoding_name)
@@ -1042,6 +1989,105 @@ def refresh_raw_text_dataset_metadata(
     return meta
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _raw_text_tokenizer_identity(encoding_name: str, encoding: Any) -> tuple[str, str, str]:
+    normalized = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
+    artifact = (
+        shared_sentencepiece_model_path(normalized)
+        if is_sentencepiece_tokenizer_name(normalized)
+        else local_tiktoken_encoding_path(normalized)
+    )
+    if artifact is not None:
+        sha256 = _sha256_file(artifact)
+        revision = f"artifact-sha256:{sha256[:64]}"
+        return normalized, sha256, revision
+
+    # Built-in tiktoken encodings have no standalone artifact. Fingerprint the
+    # complete rank/special-token contract rather than trusting only its name.
+    digest = hashlib.sha256()
+    digest.update(b"neuralfn.tiktoken.contract.v1\0")
+    digest.update(normalized.encode("utf-8") + b"\0")
+    digest.update(str(getattr(encoding, "_pat_str", "")).encode("utf-8") + b"\0")
+    mergeable = getattr(encoding, "_mergeable_ranks", {})
+    for token, rank in sorted(mergeable.items(), key=lambda item: (int(item[1]), bytes(item[0]))):
+        raw = bytes(token)
+        digest.update(struct.pack("<II", len(raw), int(rank)))
+        digest.update(raw)
+    specials = getattr(encoding, "_special_tokens", {})
+    for token, rank in sorted(specials.items()):
+        raw = str(token).encode("utf-8")
+        digest.update(struct.pack("<II", len(raw), int(rank)))
+        digest.update(raw)
+    sha256 = digest.hexdigest()
+    revision = f"tiktoken-contract-v1:{getattr(tiktoken, '__version__', 'unknown')}"
+    return normalized, sha256, revision
+
+
+def _write_token_shard_from_text(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    encoding_name: str,
+    encoding: Any | None = None,
+    dtype: str,
+    tokenizer_vocab_size: int,
+    tokenizer_sha256: str,
+    tokenizer_revision: str,
+    tokenizer_name: str,
+    split: str,
+) -> int:
+    if dtype not in {"uint16", "uint32"}:
+        raise ValueError("token shard dtype must be uint16 or uint32")
+    token_count = 0
+    tmp_path = destination_path.with_suffix(destination_path.suffix + ".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+    try:
+        with source_path.open("r", encoding="utf-8") as source, tmp_path.open("w+b") as output:
+            if dtype == "uint32":
+                output.write(bytes(TOKEN_SHARD_V2_HEADER_BYTES))
+            for text in source:
+                tokens = encode_raw_text(text, encoding_name=encoding_name, encoding=encoding)
+                if not tokens:
+                    continue
+                if min(tokens) < 0 or max(tokens) >= tokenizer_vocab_size:
+                    raise ValueError(
+                        f"Raw-text token cache for {source_path} contains an id outside tokenizer vocab {tokenizer_vocab_size}."
+                    )
+                if dtype == "uint16" and max(tokens) > np.iinfo(np.uint16).max:
+                    raise ValueError(
+                        f"Raw-text token cache for {source_path} cannot be stored as uint16 with tokenizer {encoding_name!r}."
+                    )
+                output.write(np.asarray(tokens, dtype=np.dtype("<u2" if dtype == "uint16" else "<u4")).tobytes())
+                token_count += len(tokens)
+            if dtype == "uint32":
+                output.seek(0)
+                output.write(
+                    build_token_shard_v2_header(
+                        token_count=token_count,
+                        tokenizer_vocab_size=tokenizer_vocab_size,
+                        tokenizer_sha256=tokenizer_sha256,
+                        tokenizer_revision=tokenizer_revision,
+                        tokenizer_name=tokenizer_name,
+                        split=split,
+                        objective="ar",
+                    )
+                )
+        tmp_path.replace(destination_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    return token_count
+
+
 def _write_uint16_token_shard_from_text(
     source_path: Path,
     destination_path: Path,
@@ -1049,28 +2095,26 @@ def _write_uint16_token_shard_from_text(
     encoding_name: str,
     encoding: Any | None = None,
 ) -> int:
-    token_count = 0
-    tmp_path = destination_path.with_suffix(destination_path.suffix + ".tmp")
-    if tmp_path.exists():
-        tmp_path.unlink()
-    try:
-        with source_path.open("r", encoding="utf-8") as source, tmp_path.open("wb") as output:
-            for text in source:
-                tokens = encode_raw_text(text, encoding_name=encoding_name, encoding=encoding)
-                if not tokens:
-                    continue
-                if min(tokens) < 0 or max(tokens) > np.iinfo(np.uint16).max:
-                    raise ValueError(
-                        f"Raw-text token cache for {source_path} cannot be stored as uint16 with tokenizer {encoding_name!r}."
-                    )
-                np.asarray(tokens, dtype=np.uint16).tofile(output)
-                token_count += len(tokens)
-        tmp_path.replace(destination_path)
-    except Exception:
-        if tmp_path.exists():
-            tmp_path.unlink()
-        raise
-    return token_count
+    resolved = encoding or (
+        resolve_sentencepiece_encoding(encoding_name)
+        if is_sentencepiece_tokenizer_name(encoding_name)
+        else resolve_tiktoken_encoding(encoding_name)
+    )
+    tokenizer_name, tokenizer_sha256, tokenizer_revision = _raw_text_tokenizer_identity(
+        encoding_name, resolved
+    )
+    return _write_token_shard_from_text(
+        source_path,
+        destination_path,
+        encoding_name=encoding_name,
+        encoding=resolved,
+        dtype="uint16",
+        tokenizer_vocab_size=raw_text_encoding_vocab_size(encoding_name),
+        tokenizer_sha256=tokenizer_sha256,
+        tokenizer_revision=tokenizer_revision,
+        tokenizer_name=tokenizer_name,
+        split="validation" if "val" in destination_path.stem else "train",
+    )
 
 
 def ensure_raw_text_token_cache(
@@ -1080,12 +2124,11 @@ def ensure_raw_text_token_cache(
     dataset_meta: dict[str, Any] | None = None,
     encoding_name: str = "gpt2",
 ) -> dict[str, Any]:
-    """Materialize raw-text datasets as uint16 token shards when the tokenizer fits.
+    """Materialize raw-text datasets as unambiguous uint16/uint32 shards.
 
     This keeps repeated training runs on large text corpora from re-reading and
-    re-tokenizing multi-GB text files during schedule estimation or DataLoader
-    construction. Tokenizers with ids outside uint16, such as o200k_base, are
-    intentionally left on the raw-text path.
+    re-tokenizing multi-GB text files. Wide tokenizers use the versioned
+    little-endian uint32 format; legacy small-vocabulary caches remain uint16.
     """
 
     _ensure_datasets_dir()
@@ -1096,15 +2139,16 @@ def ensure_raw_text_token_cache(
 
     normalized_encoding = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
     tokenizer_vocab_size = raw_text_encoding_vocab_size(normalized_encoding)
-    if tokenizer_vocab_size > int(np.iinfo(np.uint16).max) + 1:
-        return meta
+    dtype = "uint16" if tokenizer_vocab_size <= int(np.iinfo(np.uint16).max) + 1 else "uint32"
+    data_format = f"{dtype}_shards"
 
     train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
     if (
-        meta.get("data_format") == "uint16_shards"
+        meta.get("data_format") == data_format
         and train_files
         and _raw_text_metadata_matches_encoding(meta, normalized_encoding)
     ):
+        validate_cached_tokenizer_contract(dataset_name, dataset_path=ds_path, dataset_meta=meta)
         return meta
 
     data_file = _raw_text_data_file_for_path(ds_path)
@@ -1115,27 +2159,42 @@ def ensure_raw_text_token_cache(
         encoding = resolve_sentencepiece_encoding(normalized_encoding)
     else:
         encoding = resolve_tiktoken_encoding(normalized_encoding)
+    tokenizer_name, tokenizer_sha256, tokenizer_revision = _raw_text_tokenizer_identity(
+        normalized_encoding, encoding
+    )
 
     for stale_path in sorted(ds_path.glob("fineweb_train_*.bin")) + sorted(ds_path.glob("fineweb_val_*.bin")):
         stale_path.unlink()
 
     train_path = ds_path / "fineweb_train_000000.bin"
-    train_tokens = _write_uint16_token_shard_from_text(
+    train_tokens = _write_token_shard_from_text(
         data_file,
         train_path,
         encoding_name=normalized_encoding,
         encoding=encoding,
+        dtype=dtype,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        tokenizer_sha256=tokenizer_sha256,
+        tokenizer_revision=tokenizer_revision,
+        tokenizer_name=tokenizer_name,
+        split="train",
     )
 
     val_shards = 0
     val_tokens = 0
     val_path = ds_path / "val.txt"
     if val_path.exists():
-        val_tokens = _write_uint16_token_shard_from_text(
+        val_tokens = _write_token_shard_from_text(
             val_path,
             ds_path / "fineweb_val_000000.bin",
             encoding_name=normalized_encoding,
             encoding=encoding,
+            dtype=dtype,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+            tokenizer_sha256=tokenizer_sha256,
+            tokenizer_revision=tokenizer_revision,
+            tokenizer_name=tokenizer_name,
+            split="validation",
         )
         val_shards = 1
 
@@ -1147,9 +2206,14 @@ def ensure_raw_text_token_cache(
             "raw_text_val_file": val_path.name if val_path.exists() else None,
             "train_shards": 1,
             "val_shards": val_shards,
-            "data_format": "uint16_shards",
-            "token_cache_format": "raw_text_uint16_shards",
-            "token_cache_dtype": "uint16",
+            "data_format": data_format,
+            "token_cache_format": f"raw_text_{dtype}_shards",
+            "token_cache_dtype": dtype,
+            "token_shard_schema": (
+                "legacy.uint16" if dtype == "uint16" else "neuralfn.native_token_shard.v2"
+            ),
+            "tokenizer_sha256": tokenizer_sha256,
+            "tokenizer_revision": tokenizer_revision,
             "token_cache_train_tokens": int(train_tokens),
             "token_cache_val_tokens": int(val_tokens),
             **_raw_text_tokenizer_metadata_fields(normalized_encoding),
@@ -1172,10 +2236,10 @@ def estimate_dataset_sequence_count(
     if not ds_path.is_dir():
         return None
     meta = _load_dataset_meta(ds_path)
-    if meta.get("data_format") == "uint16_shards":
+    if meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
         train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
         if train_files:
-            return _uint16_shard_sequence_count(train_files, seq_len)
+            return _token_shard_sequence_count(train_files, seq_len)
     if _raw_text_metadata_matches_encoding(meta, encoding_name) and meta.get("num_tokens") is not None:
         return max(0, (int(meta["num_tokens"]) - 1) // seq_len)
     return None
@@ -1301,21 +2365,19 @@ def load_dataset_tensors(
             meta_file = ds_path / "meta.json"
             if meta_file.exists():
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
-                if meta.get("data_format") != "uint16_shards":
+                if meta.get("data_format") not in TOKEN_SHARD_DATA_FORMATS:
                     meta = ensure_raw_text_token_cache(
                         ds_name,
                         dataset_path=ds_path,
                         dataset_meta=meta,
                         encoding_name=encoding_name,
                     )
-                if meta.get("data_format") == "uint16_shards":
+                if meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
                     validate_cached_tokenizer_contract(ds_name, dataset_path=ds_path, dataset_meta=meta)
                     train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
                     for path in train_files:
                         # Memmap to avoid loading entirely into memory at once
-                        arr = np.memmap(path, dtype=np.uint16, mode='r')
-                        offset = _shard_header_offset_uint16(path)
-                        arrays.append(arr[offset:])
+                        arrays.append(_token_shard_memmap(path))
                     continue
                 
         # Fallback to in-memory load for text/json
@@ -1357,7 +2419,7 @@ def _data_file_for(ds_name: str) -> Path | None:
         meta_file = ds_path / "meta.json"
         if meta_file.exists():
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            if meta.get("data_format") == "uint16_shards":
+            if meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
                 return None
 
         data_file = ds_path / "data.txt"
@@ -1388,12 +2450,12 @@ def _load_tokens_for(
         meta_file = ds_path / "meta.json"
         if meta_file.exists():
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            if meta.get("data_format") == "uint16_shards":
+            if meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
                 validate_cached_tokenizer_contract(ds_name, dataset_path=ds_path, dataset_meta=meta)
                 train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
                 if not train_files:
                     raise FileNotFoundError(f"No training shards found in dataset '{ds_name}'")
-                shards = [np.fromfile(path, dtype=np.uint16)[_shard_header_offset_uint16(path):] for path in train_files]
+                shards = [np.asarray(_token_shard_memmap(path)) for path in train_files]
                 if not shards:
                     raise FileNotFoundError(f"No readable training shards found in dataset '{ds_name}'")
                 return np.concatenate(shards).astype(int).tolist()
@@ -1438,7 +2500,7 @@ def _load_bytes_for(ds_name: str) -> list[int]:
         meta_file = ds_path / "meta.json"
         if meta_file.exists():
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            if meta.get("data_format") == "uint16_shards":
+            if meta.get("data_format") in TOKEN_SHARD_DATA_FORMATS:
                 raise ValueError(
                     f"Dataset '{ds_name}' stores token shards and cannot be used for raw-byte H-Net training"
                 )

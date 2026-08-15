@@ -34,3 +34,4 @@ editor/src/
 - [Graph Utilities](graph-utils.md) -- graph normalization, variant resolution, Flow conversion.
 - [Components](components.md) -- canvas, panels, toolbar, node renderers.
 - [Pages and Routing](pages.md) -- route structure, app state context, session sync.
+- [Native CUDA Training](native-training.md) -- runtime selection, compatibility preflight, artifacts, and current fail-closed limits.

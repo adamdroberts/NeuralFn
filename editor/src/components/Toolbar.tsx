@@ -225,6 +225,7 @@ export default function Toolbar() {
             <option value="nanogpt">NanoGPT</option>
             <option value="gpt2">GPT-2</option>
             <option value="llama">LLaMA</option>
+            <option value="muse_glimmer">Muse Glimmer 30B</option>
             <option value="moe">MoE</option>
             <option value="llama_fast">LLaMA Fast</option>
             <option value="mixllama_fast">MixLLaMA Fast</option>

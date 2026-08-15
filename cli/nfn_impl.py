@@ -499,6 +499,34 @@ class InferChatSettings:
     autocomplete_words: int = 0
 
 
+INFER_CHAT_MESSAGE_ROLES = ("developer", "system", "user", "assistant", "tool")
+
+
+@dataclass(frozen=True)
+class InferChatMessage:
+    """One process-local CLI transcript item.
+
+    The representation is deliberately role-based so the same prompt builder
+    can retain system/developer instructions and tool results without folding
+    them into an ambiguous user/assistant tuple.
+    """
+
+    role: str
+    content: str
+    name: str | None = None
+    tool_call_id: str | None = None
+
+    def __post_init__(self) -> None:
+        normalized = str(self.role).strip().lower()
+        if normalized not in INFER_CHAT_MESSAGE_ROLES:
+            raise ValueError(
+                f"Unsupported CLI chat role {self.role!r}; expected one of "
+                + ", ".join(INFER_CHAT_MESSAGE_ROLES)
+            )
+        object.__setattr__(self, "role", normalized)
+        object.__setattr__(self, "content", str(self.content))
+
+
 @dataclass
 class InferRuntimeContext:
     args: argparse.Namespace
@@ -1082,6 +1110,23 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         )
         parser.add_argument("--prompt", default=None, help="Text prompt.")
         parser.add_argument("--prompt-tokens", default=None, help="Comma-separated token ids that override --prompt.")
+        parser.add_argument(
+            "--chat-mode",
+            choices=INFER_CHAT_MODES,
+            default=None,
+            help="Interactive chat state: transcript (default for a TTY) or stateless.",
+        )
+        parser.add_argument(
+            "--system-prompt",
+            default=None,
+            help="Leading system instruction retained across transcript turns.",
+        )
+        parser.add_argument(
+            "--chat-template",
+            default=None,
+            metavar="auto|plain_roles|PATH",
+            help="Chat renderer. Auto prefers artifact/tokenizer metadata and otherwise warns before using plain_roles.",
+        )
         parser.add_argument("--sem-targets", default=None, help="Optional comma-separated semantic target ids.")
         parser.add_argument("--semantic-topics", default=None, help="Optional semantic topic overrides in dimension=topic form.")
         parser.add_argument("--experimental-semantic-router-vecs", action="store_true", help="Generate semantic_router_vecs when the loaded graph expects them.")
@@ -1554,6 +1599,10 @@ def ensure_infer_defaults(args: argparse.Namespace, *, interactive: bool) -> arg
         args.log_every = 0 if interactive else 1
     if getattr(args, "logits_node", None) is None:
         args.logits_node = "auto"
+    if getattr(args, "chat_mode", None) is None:
+        args.chat_mode = "transcript" if interactive else "stateless"
+    if getattr(args, "chat_template", None) is None:
+        args.chat_template = "auto"
     return args
 
 
@@ -2033,42 +2082,252 @@ def infer_prompt_source(
     return prompt_text, prompt_ids
 
 
+def normalize_infer_chat_history(history: Sequence[Any]) -> list[InferChatMessage]:
+    """Normalize the role-message model while accepting legacy turn tuples."""
+
+    messages: list[InferChatMessage] = []
+    for item in history:
+        if isinstance(item, InferChatMessage):
+            messages.append(item)
+            continue
+        if isinstance(item, dict):
+            messages.append(
+                InferChatMessage(
+                    role=str(item.get("role", "")),
+                    content=str(item.get("content", "")),
+                    name=str(item["name"]) if item.get("name") is not None else None,
+                    tool_call_id=(
+                        str(item["tool_call_id"])
+                        if item.get("tool_call_id") is not None
+                        else None
+                    ),
+                )
+            )
+            continue
+        if (
+            isinstance(item, (tuple, list))
+            and len(item) == 2
+            and all(isinstance(value, str) for value in item)
+        ):
+            messages.append(InferChatMessage("user", item[0]))
+            messages.append(InferChatMessage("assistant", item[1]))
+            continue
+        raise ValueError(f"Unsupported CLI transcript item: {item!r}")
+    return messages
+
+
+def render_plain_roles_chat(
+    messages: Sequence[InferChatMessage],
+    *,
+    include_assistant_prompt: bool,
+) -> str:
+    labels = {
+        "developer": "Developer",
+        "system": "System",
+        "user": "User",
+        "assistant": "Assistant",
+        "tool": "Tool",
+    }
+    lines = [f"{labels[item.role]}: {item.content}" for item in messages]
+    if include_assistant_prompt and (not messages or messages[-1].role != "assistant"):
+        lines.append("Assistant:")
+    return "\n".join(lines)
+
+
+def _infer_graph_metadata_mapping(context: InferRuntimeContext) -> dict[str, Any]:
+    raw = getattr(context.graph, "torch_config", {})
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def artifact_infer_chat_template(context: InferRuntimeContext) -> str | None:
+    config = _infer_graph_metadata_mapping(context)
+    candidates: list[Any] = [config.get("chat_template")]
+    for key in ("tokenizer_manifest", "artifact_metadata"):
+        nested = config.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested.get("chat_template"))
+    graph_metadata = getattr(context.graph, "metadata", None)
+    if isinstance(graph_metadata, dict):
+        candidates.append(graph_metadata.get("chat_template"))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
+    return None
+
+
+def resolve_infer_chat_template(
+    context: InferRuntimeContext,
+) -> tuple[str, str | None, str | None]:
+    """Return renderer kind, optional source, and an auto-fallback warning."""
+
+    requested = str(getattr(context.args, "chat_template", None) or "auto").strip()
+    if requested == "plain_roles":
+        return "plain_roles", None, None
+    if requested != "auto":
+        path = Path(requested).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"Chat template file not found: {path}")
+        if path.stat().st_size > 1024 * 1024:
+            raise ValueError(f"Chat template file exceeds the 1 MiB CLI limit: {path}")
+        return "template", path.read_text(encoding="utf-8"), None
+
+    artifact_template = artifact_infer_chat_template(context)
+    apply_template = getattr(context.tokenizer, "apply_chat_template", None)
+    if callable(apply_template):
+        return "tokenizer", artifact_template, None
+    if artifact_template is not None and any(
+        marker in artifact_template
+        for marker in ("{{messages}}", "{messages}")
+    ):
+        return "template", artifact_template, None
+    return (
+        "plain_roles",
+        None,
+        "The artifact has no directly usable chat template; using plain_roles for this CLI session. "
+        "Pass --chat-template PATH to select an explicit template.",
+    )
+
+
+def render_infer_chat_messages(
+    context: InferRuntimeContext,
+    messages: Sequence[InferChatMessage],
+    *,
+    include_assistant_prompt: bool,
+) -> str:
+    kind, source, _warning = resolve_infer_chat_template(context)
+    if kind == "plain_roles":
+        return render_plain_roles_chat(messages, include_assistant_prompt=include_assistant_prompt)
+    if kind == "tokenizer":
+        apply_template = getattr(context.tokenizer, "apply_chat_template")
+        conversation: list[dict[str, str]] = []
+        for item in messages:
+            payload = {"role": item.role, "content": item.content}
+            if item.name is not None:
+                payload["name"] = item.name
+            if item.tool_call_id is not None:
+                payload["tool_call_id"] = item.tool_call_id
+            conversation.append(payload)
+        kwargs: dict[str, Any] = {
+            "tokenize": False,
+            "add_generation_prompt": include_assistant_prompt,
+        }
+        if source is not None:
+            kwargs["chat_template"] = source
+        try:
+            rendered = apply_template(conversation, **kwargs)
+        except TypeError as exc:
+            if source is not None:
+                raise ValueError(
+                    "The loaded tokenizer cannot apply the artifact-provided chat template. "
+                    "Use --chat-template plain_roles or an explicit PATH."
+                ) from exc
+            raise
+        return str(rendered)
+
+    assert source is not None
+    body = render_plain_roles_chat(messages, include_assistant_prompt=False)
+    assistant_prompt = "Assistant:" if include_assistant_prompt else ""
+    if "{{messages}}" not in source and "{messages}" not in source:
+        raise ValueError(
+            "An explicit CLI chat template must contain {{messages}} (or {messages}); "
+            "{{assistant_prompt}} is optional."
+        )
+    rendered = source.replace("{{messages}}", body).replace("{messages}", body)
+    had_assistant_marker = "{{assistant_prompt}}" in rendered or "{assistant_prompt}" in rendered
+    rendered = rendered.replace("{{assistant_prompt}}", assistant_prompt).replace(
+        "{assistant_prompt}", assistant_prompt
+    )
+    if assistant_prompt and not had_assistant_marker:
+        rendered = rendered.rstrip() + "\n" + assistant_prompt
+    return rendered
+
+
 def render_infer_transcript(
-    history: Sequence[tuple[str, str]],
+    history: Sequence[Any],
     draft: str,
     *,
     include_assistant_prompt: bool,
 ) -> str:
-    lines: list[str] = []
-    for user_text, assistant_text in history:
-        lines.append(f"User: {user_text}")
-        lines.append(f"Assistant: {assistant_text}")
-    lines.append(f"User: {draft}")
-    if include_assistant_prompt:
-        lines.append("Assistant:")
-    return "\n".join(lines)
+    """Legacy plain-role renderer kept for callers and compatibility tests."""
+
+    messages = normalize_infer_chat_history(history)
+    messages.append(InferChatMessage("user", draft))
+    return render_plain_roles_chat(messages, include_assistant_prompt=include_assistant_prompt)
+
+
+def _infer_chat_groups(
+    messages: Sequence[InferChatMessage],
+) -> tuple[list[InferChatMessage], list[list[InferChatMessage]]]:
+    leading: list[InferChatMessage] = []
+    index = 0
+    while index < len(messages) and messages[index].role in {"developer", "system"}:
+        leading.append(messages[index])
+        index += 1
+    groups: list[list[InferChatMessage]] = []
+    current: list[InferChatMessage] = []
+    for item in messages[index:]:
+        if item.role == "user" and current:
+            groups.append(current)
+            current = []
+        current.append(item)
+    if current:
+        groups.append(current)
+    return leading, groups
 
 
 def resolve_infer_chat_prompt(
     context: InferRuntimeContext,
     *,
     mode: str,
-    history: Sequence[tuple[str, str]],
+    history: Sequence[Any],
     draft: str,
     include_assistant_prompt: bool,
+    reserved_output_tokens: int = 0,
 ) -> tuple[str, list[int], int]:
     if mode not in INFER_CHAT_MODES:
         raise ValueError(f"Unsupported infer chat mode: {mode}")
+    reserved = max(0, int(reserved_output_tokens))
+    prompt_budget = int(context.context_window) - reserved
+    if prompt_budget <= 0:
+        raise ValueError(
+            f"Generation reserves {reserved} output tokens but the context window is "
+            f"{context.context_window}; reduce --max-new-tokens."
+        )
     if mode == "stateless":
-        prompt_text, prompt_ids = infer_prompt_source(prompt=draft, prompt_tokens="", tokenizer=context.tokenizer)
+        leading, _groups = _infer_chat_groups(normalize_infer_chat_history(history))
+        if leading:
+            prompt_text = render_infer_chat_messages(
+                context,
+                [*leading, InferChatMessage("user", draft)],
+                include_assistant_prompt=include_assistant_prompt,
+            )
+            prompt_ids = resolve_prompt_tokens(
+                prompt=prompt_text,
+                prompt_tokens="",
+                tokenizer=context.tokenizer,
+            )
+        else:
+            prompt_text, prompt_ids = infer_prompt_source(
+                prompt=draft,
+                prompt_tokens="",
+                tokenizer=context.tokenizer,
+            )
+        if len(prompt_ids) > prompt_budget:
+            raise ValueError(
+                f"The stateless prompt uses {len(prompt_ids)} tokens but only {prompt_budget} "
+                f"remain after reserving {reserved} output tokens."
+            )
         return prompt_text, prompt_ids, 0
 
-    working_history = list(history)
+    normalized = normalize_infer_chat_history(history)
+    normalized.append(InferChatMessage("user", draft))
+    leading, groups = _infer_chat_groups(normalized)
     dropped_turns = 0
     while True:
-        prompt_text = render_infer_transcript(
-            working_history,
-            draft,
+        working_messages = [*leading, *(item for group in groups for item in group)]
+        prompt_text = render_infer_chat_messages(
+            context,
+            working_messages,
             include_assistant_prompt=include_assistant_prompt,
         )
         prompt_ids = resolve_prompt_tokens(
@@ -2076,9 +2335,16 @@ def resolve_infer_chat_prompt(
             prompt_tokens="",
             tokenizer=context.tokenizer,
         )
-        if len(prompt_ids) <= context.context_window or not working_history:
+        if len(prompt_ids) <= prompt_budget:
             return prompt_text, prompt_ids, dropped_turns
-        working_history = working_history[1:]
+        # The final group contains the newest user/tool request and is
+        # mandatory. Leading developer/system instructions are also retained.
+        if len(groups) <= 1:
+            raise ValueError(
+                "The leading instructions and newest user/tool turn do not fit the "
+                f"{prompt_budget}-token prompt budget after reserving {reserved} output tokens."
+            )
+        groups.pop(0)
         dropped_turns += 1
 
 
@@ -3000,7 +3266,7 @@ def build_infer_inline_autocomplete(
     *,
     settings: InferChatSettings,
     mode: str,
-    history: Sequence[tuple[str, str]],
+    history: Sequence[Any],
     buffer_text: str,
 ) -> tuple[InferInlineAutocomplete | None, int]:
     word_count = int(settings.autocomplete_words)
@@ -3012,6 +3278,7 @@ def build_infer_inline_autocomplete(
         history=history,
         draft=buffer_text,
         include_assistant_prompt=False,
+        reserved_output_tokens=max(1, min(INFER_AUTOCOMPLETE_MAX_TOKENS, word_count * 8)),
     )
     preview_settings = replace(
         settings,
@@ -3059,7 +3326,7 @@ def build_infer_autocomplete_preview(
     *,
     settings: InferChatSettings,
     mode: str,
-    history: Sequence[tuple[str, str]],
+    history: Sequence[Any],
     buffer_text: str,
 ) -> tuple[InferAutocompletePreview, int]:
     prompt_text, prompt_ids, dropped_turns = resolve_infer_chat_prompt(
@@ -3068,6 +3335,7 @@ def build_infer_autocomplete_preview(
         history=history,
         draft=buffer_text,
         include_assistant_prompt=False,
+        reserved_output_tokens=1,
     )
     preview_settings = InferChatSettings(
         top_k=settings.top_k,
@@ -3170,7 +3438,7 @@ def read_infer_chat_line(
     *,
     settings: InferChatSettings,
     mode: str,
-    history: Sequence[tuple[str, str]],
+    history: Sequence[Any],
     console: Console | None = None,
 ) -> str | None:
     fd = sys.stdin.fileno()
@@ -3421,6 +3689,45 @@ def read_infer_chat_line(
         termios.tcsetattr(fd, termios.TCSADRAIN, original)
 
 
+def infer_text_stop_delimiters(context: InferRuntimeContext) -> tuple[str, ...]:
+    config = _infer_graph_metadata_mapping(context)
+    values: list[str] = []
+
+    def collect(raw: Any) -> None:
+        if isinstance(raw, str) and raw:
+            values.append(raw)
+        elif isinstance(raw, (tuple, list)):
+            for item in raw:
+                if isinstance(item, str) and item:
+                    values.append(item)
+
+    for mapping in (
+        config,
+        config.get("tokenizer_manifest") if isinstance(config.get("tokenizer_manifest"), dict) else {},
+        config.get("artifact_metadata") if isinstance(config.get("artifact_metadata"), dict) else {},
+    ):
+        for key in ("stop_strings", "stop_sequences", "role_delimiters", "eos_token"):
+            collect(mapping.get(key))
+    collect(getattr(context.tokenizer, "eos_token", None))
+    template_kind, _source, _warning = resolve_infer_chat_template(context)
+    if template_kind == "plain_roles":
+        values.extend(("\nDeveloper:", "\nSystem:", "\nUser:", "\nTool:"))
+    unique: list[str] = []
+    for value in values:
+        if value and value not in unique:
+            unique.append(value)
+    return tuple(unique)
+
+
+def strip_infer_text_delimiters(text: str, delimiters: Sequence[str]) -> str:
+    end = len(text)
+    for delimiter in delimiters:
+        index = text.find(delimiter)
+        if index >= 0:
+            end = min(end, index)
+    return text[:end].rstrip()
+
+
 def run_infer_chat_session(
     context: InferRuntimeContext,
     *,
@@ -3431,12 +3738,20 @@ def run_infer_chat_session(
         raise RuntimeError("Interactive infer chat requires a tokenizer-capable graph export.")
 
     settings = infer_settings_from_args(context.args)
-    mode = "stateless"
-    history: list[tuple[str, str]] = []
+    mode = str(getattr(context.args, "chat_mode", None) or "transcript")
+    if mode not in INFER_CHAT_MODES:
+        raise ValueError(f"Unsupported infer chat mode: {mode}")
+    history: list[InferChatMessage] = []
+    system_prompt = str(getattr(context.args, "system_prompt", None) or "").strip()
+    if system_prompt:
+        history.append(InferChatMessage("system", system_prompt))
     turn_idx = 0
 
     console = make_infer_console()
     render_infer_banner(console, context, settings, mode)
+    _template_kind, _template_source, template_warning = resolve_infer_chat_template(context)
+    if template_warning:
+        console.print(f":warning: [infer.system]{_rich_escape(template_warning)}[/]")
     console.print(
         ":white_check_mark: [infer.system]Ready. Type [/]"
         "[infer.accent]/help[/][infer.system] for commands.[/]"
@@ -3444,13 +3759,14 @@ def run_infer_chat_session(
 
     def respond_to_user(user_text: str, *, prompt_tokens: str = "") -> None:
         nonlocal history, turn_idx
-        if mode == "transcript" and not prompt_tokens.strip():
+        if not prompt_tokens.strip():
             prompt_text, prompt_ids, dropped_turns = resolve_infer_chat_prompt(
                 context,
                 mode=mode,
                 history=history,
                 draft=user_text,
                 include_assistant_prompt=True,
+                reserved_output_tokens=settings.max_new_tokens,
             )
         else:
             prompt_text, prompt_ids = infer_prompt_source(
@@ -3474,7 +3790,10 @@ def run_infer_chat_session(
             )
         display_user = user_text if user_text else f"[tokens] {prompt_tokens}"
         render_infer_turn_panel(console, "user", turn_idx, display_user)
-        response_text = str(result.get("generated_text", "") or "").strip("\n")
+        response_text = strip_infer_text_delimiters(
+            str(result.get("generated_text", "") or "").strip("\n"),
+            infer_text_stop_delimiters(context),
+        )
         if response_text:
             render_infer_turn_panel(console, "assistant", turn_idx, response_text)
         else:
@@ -3499,7 +3818,8 @@ def run_infer_chat_session(
                 )
             )
         if mode == "transcript" and not prompt_tokens.strip():
-            history.append((user_text, str(result.get("generated_text", "") or "")))
+            history.append(InferChatMessage("user", user_text))
+            history.append(InferChatMessage("assistant", response_text))
 
     if initial_prompt_text or initial_prompt_tokens.strip():
         respond_to_user(initial_prompt_text, prompt_tokens=initial_prompt_tokens)
@@ -3547,6 +3867,8 @@ def run_infer_chat_session(
             continue
         if message == "/reset":
             history.clear()
+            if system_prompt:
+                history.append(InferChatMessage("system", system_prompt))
             turn_idx = 0
             console.print(":broom: [infer.system]Transcript history cleared.[/]")
             continue

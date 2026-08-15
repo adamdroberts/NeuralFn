@@ -40,10 +40,12 @@ class ActiveRunHandle:
     run_id: str
     session_id: str
     project_id: str
-    progress_queue: Queue
+    started_by_user_id: str | None
+    runtime: str
+    progress_queue: list[dict]
     done_event: Event
-    thread: Thread
-    trainer: Any
+    thread: Thread | None
+    trainer: Any | None
 ```
 
 Tracks an in-progress training run, providing a queue for progress events and a threading event for completion signaling.
@@ -55,8 +57,9 @@ Tracks an in-progress training run, providing a queue for progress events and a 
 | `list_runs(project_id, session_id)` | Returns run history filtered by project and/or session. |
 | `get_latest_run(session_id)` | Returns the most recent run for a session. |
 | `get_run_snapshot(run_id)` | Returns current status, loss, step count, and event log for a run. |
-| `stop_run(run_id)` | Signals a running training thread to stop gracefully. |
+| `stop_run(run_id)` | Requests cooperative stop for supported trainers; reports `unsupported` for native-cuda. |
 | `start_run(session_id, project_id, user_id, request)` | Validates the request, spawns a background training thread, and returns a `RunSnapshot`. |
+| `preflight_run(session_id, project_id, user_id, request)` | Returns Native IR/trainer compatibility without creating a run or persistent artifact. |
 
 ### Supported Training Methods
 
@@ -64,6 +67,12 @@ Tracks an in-progress training run, providing a queue for progress events and a 
 - **evolutionary** -- evolutionary strategy over network weights.
 - **hybrid** -- combines surrogate and evolutionary approaches.
 - **torch** -- standard PyTorch gradient-based training.
+- **native-cuda** -- source-inert Native IR preflight followed by the exact registered compiled trainer; unsupported adapters fail before launch.
+
+Native run snapshots and history include `runtime`, `compatibility_report`,
+`artifact_metadata`, and `checkpoint_path`. Native preparation is implemented
+in `server/services/native_training.py`; see
+[Editor Native Training Service](native-training.md).
 
 ---
 
@@ -144,7 +153,7 @@ state to a background-thread teardown race.
 | Method | Description |
 |--------|-------------|
 | `enqueue_update(session_id, graph, revision)` | Persists a session graph update locally or enqueues it to Redis when Redis is active. |
-| `enqueue_run_update(run_id, updates)` | Persists a training run status update locally or enqueues it to Redis when Redis is active. |
+| `enqueue_run_update(run_id, updates)` | Persists status, loss/step, compatibility, artifact, and checkpoint updates locally or enqueues them to Redis when Redis is active. |
 | `start()` | Starts the Redis background consumer thread when Redis is active. |
 | `stop()` | Signals the Redis worker to drain the queue and shut down. |
 

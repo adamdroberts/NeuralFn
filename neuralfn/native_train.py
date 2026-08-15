@@ -166,6 +166,7 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "nanogpt": "nfn_gpt_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
+    "muse-glimmer": "nfn_muse_glimmer_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
     "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
@@ -183,6 +184,7 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
 }
 NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "llama": "llama",
+    "muse-glimmer": "muse-glimmer",
     "llama-fast": "llama",
     "llama-fast-megakernel": "llama",
     "llama-megakernel": "llama",
@@ -284,16 +286,18 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "gpt2-evo",
-        "status": "implemented",
+        "status": "preflight-only",
         "native_target": "nfn_gpt2_evo_native_train",
-        "transformer_lm_status": "native-dense-gpt-layer-evo-delegate",
+        "transformer_lm_status": "blocked-graph-faithful-whole-block-evolution-missing",
         "token_lm_status": "not-applicable",
-        "geometry_status": "dense-gpt2-compatible-layer-evo-delegate",
-        "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "delegate-to-dense-gpt-loop",
+        "geometry_status": "gpt2-evo-whole-block-contract-unimplemented",
+        "kernel_status": "evo-primitive-kernels-present",
+        "trainer_loop_status": "blocked-before-delegate-exec",
         "notes": (
-            "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches "
-            "dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo."
+            "GPT-2 evo is a model-aware native C++ preflight with an isolated evo-kernel "
+            "smoke. Training is blocked because the dense delegate AdamW-updates the "
+            "designated block and evolves only ln1.weight, while the authored graph "
+            "excludes and evolves every tensor in that block."
         ),
     },
     {
@@ -324,6 +328,22 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
             "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop "
             "with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; "
             "architecture-specific forward inference from persistent family parameter state remains before production inference."
+        ),
+    },
+    {
+        "name": "muse-glimmer",
+        "status": "implemented-exact-native-trainer-v1",
+        "native_target": "nfn_muse_glimmer_native_train",
+        "transformer_lm_status": "native-glimmer-transformer-lm-v1",
+        "token_lm_status": "uint32-token-shards-v2",
+        "geometry_status": "exact-nonsquare-gqa-sandwich-norm",
+        "kernel_status": "glimmer-training-abi-v1",
+        "trainer_loop_status": "native-bf16-train-save-resume-v1",
+        "notes": (
+            "Muse Glimmer has a dedicated no-Python C++/CUDA target with exact "
+            "local/global asymmetric GQA, four centered sandwich norms, attention "
+            "gating, wide masked CE, uint32 shards, BF16 AdamW, activation "
+            "recomputation, authenticated full-state checkpoints, and strict resume."
         ),
     },
     {
@@ -520,7 +540,7 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
 _NATIVE_FULL_FAMILY_REGISTRY_NAMES = {
     entry["name"]
     for entry in _NATIVE_TRAIN_MODEL_REGISTRY
-    if entry["name"] not in {"gpt", "gpt2", "gpt3", "gpt2-evo", "nanogpt"}
+    if entry["name"] not in {"gpt", "gpt2", "gpt3", "gpt2-evo", "nanogpt", "muse-glimmer"}
 }
 
 
@@ -631,8 +651,70 @@ class NativeTrainRunConfig:
             raise ValueError(
                 "fast_startup and require_cooperative_lm_head_backward are only supported for dense GPT native train families"
             )
-        if str(self.graph_file or "").strip() and normalized_family not in DENSE_GPT_MODEL_FAMILIES:
-            raise ValueError("graph_file is only supported for dense GPT native train families")
+        if str(self.graph_file or "").strip():
+            if normalized_family not in DENSE_GPT_MODEL_FAMILIES and normalized_family not in {
+                "llama",
+                "mixllama",
+            }:
+                raise ValueError(
+                    "graph_file requires a reviewed dense GPT, canonical LLaMA, or standard-MoE adapter"
+                )
+            if normalized_family in {"llama", "mixllama"}:
+                profile_label = (
+                    "canonical LLaMA" if normalized_family == "llama" else "standard-MoE"
+                )
+                if _native_train_args_have_option(
+                    resolved_args,
+                    "--graph-file",
+                    "--native-cuda-graph-file",
+                    "--graph",
+                ):
+                    raise ValueError(
+                        f"Pass the {profile_label} graph through NativeTrainRunConfig.graph_file "
+                        "only; graph path arguments cannot override the planned source."
+                    )
+                try:
+                    from .native_graph_train import plan_native_graph_training
+
+                    graph_plan = plan_native_graph_training(str(self.graph_file).strip())
+                except (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"{profile_label} graph-file preflight failed: {exc}"
+                    ) from exc
+                if (
+                    not graph_plan.execution_ready
+                    or graph_plan.trainer_family != normalized_family
+                ):
+                    raise ValueError(
+                        f"{profile_label} graph_file did not pass the reviewed native training adapter."
+                    )
+                requested_template_name = (
+                    str(self.template_name or "").strip().lower().replace("-", "_")
+                )
+                allowed_template_names = {
+                    "",
+                    normalized_family,
+                    str(graph_plan.training_selector).replace("-", "_"),
+                }
+                if requested_template_name not in allowed_template_names:
+                    raise ValueError(
+                        f"{profile_label} graph_file cannot be paired with a conflicting "
+                        "source template_name."
+                    )
+                expected = graph_plan.trainer_arguments
+                if len(expected) % 2:
+                    raise RuntimeError(
+                        f"{profile_label} planner emitted malformed trainer arguments."
+                    )
+                for index in range(0, len(expected), 2):
+                    flag = expected[index]
+                    value = expected[index + 1]
+                    if _native_train_arg_values(resolved_args, flag) != (value,):
+                        raise ValueError(
+                            f"{profile_label} graph_file arguments must come from "
+                            "plan_native_graph_training(...).trainer_arguments; "
+                            f"expected exactly {flag} {value}."
+                        )
         if str(self.template_name or "").strip() and not _native_train_args_have_option(
             resolved_args,
             "--template-name",
@@ -719,6 +801,35 @@ def _native_train_args_have_option(args: Sequence[str], *names: str) -> bool:
         if any(text.startswith(f"{name}=") for name in option_names):
             return True
     return False
+
+
+def _native_train_arg_value(args: Sequence[str], *names: str) -> str | None:
+    option_names = tuple(names)
+    for index, arg in enumerate(args):
+        text = str(arg)
+        if text in option_names and index + 1 < len(args):
+            return str(args[index + 1]).strip()
+        for name in option_names:
+            prefix = f"{name}="
+            if text.startswith(prefix):
+                return text[len(prefix):].strip()
+    return None
+
+
+def _native_train_arg_values(args: Sequence[str], name: str) -> tuple[str, ...]:
+    """Return every split/equal value so duplicate plan-owned flags fail closed."""
+
+    values: list[str] = []
+    for index, arg in enumerate(args):
+        text = str(arg)
+        if text == name:
+            if index + 1 < len(args):
+                values.append(str(args[index + 1]).strip())
+            else:
+                values.append("")
+        elif text.startswith(f"{name}="):
+            values.append(text[len(name) + 1 :].strip())
+    return tuple(values)
 
 
 def _native_train_has_flag(args: Sequence[str], flag: str) -> bool:

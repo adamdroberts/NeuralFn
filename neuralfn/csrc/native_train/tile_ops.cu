@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 #include <string_view>
 #include <vector>
@@ -239,6 +241,7 @@ void launch_evo_adopt_candidate_float32(
     std::int64_t candidate_count,
     cudaStream_t stream);
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
+void launch_uint32_to_int64(const std::uint32_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_uint8_to_int64(const std::uint8_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_diffusion_mask_u16_int64(
     const std::uint16_t* source_tokens,
@@ -1310,6 +1313,371 @@ void launch_linear_backward_input_quantized_float32(
     std::int64_t output_dim,
     int kind,
     cudaStream_t stream);
+void launch_packed_weight_dequantize_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    float* output,
+    cudaStream_t stream);
+void launch_linear_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const float* input,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias,
+    cudaStream_t stream);
+void launch_quantize_q8_1_float32_v1(
+    const float* input,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    cudaStream_t stream);
+void launch_linear_packed_weight_q8_1_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias,
+    cudaStream_t stream);
+void launch_linear_packed_weight_q8_1_multi_decode_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor0,
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor1,
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor2,
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor3,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    float* output0,
+    float* output1,
+    float* output2,
+    float* output3,
+    std::int64_t projection_count,
+    cudaStream_t stream);
+void launch_argmax_rows_float32_v1(
+    const float* values,
+    std::int64_t* output_indices,
+    float* output_values,
+    std::int64_t rows,
+    std::int64_t width,
+    cudaStream_t stream);
+void launch_linear_backward_input_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t rows,
+    cudaStream_t stream);
+void launch_glimmer_embedding_gather_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    std::int64_t token_id,
+    float* output,
+    cudaStream_t stream);
+void launch_glimmer_embedding_gather_device_i64_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const std::int64_t* token_id,
+    float* output,
+    cudaStream_t stream);
+void launch_glimmer_embedding_batch_i32_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1& descriptor,
+    const std::int32_t* token_ids,
+    float* output,
+    std::int64_t rows,
+    cudaStream_t stream);
+void launch_glimmer_rms_norm_affine_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    cudaStream_t stream);
+void launch_glimmer_rms_norm_affine_capture_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    float* output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    cudaStream_t stream);
+void launch_glimmer_rms_norm_affine_capture_residual_q8_1_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    float* output,
+    float* residual_output,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    cudaStream_t stream);
+void launch_glimmer_rms_norm_affine_add_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    const float* residual_input,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    cudaStream_t stream);
+void launch_glimmer_dual_rms_add_capture_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& first_weight,
+    bool has_first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1& second_weight,
+    bool has_second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    cudaStream_t stream);
+void launch_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1& first_weight,
+    bool has_first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1& second_weight,
+    bool has_second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* mmvq_workspace,
+    cudaStream_t stream);
+void launch_glimmer_positioned_rope_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    cudaStream_t stream);
+void launch_glimmer_qk_norm_scale_rope_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1& query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1& key_norm_weight,
+    bool has_query_norm_weight,
+    bool has_key_norm_weight,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    cudaStream_t stream);
+void launch_glimmer_qk_norm_scale_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1& query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1& key_norm_weight,
+    bool has_query_norm_weight,
+    bool has_key_norm_weight,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    cudaStream_t stream);
+void launch_glimmer_gqa_decode_float32_v1(
+    const NfnNativeTileGlimmerGqaDecodeDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_fused_decode_attention_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_fused_decode_attention_device_position_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1& descriptor,
+    const std::int64_t* device_position,
+    std::int64_t sliding_window,
+    cudaStream_t stream);
+void launch_glimmer_cache_commit_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_cache_commit_rows_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1& descriptor,
+    std::int64_t rows,
+    cudaStream_t stream);
+void launch_glimmer_cache_commit_layers_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitLayersDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_pack_target_taps_float32_v1(
+    const float* tap_major,
+    float* row_major,
+    std::int64_t source_rows,
+    std::int64_t source_row_offset,
+    std::int64_t rows,
+    std::int64_t tap_count,
+    std::int64_t hidden_width,
+    cudaStream_t stream);
+void launch_dflash_block_attention_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    cudaStream_t stream);
+void launch_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_sigmoid_gate_float32_v1(
+    const float* values,
+    const float* gate,
+    float* output,
+    std::int64_t count,
+    cudaStream_t stream);
+void launch_glimmer_logit_transform_float32_v1(
+    float* logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    cudaStream_t stream);
+void launch_glimmer_attention_forward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_attention_backward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_glimmer_rms_norm_backward_float32_v1(
+    const NfnNativeTileGlimmerRmsNormBackwardDescriptorV1& descriptor,
+    const NfnNativeTilePackedWeightDescriptorV1& weight,
+    bool has_weight,
+    cudaStream_t stream);
+void launch_glimmer_positioned_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t start_position,
+    float theta,
+    std::uint32_t layout,
+    bool inverse,
+    cudaStream_t stream);
+void launch_glimmer_sigmoid_gate_backward_float32_v1(
+    const float* values,
+    const float* gate,
+    const float* grad_output,
+    float* grad_values,
+    float* grad_gate,
+    std::int64_t count,
+    cudaStream_t stream);
+void launch_glimmer_logit_transform_backward_float32_v1(
+    const float* transformed,
+    const float* grad_transformed,
+    float* grad_raw,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    cudaStream_t stream);
+void launch_glimmer_masked_cross_entropy_i32_float32_v1(
+    const NfnNativeTileGlimmerMaskedCeDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1& descriptor,
+    cudaStream_t stream);
+void launch_token_embedding_backward_weight_i32_float32(
+    const std::int32_t* token_ids,
+    const float* grad_output,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t vocab_size,
+    std::int64_t embedding_dim,
+    cudaStream_t stream);
+void launch_glimmer_adamw_bf16_float32_v1(
+    std::uint16_t* parameter_bf16,
+    const float* gradient,
+    float* exp_avg,
+    float* exp_avg_sq,
+    std::int64_t count,
+    float learning_rate,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    std::int64_t step,
+    float gradient_scale,
+    cudaStream_t stream);
 void launch_split_last_dim_float32(
     const float* input,
     float* first,
@@ -2321,6 +2689,14 @@ int launch_differential_packed_attention_backward_bf16(
     const std::uint16_t*, const float*, std::uint16_t*,
     std::int64_t, std::int64_t, std::int64_t, std::int64_t,
     float, float, cudaStream_t);
+int launch_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t*, std::uint16_t*, std::int64_t, std::int64_t, std::int64_t,
+    std::int64_t, const float*, float, float, cudaStream_t);
+int launch_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*,
+    std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+    const float*, float, float, float*, cudaStream_t);
+int release_differential_packed_attention_workspaces();
 void launch_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -2353,6 +2729,15 @@ void launch_route_balance_loss_float32(
     const float* density,
     float* out,
     std::int64_t experts,
+    cudaStream_t stream);
+void launch_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
     cudaStream_t stream);
 void launch_softmax_distillation_partials_float32(
     const float* teacher_logits,
@@ -2874,6 +3259,11 @@ int launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_
     std::int64_t block_size,
     std::int64_t compress_stride,
     cudaStream_t stream);
+void reset_turboquant_attention_launch_stats();
+std::int64_t turboquant_attention_launch_count();
+int launch_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
 
 }  // namespace neuralfn::tile_cuda
 
@@ -2883,6 +3273,664 @@ constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
 constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
 constexpr int kLmHeadGraphThreadCacheCapacity = 8;
+constexpr std::int64_t kRawSparseAttentionMaxKeySequenceLength = 1024;
+constexpr std::int64_t kTurboQuantAttentionMaxSequenceLength = 16384;
+constexpr std::int64_t kTurboQuantAttentionMaxHeadDimension = 256;
+
+int validate_raw_sparse_attention_key_sequence_length(
+    bool /*use_sparse_rules*/,
+    std::int64_t seq_k) {
+    // The scalar raw kernel has a fixed 1,024-key tile even for dense calls.
+    // Reject every larger call until it is replaced; otherwise dense callers
+    // can receive plausible output that silently omitted later keys.
+    return seq_k > kRawSparseAttentionMaxKeySequenceLength
+        ? static_cast<int>(cudaErrorInvalidValue)
+        : static_cast<int>(cudaSuccess);
+}
+
+bool checked_positive_product(
+    std::int64_t left,
+    std::int64_t right,
+    std::int64_t* output) {
+    if (output == nullptr || left < 0 || right < 0 ||
+        (left != 0 && right > std::numeric_limits<std::int64_t>::max() / left)) {
+        return false;
+    }
+    *output = left * right;
+    return true;
+}
+
+bool normalize_packed_weight_descriptor(
+    const NfnNativeTilePackedWeightDescriptorV1* source,
+    NfnNativeTilePackedWeightDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTilePackedWeightDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_PACKED_WEIGHT_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->data == nullptr || source->data_nbytes <= 0 ||
+        source->output_dim <= 0 || source->input_dim <= 0 ||
+        source->row_stride_bytes <= 0) {
+        return false;
+    }
+
+    std::int64_t block_elements = 0;
+    std::int64_t block_bytes = 0;
+    switch (source->encoding) {
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_F32:
+            block_elements = 1;
+            block_bytes = 4;
+            break;
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K:
+            block_elements = 256;
+            block_bytes = 144;
+            break;
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K:
+            block_elements = 256;
+            block_bytes = 176;
+            break;
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K:
+            block_elements = 256;
+            block_bytes = 210;
+            break;
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_BF16:
+            block_elements = 1;
+            block_bytes = 2;
+            break;
+        case NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64:
+            block_elements = 64;
+            block_bytes = 36;
+            break;
+        default:
+            return false;
+    }
+    if (source->encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64 &&
+        source->input_dim % block_elements != 0) {
+        return false;
+    }
+    std::int64_t blocks_per_row =
+        source->encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_NF4_GROUP64
+        ? (source->input_dim + block_elements - 1) / block_elements
+        : source->input_dim / block_elements;
+    std::int64_t expected_row_stride = 0;
+    std::int64_t expected_nbytes = 0;
+    if (!checked_positive_product(blocks_per_row, block_bytes, &expected_row_stride) ||
+        !checked_positive_product(
+            source->output_dim, expected_row_stride, &expected_nbytes) ||
+        source->row_stride_bytes != expected_row_stride ||
+        source->data_nbytes != expected_nbytes) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTilePackedWeightDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_attention_training_descriptor(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1* source,
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileGlimmerAttentionTrainingDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        (source->flags & ~NFN_NATIVE_TILE_GLIMMER_TRAIN_CAUSAL) != 0 ||
+        source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->reserved2 != 0 || source->reserved3 != 0 ||
+        source->query == nullptr || source->key == nullptr || source->value == nullptr ||
+        source->output == nullptr || source->logsumexp == nullptr ||
+        source->batch_size <= 0 || source->sequence_length <= 0 ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->head_dim <= 0 || source->head_dim > 256 ||
+        source->window < 0 || source->window > source->sequence_length ||
+        !std::isfinite(source->scale) || !(source->scale > 0.0f) ||
+        (backward && (source->grad_output == nullptr || source->grad_query == nullptr ||
+                      source->grad_key == nullptr || source->grad_value == nullptr))) {
+        return false;
+    }
+    std::int64_t rows = 0;
+    std::int64_t q_rows = 0;
+    std::int64_t kv_rows = 0;
+    if (!checked_positive_product(source->batch_size, source->sequence_length, &rows) ||
+        !checked_positive_product(rows, source->query_heads, &q_rows) ||
+        !checked_positive_product(rows, source->kv_heads, &kv_rows) ||
+        !checked_positive_product(q_rows, source->head_dim, &q_rows) ||
+        !checked_positive_product(kv_rows, source->head_dim, &kv_rows)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileGlimmerAttentionTrainingDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_masked_ce_descriptor(
+    const NfnNativeTileGlimmerMaskedCeDescriptorV1* source,
+    NfnNativeTileGlimmerMaskedCeDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileGlimmerMaskedCeDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->reserved2 != 0 || source->transformed_logits == nullptr ||
+        source->targets == nullptr || source->row_loss == nullptr ||
+        source->rows <= 0 || source->vocab_size <= 0 ||
+        source->vocab_size > std::numeric_limits<std::int32_t>::max() ||
+        !std::isfinite(source->grad_scale) || source->grad_scale < 0.0f) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileGlimmerMaskedCeDescriptorV1);
+    return true;
+}
+
+bool normalize_sequence_logp_descriptor(
+    const NfnNativeTileSequenceLogpDescriptorV1* source,
+    NfnNativeTileSequenceLogpDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileSequenceLogpDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->transformed_logits == nullptr || source->targets == nullptr ||
+        source->loss_mask == nullptr || source->batch_size <= 0 ||
+        source->sequence_length <= 0 || source->vocab_size <= 0 ||
+        source->vocab_size > std::numeric_limits<std::int32_t>::max() ||
+        (!backward && source->sequence_logp == nullptr) ||
+        (backward &&
+         (source->grad_sequence_logp == nullptr ||
+          source->grad_transformed_logits == nullptr))) {
+        return false;
+    }
+    std::int64_t rows = 0;
+    std::int64_t values = 0;
+    if (!checked_positive_product(
+            source->batch_size, source->sequence_length, &rows) ||
+        !checked_positive_product(rows, source->vocab_size, &values)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileSequenceLogpDescriptorV1);
+    return true;
+}
+
+bool normalize_dpo_pairwise_descriptor(
+    const NfnNativeTileDpoPairwiseDescriptorV1* source,
+    NfnNativeTileDpoPairwiseDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileDpoPairwiseDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->loss_type > NFN_NATIVE_TILE_DPO_LOSS_IPO || source->flags != 0 ||
+        source->reserved0 != 0 || source->policy_logp_chosen == nullptr ||
+        source->policy_logp_rejected == nullptr ||
+        source->reference_logp_chosen == nullptr ||
+        source->reference_logp_rejected == nullptr || source->examples <= 0 ||
+        !std::isfinite(source->beta) || !(source->beta > 0.0f) ||
+        !std::isfinite(source->label_smoothing) ||
+        source->label_smoothing < 0.0f || source->label_smoothing > 1.0f ||
+        !std::isfinite(source->grad_scale) || source->grad_scale < 0.0f ||
+        (!backward &&
+         (source->row_loss == nullptr || source->chosen_reward == nullptr ||
+          source->rejected_reward == nullptr)) ||
+        (backward &&
+         (source->grad_policy_logp_chosen == nullptr ||
+          source->grad_policy_logp_rejected == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileDpoPairwiseDescriptorV1);
+    return true;
+}
+
+bool normalize_masked_reward_head_descriptor(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* source,
+    NfnNativeTileMaskedRewardHeadDescriptorV1* output,
+    bool backward) {
+    NfnNativeTilePackedWeightDescriptorV1 weight{};
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileMaskedRewardHeadDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->hidden == nullptr ||
+        source->sequence_mask == nullptr || source->weight == nullptr ||
+        source->batch_size <= 0 || source->sequence_length <= 0 ||
+        source->hidden_size <= 0 ||
+        !normalize_packed_weight_descriptor(source->weight, &weight) ||
+        weight.encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_BF16 ||
+        weight.output_dim != 1 || weight.input_dim != source->hidden_size ||
+        (!backward &&
+         (source->reward == nullptr || source->selected_positions == nullptr)) ||
+        (backward &&
+         (source->selected_positions == nullptr || source->grad_reward == nullptr ||
+          source->grad_hidden == nullptr || source->grad_weight == nullptr))) {
+        return false;
+    }
+    std::int64_t rows = 0;
+    std::int64_t elements = 0;
+    if (!checked_positive_product(
+            source->batch_size, source->sequence_length, &rows) ||
+        !checked_positive_product(rows, source->hidden_size, &elements)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileMaskedRewardHeadDescriptorV1);
+    return true;
+}
+
+bool normalize_preference_bce_descriptor(
+    const NfnNativeTilePreferenceBceDescriptorV1* source,
+    NfnNativeTilePreferenceBceDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTilePreferenceBceDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->reward_chosen == nullptr || source->reward_rejected == nullptr ||
+        source->examples <= 0 || !std::isfinite(source->grad_scale) ||
+        source->grad_scale < 0.0f || (!backward && source->row_loss == nullptr) ||
+        (backward &&
+         (source->grad_reward_chosen == nullptr ||
+          source->grad_reward_rejected == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTilePreferenceBceDescriptorV1);
+    return true;
+}
+
+bool normalize_token_logp_entropy_descriptor(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* source,
+    NfnNativeTileTokenLogpEntropyDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileTokenLogpEntropyDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->transformed_logits == nullptr || source->targets == nullptr ||
+        source->loss_mask == nullptr || source->rows <= 0 ||
+        source->vocab_size <= 0 ||
+        source->vocab_size > std::numeric_limits<std::int32_t>::max() ||
+        (!backward &&
+         (source->token_logp == nullptr || source->token_entropy == nullptr)) ||
+        (backward &&
+         (source->grad_token_logp == nullptr ||
+          source->grad_token_entropy == nullptr ||
+          source->grad_transformed_logits == nullptr))) {
+        return false;
+    }
+    std::int64_t values = 0;
+    if (!checked_positive_product(source->rows, source->vocab_size, &values)) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileTokenLogpEntropyDescriptorV1);
+    return true;
+}
+
+bool normalize_masked_ppo_loss_descriptor(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* source,
+    NfnNativeTileMaskedPpoLossDescriptorV1* output,
+    bool backward) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileMaskedPpoLossDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        (source->flags & ~NFN_NATIVE_TILE_PPO_NORMALIZE_ADVANTAGES) != 0 ||
+        source->reserved0 != 0 || source->logp_new == nullptr ||
+        source->logp_old == nullptr || source->advantages == nullptr ||
+        source->value_new == nullptr || source->value_old == nullptr ||
+        source->returns == nullptr || source->loss_mask == nullptr ||
+        source->entropy == nullptr || source->rows <= 0 ||
+        !std::isfinite(source->clip_range) || !(source->clip_range > 0.0f) ||
+        source->clip_range >= 1.0f ||
+        !std::isfinite(source->value_coefficient) ||
+        source->value_coefficient < 0.0f ||
+        !std::isfinite(source->entropy_coefficient) ||
+        source->entropy_coefficient < 0.0f ||
+        !std::isfinite(source->epsilon) || !(source->epsilon > 0.0f) ||
+        (!backward &&
+         (source->policy_loss == nullptr || source->value_loss == nullptr ||
+          source->entropy_bonus == nullptr || source->total_loss == nullptr)) ||
+        (backward &&
+         (source->grad_logp_new == nullptr ||
+          source->grad_value_new == nullptr ||
+          source->grad_entropy == nullptr))) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileMaskedPpoLossDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_gqa_decode_descriptor(
+    const NfnNativeTileGlimmerGqaDecodeDescriptorV1* source,
+    NfnNativeTileGlimmerGqaDecodeDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileGlimmerGqaDecodeDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->query == nullptr || source->current_key == nullptr ||
+        source->current_value == nullptr || source->key_cache_bf16 == nullptr ||
+        source->value_cache_bf16 == nullptr || source->output == nullptr ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->head_dim <= 0 || source->head_dim > 256 ||
+        source->position < 0 || source->first_key_position < 0 ||
+        source->first_key_position > source->position ||
+        source->cache_capacity <= 0 || source->cache_row_stride <= 0 ||
+        !std::isfinite(source->scale) || !(source->scale > 0.0f)) {
+        return false;
+    }
+    std::int64_t kv_width = 0;
+    if (!checked_positive_product(source->kv_heads, source->head_dim, &kv_width) ||
+        source->cache_row_stride < kv_width) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileGlimmerGqaDecodeDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_fused_decode_attention_descriptor(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* source,
+    NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size <
+            sizeof(NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 ||
+        source->flags != 0 || source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->query == nullptr || source->key == nullptr ||
+        source->current_value == nullptr || source->key_cache_bf16 == nullptr ||
+        source->value_cache_bf16 == nullptr || source->output == nullptr ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->kv_heads > source->query_heads || source->query_heads > 256 ||
+        source->head_dim <= 0 || source->head_dim > 256 ||
+        source->head_dim % 2 != 0 || source->position < 0 ||
+        source->first_key_position < 0 ||
+        source->first_key_position > source->position ||
+        source->cache_capacity <= 0 || source->cache_row_stride <= 0 ||
+        !std::isfinite(source->norm_eps) || !(source->norm_eps > 0.0f) ||
+        !std::isfinite(source->query_scale) || !(source->query_scale > 0.0f) ||
+        !std::isfinite(source->rope_theta) || !(source->rope_theta > 0.0f) ||
+        !std::isfinite(source->attention_scale) ||
+        !(source->attention_scale > 0.0f) ||
+        (source->rope_layout != NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT &&
+         source->rope_layout != NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED) ||
+        source->has_query_norm_weight > 1 ||
+        source->has_key_norm_weight > 1 ||
+        source->query_norm_centered > 1 || source->key_norm_centered > 1 ||
+        source->apply_rope > 1) {
+        return false;
+    }
+    std::int64_t kv_width = 0;
+    if (!checked_positive_product(source->kv_heads, source->head_dim, &kv_width) ||
+        source->cache_row_stride < kv_width) {
+        return false;
+    }
+    *output = *source;
+    if (source->has_query_norm_weight != 0) {
+        if (!normalize_packed_weight_descriptor(
+                &source->query_norm_weight, &output->query_norm_weight) ||
+            output->query_norm_weight.output_dim != 1 ||
+            output->query_norm_weight.input_dim != source->head_dim) {
+            return false;
+        }
+    } else {
+        output->query_norm_weight = {};
+        output->query_norm_weight.struct_size =
+            sizeof(NfnNativeTilePackedWeightDescriptorV1);
+        output->query_norm_weight.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    if (source->has_key_norm_weight != 0) {
+        if (!normalize_packed_weight_descriptor(
+                &source->key_norm_weight, &output->key_norm_weight) ||
+            output->key_norm_weight.output_dim != 1 ||
+            output->key_norm_weight.input_dim != source->head_dim) {
+            return false;
+        }
+    } else {
+        output->key_norm_weight = {};
+        output->key_norm_weight.struct_size =
+            sizeof(NfnNativeTilePackedWeightDescriptorV1);
+        output->key_norm_weight.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    output->struct_size =
+        sizeof(NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_cache_commit_descriptor(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1* source,
+    NfnNativeTileGlimmerCacheCommitDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileGlimmerCacheCommitDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 ||
+        source->flags != 0 || source->reserved0 != 0 ||
+        source->reserved1 != 0 || source->reserved2 != 0 ||
+        source->current_key == nullptr || source->current_value == nullptr ||
+        source->key_cache_bf16 == nullptr || source->value_cache_bf16 == nullptr ||
+        source->kv_heads <= 0 || source->head_dim <= 0 || source->head_dim > 256 ||
+        source->position < 0 || source->cache_capacity <= 0 ||
+        source->cache_row_stride <= 0) {
+        return false;
+    }
+    std::int64_t kv_width = 0;
+    if (!checked_positive_product(source->kv_heads, source->head_dim, &kv_width) ||
+        source->cache_row_stride < kv_width) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileGlimmerCacheCommitDescriptorV1);
+    return true;
+}
+
+bool normalize_glimmer_cache_commit_layers_descriptor(
+    const NfnNativeTileGlimmerCacheCommitLayersDescriptorV1* source,
+    NfnNativeTileGlimmerCacheCommitLayersDescriptorV1* output) {
+    constexpr std::int64_t kMaxCacheLayers = 64;
+    if (source == nullptr || output == nullptr ||
+        source->struct_size <
+            sizeof(NfnNativeTileGlimmerCacheCommitLayersDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 ||
+        source->flags != 0 || source->reserved0 != 0 ||
+        source->reserved1 != 0 || source->reserved2 != 0 ||
+        source->staged_keys == nullptr || source->staged_values == nullptr ||
+        source->layers == nullptr || source->layer_count <= 0 ||
+        source->layer_count > kMaxCacheLayers || source->source_rows <= 0 ||
+        source->source_rows > 64 || source->rows <= 0 ||
+        source->rows > source->source_rows || source->kv_heads <= 0 ||
+        source->head_dim <= 0 || source->head_dim > 256 ||
+        source->position < 0 || source->source_layer_stride <= 0 ||
+        source->position >
+            std::numeric_limits<std::int64_t>::max() - source->rows) {
+        return false;
+    }
+    std::int64_t kv_width = 0;
+    std::int64_t minimum_layer_stride = 0;
+    if (!checked_positive_product(source->kv_heads, source->head_dim, &kv_width) ||
+        !checked_positive_product(source->source_rows, kv_width,
+                                  &minimum_layer_stride) ||
+        source->source_layer_stride < minimum_layer_stride) {
+        return false;
+    }
+    for (std::int64_t index = 0; index < source->layer_count; ++index) {
+        const NfnNativeTileGlimmerCacheLayerV1& layer = source->layers[index];
+        if (layer.key_cache_bf16 == nullptr ||
+            layer.value_cache_bf16 == nullptr || layer.cache_capacity <= 0 ||
+            layer.cache_row_stride < kv_width) {
+            return false;
+        }
+    }
+    *output = *source;
+    output->struct_size =
+        sizeof(NfnNativeTileGlimmerCacheCommitLayersDescriptorV1);
+    return true;
+}
+
+bool normalize_dflash_block_attention_descriptor(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* source,
+    NfnNativeTileDFlashBlockAttentionDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileDFlashBlockAttentionDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 ||
+        (source->flags & ~NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL) != 0 ||
+        source->reserved0 != 0 || source->reserved1 != 0 ||
+        source->query == nullptr || source->block_key == nullptr ||
+        source->block_value == nullptr || source->key_cache_bf16 == nullptr ||
+        source->value_cache_bf16 == nullptr || source->output == nullptr ||
+        source->query_rows <= 0 || source->block_rows <= 0 ||
+        source->query_rows > source->block_rows || source->block_rows > 64 ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->head_dim <= 0 || source->head_dim > 256 ||
+        source->context_length < 0 || source->sliding_window <= 0 ||
+        source->cache_capacity < source->sliding_window ||
+        source->cache_row_stride <= 0 || !std::isfinite(source->scale) ||
+        !(source->scale > 0.0f)) {
+        return false;
+    }
+    std::int64_t kv_width = 0;
+    if (!checked_positive_product(source->kv_heads, source->head_dim, &kv_width) ||
+        source->cache_row_stride < kv_width) {
+        return false;
+    }
+    *output = *source;
+    output->struct_size = sizeof(NfnNativeTileDFlashBlockAttentionDescriptorV1);
+    return true;
+}
+
+bool normalize_turboquant_attention_descriptor(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1* source,
+    NfnNativeTileTurboQuantAttentionDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileTurboQuantAttentionDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_TURBOQUANT_ATTENTION_V1 ||
+        source->flags != 0 || source->reserved0 != 0 ||
+        (source->profile != NFN_NATIVE_TILE_TURBOQUANT_PROFILE_MSE_3_5 &&
+         source->profile != NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5) ||
+        source->query == nullptr || source->key_records == nullptr ||
+        source->value_records == nullptr || source->current_key == nullptr ||
+        source->current_value == nullptr || source->output == nullptr ||
+        source->rotation == nullptr || source->centroids_2bit == nullptr ||
+        source->centroids_3bit == nullptr || source->centroids_4bit == nullptr ||
+        (source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5 &&
+         source->qjl_projection == nullptr) ||
+        source->batch_size <= 0 || source->num_layers <= 0 ||
+        source->layer_index < 0 || source->layer_index >= source->num_layers ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->head_dim < 2 ||
+        source->head_dim > kTurboQuantAttentionMaxHeadDimension ||
+        source->head_dim % 2 != 0 || source->past_sequence_length < 0 ||
+        source->past_sequence_length >= kTurboQuantAttentionMaxSequenceLength ||
+        source->cache_capacity <= 0 ||
+        source->past_sequence_length > source->cache_capacity ||
+        !std::isfinite(source->scale) || !(source->scale > 0.0f)) {
+        return false;
+    }
+
+    const std::int64_t pairs = source->head_dim / 2;
+    const std::int64_t value_index_bytes = (pairs * 7 + 7) / 8;
+    const std::int64_t key_index_bytes =
+        source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5
+        ? (pairs * 5 + 7) / 8
+        : value_index_bytes;
+    const std::int64_t sign_bytes = (source->head_dim + 7) / 8;
+    const std::int64_t expected_key_record_bytes =
+        4 + key_index_bytes +
+        (source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5
+             ? 4 + sign_bytes
+             : 0);
+    const std::int64_t expected_value_record_bytes = 4 + value_index_bytes;
+    if (source->key_record_bytes != expected_key_record_bytes ||
+        source->value_record_bytes != expected_value_record_bytes) {
+        return false;
+    }
+
+    std::int64_t cache_records_per_batch = 0;
+    std::int64_t cache_positions_per_batch = 0;
+    std::int64_t minimum_key_batch_stride = 0;
+    std::int64_t minimum_value_batch_stride = 0;
+    std::int64_t query_elements_per_batch = 0;
+    std::int64_t kv_elements_per_batch = 0;
+    std::int64_t launch_blocks = 0;
+    if (!checked_positive_product(
+            source->num_layers, source->cache_capacity,
+            &cache_positions_per_batch) ||
+        !checked_positive_product(
+            cache_positions_per_batch, source->kv_heads,
+            &cache_records_per_batch) ||
+        !checked_positive_product(
+            cache_records_per_batch, expected_key_record_bytes,
+            &minimum_key_batch_stride) ||
+        !checked_positive_product(
+            cache_records_per_batch, expected_value_record_bytes,
+            &minimum_value_batch_stride) ||
+        !checked_positive_product(
+            source->query_heads, source->head_dim,
+            &query_elements_per_batch) ||
+        !checked_positive_product(
+            source->kv_heads, source->head_dim,
+            &kv_elements_per_batch) ||
+        !checked_positive_product(
+            source->batch_size, source->query_heads, &launch_blocks) ||
+        launch_blocks > static_cast<std::int64_t>(
+            std::numeric_limits<unsigned int>::max())) {
+        return false;
+    }
+
+    *output = *source;
+    auto normalize_stride = [](std::int64_t supplied, std::int64_t minimum,
+                               std::int64_t* target) {
+        if (target == nullptr || supplied < 0 || (supplied != 0 && supplied < minimum)) {
+            return false;
+        }
+        *target = supplied == 0 ? minimum : supplied;
+        return true;
+    };
+    const bool strides_valid = normalize_stride(
+               source->key_cache_batch_stride_bytes,
+               minimum_key_batch_stride,
+               &output->key_cache_batch_stride_bytes) &&
+        normalize_stride(
+               source->value_cache_batch_stride_bytes,
+               minimum_value_batch_stride,
+               &output->value_cache_batch_stride_bytes) &&
+        normalize_stride(
+               source->query_batch_stride,
+               query_elements_per_batch,
+               &output->query_batch_stride) &&
+        normalize_stride(
+               source->current_key_batch_stride,
+               kv_elements_per_batch,
+               &output->current_key_batch_stride) &&
+        normalize_stride(
+               source->current_value_batch_stride,
+               kv_elements_per_batch,
+               &output->current_value_batch_stride) &&
+        normalize_stride(
+               source->output_batch_stride,
+               query_elements_per_batch,
+               &output->output_batch_stride);
+    if (!strides_valid) {
+        return false;
+    }
+    auto batch_span_fits = [source](std::int64_t stride, std::int64_t span) {
+        const std::int64_t remaining_batches = source->batch_size - 1;
+        return remaining_batches == 0 ||
+            (stride <= (std::numeric_limits<std::int64_t>::max() - span) /
+                 remaining_batches);
+    };
+    return batch_span_fits(
+               output->key_cache_batch_stride_bytes,
+               minimum_key_batch_stride) &&
+        batch_span_fits(
+               output->value_cache_batch_stride_bytes,
+               minimum_value_batch_stride) &&
+        batch_span_fits(output->query_batch_stride, query_elements_per_batch) &&
+        batch_span_fits(
+               output->current_key_batch_stride, kv_elements_per_batch) &&
+        batch_span_fits(
+               output->current_value_batch_stride, kv_elements_per_batch) &&
+        batch_span_fits(output->output_batch_stride, query_elements_per_batch);
+}
 
 bool env_flag_enabled(const char* name) {
     const char* value = std::getenv(name);
@@ -3478,6 +4526,1172 @@ int nfn_native_tile_strict_math_abi_version() {
 #else
     return 0;
 #endif
+}
+
+int nfn_native_tile_turboquant_attention_abi_version() {
+    return NFN_NATIVE_TILE_TURBOQUANT_ATTENTION_V1;
+}
+
+int nfn_native_tile_packed_weight_abi_version() {
+    return NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+}
+
+int nfn_native_tile_glimmer_inference_abi_version() {
+    return NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1;
+}
+
+int nfn_native_tile_glimmer_vision_abi_version() {
+    return NFN_NATIVE_TILE_GLIMMER_VISION_V1;
+}
+
+int nfn_native_tile_glimmer_training_abi_version() {
+    return NFN_NATIVE_TILE_GLIMMER_TRAINING_V1;
+}
+
+int nfn_native_tile_packed_weight_validate_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    return normalize_packed_weight_descriptor(descriptor, &normalized)
+        ? static_cast<int>(cudaSuccess)
+        : static_cast<int>(cudaErrorInvalidValue);
+}
+
+int nfn_native_tile_packed_weight_dequantize_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    float* output) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) || output == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_packed_weight_dequantize_float32_v1(
+        normalized, output, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const float* input,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        input == nullptr || output == nullptr || rows <= 0 ||
+        (has_bias && bias == nullptr)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_linear_packed_weight_float32_v1(
+        normalized,
+        input,
+        bias,
+        output,
+        rows,
+        has_bias,
+        as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_quantize_q8_1_float32_v1(
+    const float* input,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    void* cuda_stream) {
+    if (input == nullptr || q8_values == nullptr || q8_scales == nullptr ||
+        q8_sums == nullptr || rows <= 0 || width <= 0 || width % 32 != 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_quantize_q8_1_float32_v1(
+        input, q8_values, q8_scales, q8_sums, rows, width,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_packed_weight_q8_1_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        q8_values == nullptr || q8_scales == nullptr || q8_sums == nullptr ||
+        output == nullptr || rows <= 0 || (has_bias && bias == nullptr) ||
+        normalized.input_dim % 256 != 0 ||
+        (normalized.encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K &&
+         normalized.encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K &&
+         normalized.encoding != NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_linear_packed_weight_q8_1_float32_v1(
+        normalized, q8_values, q8_scales, q8_sums, bias, output, rows,
+        has_bias, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_packed_weight_q8_1_multi_decode_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor0,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor1,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor2,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor3,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    float* output0,
+    float* output1,
+    float* output2,
+    float* output3,
+    std::int64_t projection_count,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized0{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized1{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized2{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized3{};
+    const auto valid_encoding = [](const NfnNativeTilePackedWeightDescriptorV1& value) {
+        return value.input_dim % 256 == 0 &&
+            (value.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K ||
+             value.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K ||
+             value.encoding == NFN_NATIVE_TILE_PACKED_WEIGHT_Q6_K);
+    };
+    if (projection_count < 2 || projection_count > 4 || q8_values == nullptr ||
+        q8_scales == nullptr || q8_sums == nullptr || descriptor0 == nullptr ||
+        descriptor1 == nullptr || output0 == nullptr || output1 == nullptr ||
+        !normalize_packed_weight_descriptor(descriptor0, &normalized0) ||
+        !normalize_packed_weight_descriptor(descriptor1, &normalized1) ||
+        !valid_encoding(normalized0) || !valid_encoding(normalized1) ||
+        normalized1.input_dim != normalized0.input_dim) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (projection_count >= 3) {
+        if (descriptor2 == nullptr || output2 == nullptr ||
+            !normalize_packed_weight_descriptor(descriptor2, &normalized2) ||
+            !valid_encoding(normalized2) ||
+            normalized2.input_dim != normalized0.input_dim) {
+            return static_cast<int>(cudaErrorInvalidValue);
+        }
+    } else if (descriptor2 != nullptr || output2 != nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (projection_count >= 4) {
+        if (descriptor3 == nullptr || output3 == nullptr ||
+            !normalize_packed_weight_descriptor(descriptor3, &normalized3) ||
+            !valid_encoding(normalized3) ||
+            normalized3.input_dim != normalized0.input_dim) {
+            return static_cast<int>(cudaErrorInvalidValue);
+        }
+    } else if (descriptor3 != nullptr || output3 != nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_linear_packed_weight_q8_1_multi_decode_float32_v1(
+        normalized0, normalized1, normalized2, normalized3,
+        q8_values, q8_scales, q8_sums, output0, output1, output2, output3,
+        projection_count, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_argmax_rows_float32_v1(
+    const float* values,
+    std::int64_t* output_indices,
+    float* output_values,
+    std::int64_t rows,
+    std::int64_t width,
+    void* cuda_stream) {
+    if (values == nullptr || output_indices == nullptr || output_values == nullptr ||
+        rows <= 0 || width <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_argmax_rows_float32_v1(
+        values, output_indices, output_values, rows, width,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_input_packed_weight_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t rows) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        grad_output == nullptr || grad_input == nullptr || rows <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_linear_backward_input_packed_weight_float32_v1(
+        normalized,
+        grad_output,
+        grad_input,
+        rows,
+        as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_embedding_gather_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    std::int64_t token_id,
+    float* output) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        token_id < 0 || token_id >= normalized.output_dim || output == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_embedding_gather_float32_v1(
+        normalized, token_id, output, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_embedding_gather_device_i64_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int64_t* token_id,
+    float* output) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        token_id == nullptr || output == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_embedding_gather_device_i64_float32_v1(
+        normalized, token_id, output, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_embedding_batch_i32_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int32_t* token_ids,
+    float* output,
+    std::int64_t rows) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    if (!normalize_packed_weight_descriptor(descriptor, &normalized) ||
+        token_ids == nullptr || output == nullptr || rows <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_embedding_batch_i32_float32_v1(
+        normalized, token_ids, output, rows, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    const bool has_weight = weight != nullptr;
+    if (input == nullptr || output == nullptr || rows <= 0 || width <= 0 ||
+        width > 65536 || !std::isfinite(eps) || !(eps > 0.0f) ||
+        (has_weight &&
+         (!normalize_packed_weight_descriptor(weight, &normalized) ||
+          normalized.output_dim != 1 || normalized.input_dim != width))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_weight) {
+        normalized.struct_size = sizeof(normalized);
+        normalized.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_rms_norm_affine_float32_v1(
+        input, normalized, has_weight, output, rows, width, eps, centered,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_rms_norm_affine_capture_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    const bool has_weight = weight != nullptr;
+    if (input == nullptr || output == nullptr || residual_output == nullptr ||
+        rows <= 0 || width <= 0 || width > 65536 || !std::isfinite(eps) ||
+        !(eps > 0.0f) ||
+        (has_weight &&
+         (!normalize_packed_weight_descriptor(weight, &normalized) ||
+          normalized.output_dim != 1 || normalized.input_dim != width))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_weight) {
+        normalized.struct_size = sizeof(normalized);
+        normalized.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_rms_norm_affine_capture_residual_float32_v1(
+        input, normalized, has_weight, output, residual_output, rows, width,
+        eps, centered, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_rms_norm_affine_capture_residual_q8_1_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    float* residual_output,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    const bool has_weight = weight != nullptr;
+    if (input == nullptr || output == nullptr || residual_output == nullptr ||
+        q8_values == nullptr || q8_scales == nullptr || q8_sums == nullptr ||
+        rows <= 0 || width <= 0 || width > 65536 || width % 32 != 0 ||
+        !std::isfinite(eps) || !(eps > 0.0f) ||
+        (has_weight &&
+         (!normalize_packed_weight_descriptor(weight, &normalized) ||
+          normalized.output_dim != 1 || normalized.input_dim != width))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_weight) {
+        normalized.struct_size = sizeof(normalized);
+        normalized.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::
+        launch_glimmer_rms_norm_affine_capture_residual_q8_1_float32_v1(
+            input, normalized, has_weight, output, residual_output, q8_values,
+            q8_scales, q8_sums, rows, width, eps, centered,
+            as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_rms_norm_affine_add_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    const float* residual_input,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized{};
+    const bool has_weight = weight != nullptr;
+    if (input == nullptr || residual_input == nullptr || output == nullptr ||
+        rows <= 0 || width <= 0 || width > 65536 || !std::isfinite(eps) ||
+        !(eps > 0.0f) ||
+        (has_weight &&
+         (!normalize_packed_weight_descriptor(weight, &normalized) ||
+          normalized.output_dim != 1 || normalized.input_dim != width))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_weight) {
+        normalized.struct_size = sizeof(normalized);
+        normalized.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_rms_norm_affine_add_residual_float32_v1(
+        input, normalized, has_weight, residual_input, output, rows, width,
+        eps, centered, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_dual_rms_add_capture_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1* second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized_first{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized_second{};
+    const bool has_first_weight = first_weight != nullptr;
+    const bool has_second_weight = second_weight != nullptr;
+    const auto valid_weight = [&](
+        const NfnNativeTilePackedWeightDescriptorV1* source,
+        NfnNativeTilePackedWeightDescriptorV1* target) {
+        return source == nullptr ||
+            (normalize_packed_weight_descriptor(source, target) &&
+             target->output_dim == 1 && target->input_dim == width);
+    };
+    if (input == nullptr || residual_input == nullptr || hidden_output == nullptr ||
+        normalized_output == nullptr || residual_output == nullptr || rows <= 0 ||
+        width <= 0 || width > 65536 || !std::isfinite(first_eps) ||
+        !(first_eps > 0.0f) || !std::isfinite(second_eps) ||
+        !(second_eps > 0.0f) ||
+        !valid_weight(first_weight, &normalized_first) ||
+        !valid_weight(second_weight, &normalized_second)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_first_weight) {
+        normalized_first.struct_size = sizeof(normalized_first);
+        normalized_first.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    if (!has_second_weight) {
+        normalized_second.struct_size = sizeof(normalized_second);
+        normalized_second.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_dual_rms_add_capture_float32_v1(
+        input, normalized_first, has_first_weight, residual_input, hidden_output,
+        normalized_second, has_second_weight, normalized_output, residual_output,
+        rows, width, first_eps, first_centered, second_eps, second_centered,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1* second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* mmvq_workspace,
+    std::int64_t mmvq_workspace_nbytes,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized_first{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized_second{};
+    const bool has_first_weight = first_weight != nullptr;
+    const bool has_second_weight = second_weight != nullptr;
+    const auto valid_weight = [&](
+        const NfnNativeTilePackedWeightDescriptorV1* source,
+        NfnNativeTilePackedWeightDescriptorV1* target) {
+        return source == nullptr ||
+            (normalize_packed_weight_descriptor(source, target) &&
+             target->output_dim == 1 && target->input_dim == width);
+    };
+    constexpr std::int64_t q8_block_bytes = 36;
+    const std::int64_t required_q8_bytes = width > 0 && width % 32 == 0
+        ? (width / 32) * q8_block_bytes
+        : 0;
+    if (input == nullptr || residual_input == nullptr || hidden_output == nullptr ||
+        normalized_output == nullptr || residual_output == nullptr ||
+        mmvq_workspace == nullptr || rows != 1 || width <= 0 || width > 65536 ||
+        width % 32 != 0 || required_q8_bytes <= 0 ||
+        mmvq_workspace_nbytes < required_q8_bytes ||
+        !std::isfinite(first_eps) || !(first_eps > 0.0f) ||
+        !std::isfinite(second_eps) || !(second_eps > 0.0f) ||
+        !valid_weight(first_weight, &normalized_first) ||
+        !valid_weight(second_weight, &normalized_second)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_first_weight) {
+        normalized_first.struct_size = sizeof(normalized_first);
+        normalized_first.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    if (!has_second_weight) {
+        normalized_second.struct_size = sizeof(normalized_second);
+        normalized_second.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::
+        launch_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1(
+            input, normalized_first, has_first_weight, residual_input,
+            hidden_output, normalized_second, has_second_weight,
+            normalized_output, residual_output, width, first_eps,
+            first_centered, second_eps, second_centered, mmvq_workspace,
+            as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_positioned_rope_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    void* cuda_stream) {
+    if (query == nullptr || key == nullptr || query_heads <= 0 || kv_heads <= 0 ||
+        query_heads % kv_heads != 0 || head_dim <= 0 || head_dim > 256 ||
+        head_dim % 2 != 0 || position < 0 || !std::isfinite(theta) ||
+        !(theta > 0.0f) ||
+        (layout != NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT &&
+         layout != NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_positioned_rope_float32_v1(
+        query, key, query_heads, kv_heads, head_dim, position, theta, layout,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_qk_norm_scale_rope_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1* query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1* key_norm_weight,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized_query{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized_key{};
+    const bool has_query_weight = query_norm_weight != nullptr;
+    const bool has_key_weight = key_norm_weight != nullptr;
+    if (query == nullptr || key == nullptr || query_heads <= 0 || kv_heads <= 0 ||
+        query_heads % kv_heads != 0 || head_dim <= 0 || head_dim > 256 ||
+        head_dim % 2 != 0 || !std::isfinite(eps) || !(eps > 0.0f) ||
+        !std::isfinite(query_scale) || !(query_scale > 0.0f) || position < 0 ||
+        !std::isfinite(theta) || !(theta > 0.0f) ||
+        (layout != NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT &&
+         layout != NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED) ||
+        (has_query_weight &&
+         (!normalize_packed_weight_descriptor(
+              query_norm_weight, &normalized_query) ||
+          normalized_query.output_dim != 1 ||
+          normalized_query.input_dim != head_dim)) ||
+        (has_key_weight &&
+         (!normalize_packed_weight_descriptor(key_norm_weight, &normalized_key) ||
+          normalized_key.output_dim != 1 ||
+          normalized_key.input_dim != head_dim))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_query_weight) {
+        normalized_query.struct_size = sizeof(normalized_query);
+        normalized_query.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    if (!has_key_weight) {
+        normalized_key.struct_size = sizeof(normalized_key);
+        normalized_key.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_qk_norm_scale_rope_float32_v1(
+        query, key, normalized_query, normalized_key, has_query_weight,
+        has_key_weight, query_heads, kv_heads, head_dim, eps,
+        query_norm_centered, key_norm_centered, query_scale, position, theta,
+        layout, apply_rope, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_qk_norm_scale_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1* query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1* key_norm_weight,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    void* cuda_stream) {
+    NfnNativeTilePackedWeightDescriptorV1 normalized_query{};
+    NfnNativeTilePackedWeightDescriptorV1 normalized_key{};
+    const bool has_query_weight = query_norm_weight != nullptr;
+    const bool has_key_weight = key_norm_weight != nullptr;
+    if (query == nullptr || key == nullptr || rows <= 0 || rows > 64 ||
+        query_heads <= 0 || kv_heads <= 0 || query_heads % kv_heads != 0 ||
+        head_dim <= 0 || head_dim > 256 || head_dim % 2 != 0 ||
+        !std::isfinite(eps) || !(eps > 0.0f) ||
+        !std::isfinite(query_scale) || !(query_scale > 0.0f) ||
+        position < 0 || position > std::numeric_limits<std::int64_t>::max() - rows ||
+        !std::isfinite(theta) || !(theta > 0.0f) ||
+        (layout != NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT &&
+         layout != NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED) ||
+        (has_query_weight &&
+         (!normalize_packed_weight_descriptor(
+              query_norm_weight, &normalized_query) ||
+          normalized_query.output_dim != 1 ||
+          normalized_query.input_dim != head_dim)) ||
+        (has_key_weight &&
+         (!normalize_packed_weight_descriptor(key_norm_weight, &normalized_key) ||
+          normalized_key.output_dim != 1 ||
+          normalized_key.input_dim != head_dim))) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_query_weight) {
+        normalized_query.struct_size = sizeof(normalized_query);
+        normalized_query.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    if (!has_key_weight) {
+        normalized_key.struct_size = sizeof(normalized_key);
+        normalized_key.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    neuralfn::tile_cuda::launch_glimmer_qk_norm_scale_rope_batch_float32_v1(
+        query, key, normalized_query, normalized_key, has_query_weight,
+        has_key_weight, rows, query_heads, kv_heads, head_dim, eps,
+        query_norm_centered, key_norm_centered, query_scale, position, theta,
+        layout, apply_rope, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_gqa_decode_float32_v1(
+    const NfnNativeTileGlimmerGqaDecodeDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerGqaDecodeDescriptorV1 normalized{};
+    if (!normalize_glimmer_gqa_decode_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_gqa_decode_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_fused_decode_attention_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1 normalized{};
+    if (!normalize_glimmer_fused_decode_attention_descriptor(
+            descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_fused_decode_attention_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_fused_decode_attention_device_position_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* descriptor,
+    const std::int64_t* device_position,
+    std::int64_t sliding_window) {
+    NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1 normalized{};
+    if (!normalize_glimmer_fused_decode_attention_descriptor(
+            descriptor, &normalized) ||
+        device_position == nullptr || sliding_window <= 0 ||
+        sliding_window > normalized.cache_capacity) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::
+        launch_glimmer_fused_decode_attention_device_position_float32_v1(
+            normalized, device_position, sliding_window,
+            as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_cache_commit_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerCacheCommitDescriptorV1 normalized{};
+    if (!normalize_glimmer_cache_commit_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_cache_commit_bf16_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_cache_commit_rows_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor,
+    std::int64_t rows) {
+    NfnNativeTileGlimmerCacheCommitDescriptorV1 normalized{};
+    if (!normalize_glimmer_cache_commit_descriptor(descriptor, &normalized) ||
+        rows <= 0 || rows > 64 ||
+        normalized.position > std::numeric_limits<std::int64_t>::max() - rows) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_cache_commit_rows_bf16_v1(
+        normalized, rows, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_cache_commit_layers_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitLayersDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerCacheCommitLayersDescriptorV1 normalized{};
+    if (!normalize_glimmer_cache_commit_layers_descriptor(
+            descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_cache_commit_layers_bf16_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_pack_target_taps_float32_v1(
+    const float* tap_major,
+    float* row_major,
+    std::int64_t source_rows,
+    std::int64_t source_row_offset,
+    std::int64_t rows,
+    std::int64_t tap_count,
+    std::int64_t hidden_width,
+    void* cuda_stream) {
+    if (tap_major == nullptr || row_major == nullptr || source_rows <= 0 ||
+        source_rows > 64 || source_row_offset < 0 || rows <= 0 || rows > 64 ||
+        source_row_offset + rows > source_rows || tap_count <= 0 ||
+        tap_count > 64 || hidden_width <= 0 || hidden_width > 65536) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_pack_target_taps_float32_v1(
+        tap_major, row_major, source_rows, source_row_offset, rows, tap_count,
+        hidden_width, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dflash_block_attention_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor) {
+    NfnNativeTileDFlashBlockAttentionDescriptorV1 normalized{};
+    if (!normalize_dflash_block_attention_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_dflash_block_attention_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_prepare_float32_v1(
+    const NfnNativeTileGlimmerVisionPrepareDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->projected == nullptr || descriptor->position_table == nullptr ||
+        descriptor->corner_indices == nullptr || descriptor->corner_weights == nullptr ||
+        descriptor->permutation == nullptr || descriptor->output == nullptr ||
+        descriptor->rows <= 0 || descriptor->width <= 0 ||
+        descriptor->position_rows <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_prepare_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_layer_norm_float32_v1(
+    const float* input,
+    const float* weight,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    void* cuda_stream) {
+    if (input == nullptr || weight == nullptr || bias == nullptr || output == nullptr ||
+        rows <= 0 || width <= 0 || width > 8192 || !std::isfinite(eps) ||
+        !(eps > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_layer_norm_float32_v1(
+        input, weight, bias, output, rows, width, eps, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_attention_float32_v1(
+    const NfnNativeTileGlimmerVisionAttentionDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->interleaved_rope > 1 || descriptor->reserved0 != 0 ||
+        descriptor->reserved1 != 0 || descriptor->query == nullptr ||
+        descriptor->key == nullptr || descriptor->value == nullptr ||
+        descriptor->position_width == nullptr ||
+        descriptor->position_height == nullptr ||
+        descriptor->row_begin == nullptr || descriptor->row_end == nullptr ||
+        descriptor->output == nullptr || descriptor->rows <= 0 ||
+        descriptor->heads <= 0 || descriptor->head_dim <= 0 ||
+        descriptor->head_dim > 256 || descriptor->head_dim % 4 != 0 ||
+        !std::isfinite(descriptor->rope_theta) || !(descriptor->rope_theta > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_attention_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_vision_pixel_shuffle_float32_v1(
+    const NfnNativeTileGlimmerVisionPixelShuffleDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size != sizeof(*descriptor) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_VISION_V1 ||
+        descriptor->reordered_hidden == nullptr ||
+        descriptor->source_rows == nullptr || descriptor->output == nullptr ||
+        descriptor->merged_rows <= 0 || descriptor->hidden_size <= 0 ||
+        descriptor->merge_area <= 0 || descriptor->merge_area > 16) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_vision_pixel_shuffle_float32_v1(
+        *descriptor, as_stream(descriptor->cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_sigmoid_gate_float32_v1(
+    const float* values,
+    const float* gate,
+    float* output,
+    std::int64_t count,
+    void* cuda_stream) {
+    if (values == nullptr || gate == nullptr || output == nullptr || count <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_sigmoid_gate_float32_v1(
+        values, gate, output, count, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_logit_transform_float32_v1(
+    float* logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    void* cuda_stream) {
+    if (logits == nullptr || count <= 0 || !std::isfinite(multiplier) ||
+        !(multiplier > 0.0f) || !std::isfinite(softcap) || !(softcap > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_logit_transform_float32_v1(
+        logits, count, multiplier, softcap, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_attention_forward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1 normalized{};
+    if (!normalize_glimmer_attention_training_descriptor(
+            descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_attention_forward_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_attention_backward_float32_v1(
+    const NfnNativeTileGlimmerAttentionTrainingDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerAttentionTrainingDescriptorV1 normalized{};
+    if (!normalize_glimmer_attention_training_descriptor(
+            descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_attention_backward_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_rms_norm_backward_float32_v1(
+    const NfnNativeTileGlimmerRmsNormBackwardDescriptorV1* descriptor) {
+    if (descriptor == nullptr ||
+        descriptor->struct_size < sizeof(NfnNativeTileGlimmerRmsNormBackwardDescriptorV1) ||
+        descriptor->version != NFN_NATIVE_TILE_GLIMMER_TRAINING_V1 ||
+        descriptor->flags != 0 || descriptor->reserved0 != 0 ||
+        descriptor->input == nullptr || descriptor->grad_output == nullptr ||
+        descriptor->grad_input == nullptr || descriptor->rows <= 0 ||
+        descriptor->width <= 0 || descriptor->width > 65536 ||
+        !std::isfinite(descriptor->eps) || !(descriptor->eps > 0.0f) ||
+        descriptor->centered > 1 ||
+        (descriptor->weight == nullptr && descriptor->grad_weight != nullptr)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    NfnNativeTilePackedWeightDescriptorV1 normalized_weight{};
+    const bool has_weight = descriptor->weight != nullptr;
+    if (has_weight &&
+        (!normalize_packed_weight_descriptor(descriptor->weight, &normalized_weight) ||
+         normalized_weight.output_dim != 1 ||
+         normalized_weight.input_dim != descriptor->width)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (!has_weight) {
+        normalized_weight.struct_size = sizeof(normalized_weight);
+        normalized_weight.version = NFN_NATIVE_TILE_PACKED_WEIGHT_V1;
+    }
+    NfnNativeTileGlimmerRmsNormBackwardDescriptorV1 normalized = *descriptor;
+    normalized.struct_size = sizeof(normalized);
+    neuralfn::tile_cuda::launch_glimmer_rms_norm_backward_float32_v1(
+        normalized, normalized_weight, has_weight,
+        as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_positioned_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    std::int64_t start_position,
+    float theta,
+    std::uint32_t layout,
+    bool inverse,
+    void* cuda_stream) {
+    if (query == nullptr || key == nullptr || rows <= 0 || query_heads <= 0 ||
+        kv_heads <= 0 || query_heads % kv_heads != 0 || head_dim <= 0 ||
+        head_dim > 256 || head_dim % 2 != 0 || start_position < 0 ||
+        !std::isfinite(theta) || !(theta > 0.0f) ||
+        (layout != NFN_NATIVE_TILE_GLIMMER_ROPE_HALF_SPLIT &&
+         layout != NFN_NATIVE_TILE_GLIMMER_ROPE_INTERLEAVED)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_positioned_rope_batch_float32_v1(
+        query, key, rows, query_heads, kv_heads, head_dim, start_position,
+        theta, layout, inverse, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_sigmoid_gate_backward_float32_v1(
+    const float* values,
+    const float* gate,
+    const float* grad_output,
+    float* grad_values,
+    float* grad_gate,
+    std::int64_t count,
+    void* cuda_stream) {
+    if (values == nullptr || gate == nullptr || grad_output == nullptr ||
+        grad_values == nullptr || grad_gate == nullptr || count <= 0) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_sigmoid_gate_backward_float32_v1(
+        values, gate, grad_output, grad_values, grad_gate, count,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_logit_transform_backward_float32_v1(
+    const float* transformed_logits,
+    const float* grad_transformed_logits,
+    float* grad_raw_logits,
+    std::int64_t count,
+    float multiplier,
+    float softcap,
+    void* cuda_stream) {
+    if (transformed_logits == nullptr || grad_transformed_logits == nullptr ||
+        grad_raw_logits == nullptr || count <= 0 || !std::isfinite(multiplier) ||
+        !(multiplier > 0.0f) || !std::isfinite(softcap) || !(softcap > 0.0f)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_logit_transform_backward_float32_v1(
+        transformed_logits, grad_transformed_logits, grad_raw_logits, count,
+        multiplier, softcap, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_masked_cross_entropy_i32_float32_v1(
+    const NfnNativeTileGlimmerMaskedCeDescriptorV1* descriptor) {
+    NfnNativeTileGlimmerMaskedCeDescriptorV1 normalized{};
+    if (!normalize_glimmer_masked_ce_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_masked_cross_entropy_i32_float32_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sequence_logp_i32_float32_forward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor) {
+    NfnNativeTileSequenceLogpDescriptorV1 normalized{};
+    if (!normalize_sequence_logp_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_sequence_logp_i32_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sequence_logp_i32_float32_backward_v1(
+    const NfnNativeTileSequenceLogpDescriptorV1* descriptor) {
+    NfnNativeTileSequenceLogpDescriptorV1 normalized{};
+    if (!normalize_sequence_logp_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_sequence_logp_i32_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dpo_pairwise_loss_float32_forward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor) {
+    NfnNativeTileDpoPairwiseDescriptorV1 normalized{};
+    if (!normalize_dpo_pairwise_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_dpo_pairwise_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dpo_pairwise_loss_float32_backward_v1(
+    const NfnNativeTileDpoPairwiseDescriptorV1* descriptor) {
+    NfnNativeTileDpoPairwiseDescriptorV1 normalized{};
+    if (!normalize_dpo_pairwise_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_dpo_pairwise_loss_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_reward_head_float32_forward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor) {
+    NfnNativeTileMaskedRewardHeadDescriptorV1 normalized{};
+    if (!normalize_masked_reward_head_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_reward_head_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_reward_head_float32_backward_v1(
+    const NfnNativeTileMaskedRewardHeadDescriptorV1* descriptor) {
+    NfnNativeTileMaskedRewardHeadDescriptorV1 normalized{};
+    if (!normalize_masked_reward_head_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_reward_head_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_preference_bce_loss_float32_forward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor) {
+    NfnNativeTilePreferenceBceDescriptorV1 normalized{};
+    if (!normalize_preference_bce_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_preference_bce_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_preference_bce_loss_float32_backward_v1(
+    const NfnNativeTilePreferenceBceDescriptorV1* descriptor) {
+    NfnNativeTilePreferenceBceDescriptorV1 normalized{};
+    if (!normalize_preference_bce_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_preference_bce_loss_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_logp_entropy_i32_float32_forward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor) {
+    NfnNativeTileTokenLogpEntropyDescriptorV1 normalized{};
+    if (!normalize_token_logp_entropy_descriptor(
+            descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_token_logp_entropy_i32_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_logp_entropy_i32_float32_backward_v1(
+    const NfnNativeTileTokenLogpEntropyDescriptorV1* descriptor) {
+    NfnNativeTileTokenLogpEntropyDescriptorV1 normalized{};
+    if (!normalize_token_logp_entropy_descriptor(
+            descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_token_logp_entropy_i32_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_ppo_loss_float32_forward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor) {
+    NfnNativeTileMaskedPpoLossDescriptorV1 normalized{};
+    if (!normalize_masked_ppo_loss_descriptor(descriptor, &normalized, false)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_ppo_loss_float32_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_masked_ppo_loss_float32_backward_v1(
+    const NfnNativeTileMaskedPpoLossDescriptorV1* descriptor) {
+    NfnNativeTileMaskedPpoLossDescriptorV1 normalized{};
+    if (!normalize_masked_ppo_loss_descriptor(descriptor, &normalized, true)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_masked_ppo_loss_float32_backward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_embedding_backward_weight_i32_float32(
+    const std::int32_t* token_ids,
+    const float* grad_output,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t vocab_size,
+    std::int64_t embedding_dim,
+    void* cuda_stream) {
+    std::int64_t count = 0;
+    if (token_ids == nullptr || grad_output == nullptr || grad_weight == nullptr ||
+        rows <= 0 || vocab_size <= 0 || embedding_dim <= 0 ||
+        !checked_positive_product(vocab_size, embedding_dim, &count)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_token_embedding_backward_weight_i32_float32(
+        token_ids, grad_output, grad_weight, rows, vocab_size, embedding_dim,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_glimmer_adamw_bf16_float32_v1(
+    std::uint16_t* parameter_bf16,
+    const float* gradient,
+    float* exp_avg,
+    float* exp_avg_sq,
+    std::int64_t count,
+    float learning_rate,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    std::int64_t step,
+    float gradient_scale,
+    void* cuda_stream) {
+    if (parameter_bf16 == nullptr || gradient == nullptr || exp_avg == nullptr ||
+        exp_avg_sq == nullptr || count <= 0 || !std::isfinite(learning_rate) ||
+        learning_rate < 0.0f || !std::isfinite(beta1) || beta1 < 0.0f ||
+        beta1 >= 1.0f || !std::isfinite(beta2) || beta2 < 0.0f || beta2 >= 1.0f ||
+        !std::isfinite(eps) || !(eps > 0.0f) || !std::isfinite(weight_decay) ||
+        weight_decay < 0.0f || step <= 0 || !std::isfinite(gradient_scale) ||
+        gradient_scale < 0.0f) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    neuralfn::tile_cuda::launch_glimmer_adamw_bf16_float32_v1(
+        parameter_bf16, gradient, exp_avg, exp_avg_sq, count, learning_rate,
+        beta1, beta2, eps, weight_decay, step, gradient_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1* descriptor) {
+    NfnNativeTileTurboQuantAttentionDescriptorV1 normalized{};
+    if (!normalize_turboquant_attention_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    return neuralfn::tile_cuda::launch_turboquant_attention_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+}
+
+void nfn_native_tile_turboquant_attention_stats_reset() {
+    neuralfn::tile_cuda::reset_turboquant_attention_launch_stats();
+}
+
+std::int64_t nfn_native_tile_turboquant_attention_launch_count() {
+    return neuralfn::tile_cuda::turboquant_attention_launch_count();
 }
 
 const char* nfn_native_tile_ops_error_string(int code) {
@@ -4410,6 +6624,15 @@ int nfn_native_tile_uint16_to_int64(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_uint16_to_int64(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_uint32_to_int64(
+    const std::uint32_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_uint32_to_int64(source, dest, n, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -6327,6 +8550,9 @@ int nfn_native_tile_linear_quantized_float32(
     bool has_bias,
     int kind,
     void* cuda_stream) {
+    if (kind < 1 || kind > 3) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
     neuralfn::tile_cuda::launch_linear_quantized_float32(
         x, weight, bias, out, rows, input_dim, output_dim, has_bias, kind, as_stream(cuda_stream));
     return launch_status();
@@ -6341,6 +8567,9 @@ int nfn_native_tile_linear_backward_input_quantized_float32(
     std::int64_t output_dim,
     int kind,
     void* cuda_stream) {
+    if (kind < 1 || kind > 3) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
     neuralfn::tile_cuda::launch_linear_backward_input_quantized_float32(
         grad_out, weight, grad_x, rows, input_dim, output_dim, kind, as_stream(cuda_stream));
     return launch_status();
@@ -8446,6 +10675,46 @@ int nfn_native_tile_differential_packed_attention_backward_bf16(
         as_stream(cuda_stream));
 }
 
+int nfn_native_tile_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_forward_learned_lambda_bf16(
+        qkv_bf16_bits, out_bf16_bits, batch, heads, seq_len, head_dim,
+        lambda, output_scale, eps, as_stream(cuda_stream));
+}
+
+int nfn_native_tile_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    float* grad_lambda,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_backward_learned_lambda_bf16(
+        qkv_bf16_bits, out_bf16_bits, grad_out, grad_qkv_bf16_bits,
+        batch, heads, seq_len, head_dim, lambda, output_scale, eps,
+        grad_lambda, as_stream(cuda_stream));
+}
+
+int nfn_native_tile_differential_packed_attention_release_workspaces() {
+    return neuralfn::tile_cuda::release_differential_packed_attention_workspaces();
+}
+
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -8742,6 +11011,41 @@ int nfn_native_tile_route_balance_loss_float32(
     }
     neuralfn::tile_cuda::launch_route_balance_loss_float32(
         density, out, experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density_workspace,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 ||
+        rows > std::numeric_limits<std::int64_t>::max() / experts ||
+        rows > std::numeric_limits<int>::max() ||
+        experts > std::numeric_limits<int>::max() ||
+        !std::isfinite(coefficient) || coefficient < 0.0f) {
+        return 1;
+    }
+    if (coefficient == 0.0f) {
+        return 0;
+    }
+    if (router_logits == nullptr || density_workspace == nullptr ||
+        weighted_loss_accumulator == nullptr || grad_router_logits == nullptr) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_router_aux_loss_backward_float32(
+        router_logits,
+        density_workspace,
+        weighted_loss_accumulator,
+        grad_router_logits,
+        rows,
+        experts,
+        coefficient,
+        as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -9937,6 +12241,11 @@ int nfn_native_tile_scaled_dot_product_attention_float32(
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_float32(
         q,
         k,
@@ -9985,6 +12294,11 @@ int nfn_native_tile_scaled_dot_product_attention_backward_float32(
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_backward_float32(
         q,
         k,
@@ -10036,6 +12350,11 @@ int nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_backward_from_merged_grad_float32(
         q,
         k,

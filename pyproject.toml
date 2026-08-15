@@ -27,6 +27,17 @@ embeddings = [
   "safetensors>=0.4",
   "tokenizers>=0.19",
 ]
+vision = [
+  "Pillow>=10.0",
+]
+serve = [
+  "fastapi>=0.100",
+  "Pillow>=10.0",
+  "pydantic>=2.0",
+  "tiktoken>=0.5",
+  "tokenizers>=0.19",
+  "uvicorn>=0.23",
+]
 server = [
   "alembic>=1.13",
   "fastapi>=0.100",
@@ -34,6 +45,7 @@ server = [
   "mcp>=1.0.0",
   "networkx>=3.0",
   "numpy>=1.24",
+  "Pillow>=10.0",
   "pydantic>=2.0",
   "PyMySQL>=1.1",
   "python-multipart>=0.0.6",
@@ -55,12 +67,14 @@ all = [
   "networkx>=3.0",
   "ninja>=1.11",
   "numpy>=1.24",
+  "Pillow>=10.0",
   "pydantic>=2.0",
   "PyMySQL>=1.1",
   "python-multipart>=0.0.6",
   "redis>=5.0",
   "sqlalchemy>=2.0",
   "tiktoken>=0.5",
+  "tokenizers>=0.19",
   "uvicorn>=0.23",
 ]
 
@@ -70,6 +84,7 @@ include = ["neuralfn*", "server*"]
 [tool.setuptools.package-data]
 neuralfn = [
   "csrc/native_gpt2/*.cpp",
+  "csrc/native_gpt2/*.h",
   "csrc/native_embedding/*.cpp",
   "csrc/native_embedding/*.h",
   "csrc/native_train/*.cpp",

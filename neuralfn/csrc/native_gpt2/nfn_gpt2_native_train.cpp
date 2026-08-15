@@ -1,7 +1,9 @@
 #include "token_shards.h"
 #include "shipped_gpt_template_presets.h"
+#include "resident_sha256.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cctype>
 #include <chrono>
@@ -18,6 +20,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -32,12 +35,421 @@
 #error "nfn_gpt_native_train currently targets POSIX execvp environments."
 #else
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
 
 namespace {
+
+class ScopedFd {
+public:
+    explicit ScopedFd(int fd = -1) : fd_(fd) {}
+    ScopedFd(const ScopedFd&) = delete;
+    ScopedFd& operator=(const ScopedFd&) = delete;
+    ScopedFd(ScopedFd&& other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
+    ScopedFd& operator=(ScopedFd&& other) noexcept {
+        if (this != &other) {
+            reset();
+            fd_ = other.fd_;
+            other.fd_ = -1;
+        }
+        return *this;
+    }
+    ~ScopedFd() { reset(); }
+    int get() const { return fd_; }
+    explicit operator bool() const { return fd_ >= 0; }
+    void reset(int next = -1) {
+        if (fd_ >= 0) {
+            while (::close(fd_) != 0 && errno == EINTR) {}
+        }
+        fd_ = next;
+    }
+
+private:
+    int fd_ = -1;
+};
+
+std::string errno_message(std::string_view context, const fs::path& path) {
+    std::ostringstream out;
+    out << context << ": " << path.string() << ": " << std::strerror(errno);
+    return out.str();
+}
+
+bool read_regular_nofollow_file(
+    const fs::path& path,
+    std::int64_t max_bytes,
+    std::vector<std::uint8_t>* bytes,
+    std::string* error) {
+    if (bytes == nullptr) {
+        if (error != nullptr) {
+            *error = "file byte destination is null";
+        }
+        return false;
+    }
+    bytes->clear();
+    errno = 0;
+    ScopedFd fd(::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+    if (!fd) {
+        if (error != nullptr) {
+            *error = errno_message("failed to open regular non-symlink file", path);
+        }
+        return false;
+    }
+    struct stat before {};
+    if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) || before.st_size < 0) {
+        if (error != nullptr) {
+            *error = "path is not a regular non-symlink file: " + path.string();
+        }
+        return false;
+    }
+    if (max_bytes >= 0 && before.st_size > max_bytes) {
+        if (error != nullptr) {
+            *error = "file exceeds the allowed byte size: " + path.string();
+        }
+        return false;
+    }
+    const std::uintmax_t size = static_cast<std::uintmax_t>(before.st_size);
+    if (size > std::numeric_limits<std::size_t>::max()) {
+        if (error != nullptr) {
+            *error = "file is too large to address: " + path.string();
+        }
+        return false;
+    }
+    try {
+        bytes->resize(static_cast<std::size_t>(size));
+    } catch (const std::exception& exc) {
+        if (error != nullptr) {
+            *error = std::string("failed to allocate file bytes: ") + exc.what();
+        }
+        return false;
+    }
+    std::size_t offset = 0;
+    while (offset < bytes->size()) {
+        const ssize_t count = ::read(
+            fd.get(),
+            bytes->data() + offset,
+            bytes->size() - offset);
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        if (count <= 0) {
+            if (error != nullptr) {
+                *error = "file changed or ended while being read: " + path.string();
+            }
+            return false;
+        }
+        offset += static_cast<std::size_t>(count);
+    }
+    std::uint8_t trailing = 0;
+    ssize_t trailing_count = -1;
+    do {
+        trailing_count = ::read(fd.get(), &trailing, 1);
+    } while (trailing_count < 0 && errno == EINTR);
+    struct stat after {};
+    if (trailing_count != 0 || ::fstat(fd.get(), &after) != 0 ||
+        before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+        before.st_size != after.st_size) {
+        if (error != nullptr) {
+            *error = "file changed while it was being read: " + path.string();
+        }
+        return false;
+    }
+    return true;
+}
+
+std::string sha256_bytes_hex(const std::vector<std::uint8_t>& bytes) {
+    neuralfn::resident_support::Sha256 digest;
+    if (!bytes.empty()) {
+        digest.update(bytes.data(), bytes.size());
+    }
+    return digest.finish_hex();
+}
+
+void sha256_update_u64(
+    neuralfn::resident_support::Sha256* digest,
+    std::uint64_t value) {
+    std::array<std::uint8_t, 8> encoded{};
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        encoded[i] = static_cast<std::uint8_t>((value >> (i * 8)) & 0xffU);
+    }
+    digest->update(encoded.data(), encoded.size());
+}
+
+bool ordered_token_shard_identity(
+    const std::vector<neuralfn::native_train::TokenShardFile>& shards,
+    std::vector<ScopedFd>* stable_fds_out,
+    std::vector<neuralfn::native_train::TokenShardFile>* stable_shards_out,
+    std::int64_t* shard_count_out,
+    std::int64_t* total_bytes_out,
+    std::string* fingerprint_out,
+    std::string* error) {
+    if (stable_fds_out == nullptr || stable_shards_out == nullptr ||
+        shards.empty() || shards.size() >
+            static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max())) {
+        if (error != nullptr) {
+            *error = "gpt2_diff continuation requires a non-empty bounded train shard set";
+        }
+        return false;
+    }
+    stable_fds_out->clear();
+    stable_shards_out->clear();
+    stable_fds_out->reserve(shards.size());
+    stable_shards_out->reserve(shards.size());
+    neuralfn::resident_support::Sha256 digest;
+    constexpr std::string_view domain =
+        "neuralfn.gpt2_diff.ordered_uint16_train_shards.v1";
+    digest.update(
+        reinterpret_cast<const std::uint8_t*>(domain.data()), domain.size());
+    sha256_update_u64(&digest, static_cast<std::uint64_t>(shards.size()));
+    std::uint64_t total_bytes = 0;
+    std::array<std::uint8_t, 1024 * 1024> buffer{};
+    for (const auto& shard : shards) {
+        const std::string filename = shard.path.filename().string();
+        if (filename.empty() || filename == "." || filename == ".." ||
+            fs::path(filename).filename().string() != filename) {
+            if (error != nullptr) {
+                *error = "gpt2_diff train shard has an unsafe filename: " +
+                    shard.path.string();
+            }
+            return false;
+        }
+        errno = 0;
+        ScopedFd fd(::open(
+            shard.path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+        struct stat before {};
+        if (!fd || ::fstat(fd.get(), &before) != 0 ||
+            !S_ISREG(before.st_mode) || before.st_size < 0 ||
+            static_cast<std::uintmax_t>(before.st_size) != shard.bytes) {
+            if (error != nullptr) {
+                *error = "gpt2_diff train shard is not a stable regular file: " +
+                    shard.path.string();
+            }
+            return false;
+        }
+        const std::uint64_t size = static_cast<std::uint64_t>(before.st_size);
+        if (total_bytes > std::numeric_limits<std::uint64_t>::max() - size) {
+            if (error != nullptr) {
+                *error = "gpt2_diff train shard byte count overflows";
+            }
+            return false;
+        }
+        total_bytes += size;
+        sha256_update_u64(&digest, static_cast<std::uint64_t>(filename.size()));
+        digest.update(
+            reinterpret_cast<const std::uint8_t*>(filename.data()), filename.size());
+        sha256_update_u64(&digest, size);
+        sha256_update_u64(&digest, static_cast<std::uint64_t>(shard.header_uint16));
+        sha256_update_u64(&digest, static_cast<std::uint64_t>(shard.tokens));
+        std::uint64_t consumed = 0;
+        while (consumed < size) {
+            const std::size_t requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(buffer.size(), size - consumed));
+            ssize_t count = -1;
+            do {
+                count = ::read(fd.get(), buffer.data(), requested);
+            } while (count < 0 && errno == EINTR);
+            if (count <= 0) {
+                if (error != nullptr) {
+                    *error = "gpt2_diff train shard changed while hashing: " +
+                        shard.path.string();
+                }
+                return false;
+            }
+            digest.update(buffer.data(), static_cast<std::size_t>(count));
+            consumed += static_cast<std::uint64_t>(count);
+        }
+        std::uint8_t trailing = 0;
+        ssize_t trailing_count = -1;
+        do {
+            trailing_count = ::read(fd.get(), &trailing, 1);
+        } while (trailing_count < 0 && errno == EINTR);
+        struct stat after {};
+        if (trailing_count != 0 || ::fstat(fd.get(), &after) != 0 ||
+            before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+            before.st_size != after.st_size ||
+            before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
+            before.st_mtim.tv_nsec != after.st_mtim.tv_nsec ||
+            before.st_ctim.tv_sec != after.st_ctim.tv_sec ||
+            before.st_ctim.tv_nsec != after.st_ctim.tv_nsec) {
+            if (error != nullptr) {
+                *error = "gpt2_diff train shard changed while hashing: " +
+                    shard.path.string();
+            }
+            return false;
+        }
+        neuralfn::native_train::TokenShardFile stable_shard = shard;
+        stable_shard.stable_fd = fd.get();
+        stable_shard.stable_device =
+            static_cast<std::uintmax_t>(after.st_dev);
+        stable_shard.stable_inode =
+            static_cast<std::uintmax_t>(after.st_ino);
+        stable_shard.stable_mtime_seconds =
+            static_cast<std::int64_t>(after.st_mtim.tv_sec);
+        stable_shard.stable_mtime_nanoseconds =
+            static_cast<std::int64_t>(after.st_mtim.tv_nsec);
+        stable_shard.stable_ctime_seconds =
+            static_cast<std::int64_t>(after.st_ctim.tv_sec);
+        stable_shard.stable_ctime_nanoseconds =
+            static_cast<std::int64_t>(after.st_ctim.tv_nsec);
+        stable_shards_out->push_back(std::move(stable_shard));
+        stable_fds_out->push_back(std::move(fd));
+    }
+    if (total_bytes >
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        if (error != nullptr) {
+            *error = "gpt2_diff train shard byte count exceeds int64";
+        }
+        return false;
+    }
+    if (shard_count_out != nullptr) {
+        *shard_count_out = static_cast<std::int64_t>(shards.size());
+    }
+    if (total_bytes_out != nullptr) {
+        *total_bytes_out = static_cast<std::int64_t>(total_bytes);
+    }
+    if (fingerprint_out != nullptr) {
+        *fingerprint_out = digest.finish_hex();
+    }
+    return true;
+}
+
+class ExclusiveOutputFile {
+public:
+    explicit ExclusiveOutputFile(fs::path path) : path_(std::move(path)) {
+        errno = 0;
+        fd_.reset(::open(
+            path_.c_str(),
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            S_IRUSR | S_IWUSR));
+        opened_ = static_cast<bool>(fd_);
+        struct stat status {};
+        ok_ = opened_ && ::fstat(fd_.get(), &status) == 0 &&
+            S_ISREG(status.st_mode) && status.st_nlink == 1;
+    }
+    ExclusiveOutputFile(const ExclusiveOutputFile&) = delete;
+    ExclusiveOutputFile& operator=(const ExclusiveOutputFile&) = delete;
+    ~ExclusiveOutputFile() {
+        close();
+        if (created() && !committed_) {
+            ::unlink(path_.c_str());
+        }
+    }
+
+    explicit operator bool() const { return ok_; }
+    bool created() const { return opened_; }
+    const fs::path& path() const { return path_; }
+
+    ExclusiveOutputFile& write(const char* data, std::streamsize count) {
+        if (!ok_ || data == nullptr || count < 0) {
+            ok_ = false;
+            return *this;
+        }
+        std::size_t offset = 0;
+        const std::size_t size = static_cast<std::size_t>(count);
+        while (offset < size) {
+            const ssize_t written = ::write(fd_.get(), data + offset, size - offset);
+            if (written < 0 && errno == EINTR) {
+                continue;
+            }
+            if (written <= 0) {
+                ok_ = false;
+                break;
+            }
+            offset += static_cast<std::size_t>(written);
+        }
+        return *this;
+    }
+
+    void close() {
+        if (fd_) {
+            const int raw_fd = fd_.get();
+            if (ok_ && ::fsync(raw_fd) != 0) {
+                ok_ = false;
+            }
+            fd_.reset();
+        }
+    }
+
+    void commit() { committed_ = ok_; }
+
+private:
+    fs::path path_;
+    ScopedFd fd_;
+    bool ok_ = false;
+    bool opened_ = false;
+    bool committed_ = false;
+};
+
+class CheckpointOutputTransaction {
+public:
+    explicit CheckpointOutputTransaction(std::vector<fs::path>* tracked = nullptr)
+        : tracked_(tracked) {}
+    ~CheckpointOutputTransaction() {
+        if (committed_) {
+            return;
+        }
+        for (auto it = paths_.rbegin(); it != paths_.rend(); ++it) {
+            ::unlink(it->c_str());
+        }
+    }
+    void track(const fs::path& path) {
+        paths_.push_back(path);
+        if (tracked_ != nullptr) {
+            tracked_->push_back(path);
+        }
+    }
+    void commit() { committed_ = true; }
+
+private:
+    std::vector<fs::path> paths_;
+    std::vector<fs::path>* tracked_ = nullptr;
+    bool committed_ = false;
+};
+
+bool checkpoint_target_absent(const fs::path& path, std::string* error) {
+    struct stat status {};
+    if (::lstat(path.c_str(), &status) == 0) {
+        if (error != nullptr) {
+            *error = "refusing to overwrite existing checkpoint target: " + path.string();
+        }
+        return false;
+    }
+    if (errno != ENOENT) {
+        if (error != nullptr) {
+            *error = errno_message("failed to inspect checkpoint target", path);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool fsync_checkpoint_directory(const fs::path& path, std::string* error) {
+    ScopedFd directory_fd(::open(
+        path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+    if (!directory_fd) {
+        if (error != nullptr) {
+            *error = errno_message("failed to open checkpoint directory for fsync", path);
+        }
+        return false;
+    }
+    struct stat status {};
+    if (::fstat(directory_fd.get(), &status) != 0 || !S_ISDIR(status.st_mode)) {
+        if (error != nullptr) {
+            *error = "checkpoint output is not a stable directory: " + path.string();
+        }
+        return false;
+    }
+    if (::fsync(directory_fd.get()) != 0) {
+        if (error != nullptr) {
+            *error = errno_message("failed to fsync checkpoint directory", path);
+        }
+        return false;
+    }
+    return true;
+}
 
 bool env_is_empty(const char* name) {
     const char* value = std::getenv(name);
@@ -172,6 +584,33 @@ void append_cuda_error_message(
     }
 }
 
+struct NativeGraphTrainingProof {
+    std::string schema;
+    std::int64_t version = 0;
+    std::string training_selector;
+    std::string adapter_mode;
+    std::string source_graph_sha256;
+    std::string validator_contract;
+    std::string configuration_contract;
+    std::string topology_contract;
+    std::string root_shape_sha256;
+    std::string block_shape_sha256;
+    std::string attention_shape_sha256;
+    std::string mlp_shape_sha256;
+    std::int64_t max_seq_len = 0;
+    std::int64_t vocab_size = 0;
+    std::int64_t padded_vocab_size = 0;
+    std::int64_t num_layers = 0;
+    std::int64_t model_dim = 0;
+    std::int64_t num_heads = 0;
+    std::int64_t num_kv_heads = 0;
+    std::int64_t head_dim = 0;
+    std::int64_t mlp_hidden_dim = 0;
+    bool passed = false;
+    std::string contract_sha256;
+    bool verified = false;
+};
+
 struct Config {
     std::string model_family = "gpt";
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
@@ -184,6 +623,11 @@ struct Config {
     std::string tile_cuda_activation_dtype = "nvfp4";
     std::string template_name = "gpt";
     std::string graph_file;
+    std::string graph_fingerprint;
+    std::string graph_preflight_proof;
+    std::string verified_graph_fingerprint;
+    std::string verified_graph_bytes;
+    NativeGraphTrainingProof verified_graph_preflight_proof;
     std::string json_out_path;
     int moa_interval = 50;
     int eval_every_steps = 5000;
@@ -197,6 +641,7 @@ struct Config {
     int progress_every_steps = 10;
     int warmup_steps = 60;
     int max_steps = 20000;
+    int lr_schedule_total_steps = 0;
     int num_layers = 12;
     int eval_batches = 20;
     int eval_batch_size = 0;
@@ -247,6 +692,7 @@ struct Config {
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
     bool num_layers_explicit = false;
+    bool lr_schedule_total_steps_explicit = false;
     std::string cuda_runtime_lib;
     bool native_info = false;
     std::string native_checkpoint;
@@ -287,6 +733,39 @@ struct DenseGptVariantConfig {
     float differential_lambda_init = 0.0f;
     bool use_qk_norm = false;
     bool use_differential_attention = false;
+};
+
+constexpr std::string_view kGpt2DiffPackedPreflightPrefix =
+    "native GPT gpt2_diff packed differential preflight failed: ";
+constexpr std::string_view kGpt2DiffProofSchema =
+    "neuralfn.native_graph_training_proof";
+constexpr std::int64_t kGpt2DiffProofVersion = 1;
+constexpr std::string_view kGpt2DiffProofAdapterMode =
+    "validated-dense-graph-file-v1";
+constexpr std::string_view kGpt2DiffProofValidatorContract =
+    "dense-gpt2-exact-graph-validator-v1";
+constexpr std::string_view kGpt2DiffProofConfigurationContract =
+    "dense-gpt2-graph-configuration-v1";
+constexpr std::string_view kGpt2DiffProofTopologyContract =
+    "dense-gpt2-active-topology-v1";
+constexpr std::string_view kGpt2DiffProofRootShapeSha256 =
+    "228b19b94790989400bc770185370fd42761a1c1634451b3bcc3b770788b2b93";
+constexpr std::string_view kGpt2DiffProofBlockShapeSha256 =
+    "e722edf71b3a6c37f85a1c63d68df586d7c79f9c9730d1f948ee673102951bad";
+constexpr std::string_view kGpt2DiffProofAttentionShapeSha256 =
+    "13d8cd97dd07cbc6808839acab609ead157402fe10da5d9de053622d69958937";
+constexpr std::string_view kGpt2DiffProofMlpShapeSha256 =
+    "58a0daeb34c0b19ced46d6bc27f18935201077638c17d42b4f3ac290d3c4a71f";
+constexpr const char* kGpt2DiffPackedForwardSymbol =
+    "nfn_native_tile_differential_packed_attention_forward_learned_lambda_bf16";
+constexpr const char* kGpt2DiffPackedBackwardSymbol =
+    "nfn_native_tile_differential_packed_attention_backward_learned_lambda_bf16";
+constexpr const char* kGpt2DiffPackedReleaseSymbol =
+    "nfn_native_tile_differential_packed_attention_release_workspaces";
+constexpr std::array<const char*, 3> kGpt2DiffPackedTileSymbols = {
+    kGpt2DiffPackedForwardSymbol,
+    kGpt2DiffPackedBackwardSymbol,
+    kGpt2DiffPackedReleaseSymbol,
 };
 
 DenseGptVariantConfig dense_gpt_variant_config(const std::string& template_name) {
@@ -626,6 +1105,8 @@ void print_usage(const char* program) {
         << "                                     Dense GPT selector; all canonicalize to model_family=gpt, gpt3 can default to 2048 context, and nanogpt selects the NanoGPT template\n"
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON; compatible dense GPT template_spec metadata can drive native geometry\n\n"
+        << "  --graph-fingerprint SHA256        Verify the exact --graph-file bytes before graph-bound checkpoint metadata is emitted\n\n"
+        << "  --graph-preflight-proof PATH      Planner-authored strict semantic/topology proof required for gpt2_diff graph execution and plans\n\n"
         << "  --list-templates                  Print shipped GPT template native support as no-data JSON and exit\n\n"
         << "Launch options:\n"
         << "  --backend tile-cuda               NeuralFn-owned CUDA Tile backend (default and only training backend)\n"
@@ -650,7 +1131,7 @@ void print_usage(const char* program) {
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
         << "  --no-checkpoint                   Skip final trained checkpoint export for speed/preflight runs\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
-        << "  --resume-from-checkpoint PATH     Warm-start dense GPT training from a native bf16 model_*.bin checkpoint; Adam moments are reset\n"
+        << "  --resume-from-checkpoint PATH     Resume ordinary dense GPT from fp32 parameter/optimizer sidecars and counters when present (model-only input is a reset-moment warm start); gpt2_diff requires the complete strict v2 dense+diff continuation bundle\n"
         << "  --native-info --native-checkpoint PATH\n"
         << "                                     Inspect a native dense GPT model_*.bin checkpoint as compiled C++ JSON without CUDA/Torch/dataset setup\n"
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
@@ -695,18 +1176,18 @@ void print_usage(const char* program) {
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
         << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --progress-every-steps, --batch-size, --train-seq-len,\n"
-        << "  --train-batch-tokens, --learning-rate, --lr-schedule, --final-lr-fraction/--learning-rate-decay-frac, --weight-decay, --beta1, --beta2, --adam-eps,\n"
+        << "  --train-batch-tokens, --learning-rate, --lr-schedule, --lr-schedule-total-steps, --final-lr-fraction/--learning-rate-decay-frac/--learning-rate-decay-fraction, --weight-decay, --beta1, --beta2, --adam-eps,\n"
         << "  --grad-clip-norm, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
         << kDefaultLmHeadRowChunkSize << ".\n"
-        << "  --layer-evo                      Enable native device-side evo ABI cadence for the selected block\n"
-        << "  --evo-layer-index N              Evo block index; default 6\n"
-        << "  --evo-layer-interval N           Evo cadence in optimizer steps; default 10\n"
-        << "  --evo-layer-population N         Evo candidate population; default 8\n"
-        << "  --evo-layer-mutation-scale X     Evo mutation scale; default 0.02\n"
-        << "  --evo-tournament-size N          Evo tournament pool size; default 3\n"
-        << "  --evo-elite-count N              Evo elite count; default 1\n"
-        << "  --no-layer-evo                   Disable native layer-evo cadence\n"
+        << "  --layer-evo                      Request GPT2-Evo semantics; generic training/startup/print-command fail closed until whole-block evolution is implemented\n"
+        << "  --evo-layer-index N              Block index for blocked GPT2-Evo plan metadata; default 6\n"
+        << "  --evo-layer-interval N           Cadence for blocked GPT2-Evo plan metadata; default 10\n"
+        << "  --evo-layer-population N         Population for blocked GPT2-Evo plan metadata; default 8\n"
+        << "  --evo-layer-mutation-scale X     Mutation scale for blocked GPT2-Evo plan metadata; default 0.02\n"
+        << "  --evo-tournament-size N          Tournament pool size for blocked GPT2-Evo plan metadata; default 3\n"
+        << "  --evo-elite-count N              Elite count for blocked GPT2-Evo plan metadata; default 1\n"
+        << "  --no-layer-evo                   Keep the ordinary dense GPT workflow with layer evolution disabled\n"
         << "  --tile-cuda-activation-dtype nvfp4|float32|none\n"
         << "                                     Preserve native activation dtype intent in plan/runtime JSON; default nvfp4\n"
         << "  --require-native-nvfp4-activation-packing\n"
@@ -813,6 +1294,536 @@ std::string normalize_env_mode(std::string value) {
         ch = lowered == '-' ? '_' : lowered;
     }
     return value;
+}
+
+std::string gpt2_diff_numerics_profile_sha256(std::int64_t trained_layers) {
+    // Strict continuation binds the resolved arithmetic/precision/reduction
+    // routes, not the spelling of their GPT/GPT2/Tile aliases and not unrelated
+    // logging, output, allocator, prewarm, or library-path environment state.
+    neuralfn::resident_support::Sha256 digest;
+    constexpr std::string_view domain =
+        "neuralfn.gpt2_diff.numerics_profile.v1";
+    digest.update(
+        reinterpret_cast<const std::uint8_t*>(domain.data()), domain.size());
+    const auto add = [&](std::string_view key, std::string_view value) {
+        sha256_update_u64(&digest, static_cast<std::uint64_t>(key.size()));
+        digest.update(
+            reinterpret_cast<const std::uint8_t*>(key.data()), key.size());
+        sha256_update_u64(&digest, static_cast<std::uint64_t>(value.size()));
+        digest.update(
+            reinterpret_cast<const std::uint8_t*>(value.data()), value.size());
+    };
+    const auto resolved_gpt = [&](std::string_view suffix) {
+        const std::string gpt = "NFN_NATIVE_GPT_" + std::string(suffix);
+        const std::string gpt2 = "NFN_NATIVE_GPT2_" + std::string(suffix);
+        std::string value = env_or_empty(gpt.c_str());
+        return value.empty() ? env_or_empty(gpt2.c_str()) : value;
+    };
+    const auto resolved_gpt_tile = [&](std::string_view suffix) {
+        std::string value = resolved_gpt(suffix);
+        if (!value.empty()) {
+            return value;
+        }
+        const std::string tile = "NFN_TILE_CUDA_" + std::string(suffix);
+        return env_or_empty(tile.c_str());
+    };
+    const auto resolved_tile_gpt = [&](std::string_view suffix) {
+        const std::string tile = "NFN_TILE_CUDA_" + std::string(suffix);
+        std::string value = env_or_empty(tile.c_str());
+        return value.empty() ? resolved_gpt(suffix) : value;
+    };
+    const auto tile_flag_enabled = [](const std::string& raw) {
+        return raw == "1" || raw == "true" || raw == "TRUE" ||
+            raw == "yes" || raw == "YES" || raw == "on" || raw == "ON";
+    };
+    const auto any_tile_gpt_alias_enabled = [&](std::string_view suffix) {
+        const std::string tile = "NFN_TILE_CUDA_" + std::string(suffix);
+        const std::string gpt = "NFN_NATIVE_GPT_" + std::string(suffix);
+        const std::string gpt2 = "NFN_NATIVE_GPT2_" + std::string(suffix);
+        return tile_flag_enabled(env_or_empty(tile.c_str())) ||
+            tile_flag_enabled(env_or_empty(gpt.c_str())) ||
+            tile_flag_enabled(env_or_empty(gpt2.c_str()));
+    };
+    const auto add_bool_value = [&](std::string_view key,
+                                    const std::string& raw,
+                                    bool default_value) {
+        add(key, env_flag_enabled_or_default(raw, default_value) ? "1" : "0");
+    };
+    const auto add_gpt_bool = [&](std::string_view suffix, bool default_value) {
+        add_bool_value(suffix, resolved_gpt(suffix), default_value);
+    };
+    const auto add_gpt_tile_bool = [&](std::string_view suffix, bool default_value) {
+        add_bool_value(suffix, resolved_gpt_tile(suffix), default_value);
+    };
+    const auto add_dual_gpt_tile_bool = [&](std::string_view suffix,
+                                             bool default_value) {
+        add_bool_value(
+            std::string(suffix) + "_TRAINER",
+            resolved_gpt_tile(suffix),
+            default_value);
+        add_bool_value(
+            std::string(suffix) + "_TILE",
+            resolved_tile_gpt(suffix),
+            default_value);
+    };
+    const auto add_tile_gpt_bool = [&](std::string_view suffix, bool default_value) {
+        add_bool_value(suffix, resolved_tile_gpt(suffix), default_value);
+    };
+    const auto add_gpt_i64 = [&](std::string_view suffix, std::int64_t fallback) {
+        const std::string raw = resolved_gpt(suffix);
+        std::int64_t value = fallback;
+        if (!raw.empty()) {
+            char* end = nullptr;
+            errno = 0;
+            const long long parsed = std::strtoll(raw.c_str(), &end, 10);
+            if (errno == 0 && end != raw.c_str() && *end == '\0' && parsed >= 0) {
+                value = static_cast<std::int64_t>(parsed);
+            }
+        }
+        add(suffix, std::to_string(value));
+    };
+    const auto resolved_bounded_positive = [](const std::string& raw,
+                                              std::int64_t fallback,
+                                              std::int64_t maximum) {
+        if (raw.empty()) {
+            return fallback;
+        }
+        char* end = nullptr;
+        errno = 0;
+        const long long parsed = std::strtoll(raw.c_str(), &end, 10);
+        return errno == 0 && end != raw.c_str() && parsed > 0 &&
+                parsed <= maximum
+            ? static_cast<std::int64_t>(parsed)
+            : fallback;
+    };
+    const auto add_raw = [&](std::string_view key, const std::string& value) {
+        add(key, value);
+    };
+
+    add("layernorm_affine_row_chunk_size",
+        std::to_string(resolved_layer_norm_affine_row_chunk_size()));
+    add("linear_backward_bias_row_chunk_size",
+        std::to_string(resolved_linear_backward_bias_row_chunk_size()));
+    add("linear_backward_bias_threads",
+        std::to_string(resolved_linear_backward_bias_threads_per_block()));
+    add("layernorm_affine_target_chunks",
+        std::to_string(resolved_bounded_positive(
+            env_or_empty("NFN_TILE_CUDA_LAYERNORM_AFFINE_TARGET_CHUNKS"),
+            256,
+            std::numeric_limits<std::int64_t>::max())));
+
+    add_gpt_bool("PACKED_QKV_ATTENTION", true);
+    add_gpt_bool("FULL_ACTIVATION_TAPE", false);
+    const bool store_mlp_activations = env_flag_enabled_or_default(
+        resolved_gpt("STORE_MLP_ACTIVATIONS"), true);
+    add("STORE_MLP_ACTIVATIONS", store_mlp_activations ? "1" : "0");
+    const std::int64_t stored_mlp_blocks =
+        store_mlp_activations && trained_layers > 0
+            ? std::min<std::int64_t>(
+                  trained_layers,
+                  env_nonnegative_i64_or(
+                      {"NFN_NATIVE_GPT_STORE_MLP_BLOCKS",
+                       "NFN_NATIVE_GPT2_STORE_MLP_BLOCKS"},
+                      kDefaultStoredMlpBlocks))
+            : 0;
+    const bool stored_mlp_tail =
+        stored_mlp_blocks > 0 &&
+        resolved_gpt("STORE_MLP_BLOCK_PLACEMENT") == "tail";
+    const std::int64_t stored_mlp_start = stored_mlp_tail
+        ? std::max<std::int64_t>(0, trained_layers - stored_mlp_blocks)
+        : 0;
+    add("STORE_MLP_BLOCK_COUNT", std::to_string(stored_mlp_blocks));
+    add("STORE_MLP_BLOCK_START", std::to_string(stored_mlp_start));
+    add("STORE_MLP_BLOCK_PLACEMENT", stored_mlp_tail ? "tail" : "head");
+    add_gpt_bool("STORE_ATTENTION_ACTIVATIONS", false);
+    // Learned differential attention recomputes both branches in backward and
+    // explicitly disables the ordinary packed-attention activation cache.
+    add("STORE_PACKED_ATTENTION_ACTIVATIONS", "0");
+    add("STORE_PACKED_ATTENTION_LSE", "0");
+    add("STORE_PACKED_ATTENTION_LN1_STATS", "0");
+    add("STORE_PACKED_ATTENTION_LN1_BF16", "0");
+    add("STORE_PACKED_ATTENTION_BLOCK_COUNT", "0");
+    add("STORE_PACKED_ATTENTION_BLOCK_START", "0");
+    add("STORE_PACKED_ATTENTION_BLOCK_PLACEMENT", "head");
+    add_gpt_bool("STORE_RESIDUAL1_ACTIVATIONS", true);
+    add_gpt_bool("FUSE_RESIDUAL1_STORE", true);
+    add_gpt_bool("FUSE_ATTENTION_RESIDUAL_LN2", true);
+    add_gpt_bool("FUSE_MLP_PROJ_DGELU", true);
+    add_gpt_bool("BF16_MLP_GRAD_HANDOFF", true);
+    add_gpt_bool("ELIDE_MLP_DGELU_FLOAT_GRAD", true);
+    add_gpt_bool("REUSE_MLP_PROJ_BF16_GRAD_OUT", true);
+    add_gpt_bool("MLP_PROJ_DINPUT_BEFORE_DWEIGHT", false);
+    add_gpt_bool("BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT", false);
+    add_gpt_bool("MLP_FC_DINPUT_BEFORE_DWEIGHT", false);
+    add_gpt_bool("BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT", false);
+    add_gpt_bool("BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT", false);
+    add_gpt_bool("QKV_DINPUT_BEFORE_DWEIGHT", true);
+    add_gpt_bool("BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT", false);
+    add_gpt_bool("BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT", false);
+    add_gpt_bool("ATTN_PROJ_DINPUT_BEFORE_DWEIGHT", false);
+    add_gpt_bool("BF16_QKV_GRAD_HANDOFF", true);
+    add_gpt_bool("BF16_ATTENTION_GRAD_OUT", true);
+    add_gpt_bool("BF16_ATTENTION_DPREP_GRAD_OUT", false);
+    add_gpt_bool("LN1_BF16_QKV_FORWARD", true);
+    add_gpt_bool("DIRECT_BF16_QKV_GRAD_SCRATCH", true);
+    add_gpt_bool("ELIDE_QKV_FLOAT_GRAD_SCRATCH", true);
+    add_gpt_bool("BF16_QKV_DWEIGHT", true);
+    add_gpt_bool("NVFP4_QKV_DWEIGHT", false);
+    add_gpt_bool("BF16_BLOCK_DWEIGHT_STAGING", false);
+    add_gpt_bool("FUSE_QKV_BIAS_TK_GEMM", true);
+    add_gpt_bool("FUSE_LN2_BF16_OUT", true);
+    add_gpt_bool("ELIDE_LN2_BF16_NORM_FLOAT_STORE", true);
+    add_gpt_bool("FUSE_MLP_RESIDUAL_NEXT_LN1", true);
+    add_gpt_bool("BF16_BLOCK_WEIGHT_PARAMS", true);
+    add_gpt_bool("TOKEN_WEIGHT_BF16_SHADOW", true);
+    add_gpt_bool("EMBEDDING_BF16_SHADOW", false);
+    add_gpt_bool("FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH", true);
+    add_gpt_tile_bool("TOKEN_WEIGHT_PADDED_BF16_PATTERN", true);
+    add_gpt_bool("DWEIGHT_FIRST_MICROBATCH_BETA_ZERO", true);
+    add_bool_value(
+        "BGRAD_FIRST_WRITE_DIRECT",
+        env_or_empty_any({"NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT",
+                          "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT",
+                          "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT"}),
+        false);
+    add_gpt_bool("FUSE_ADAMW_BF16_SHADOW_REFRESH", false);
+    add_gpt_bool("FUSE_LN_BACKWARD_RESIDUAL", true);
+    add_gpt_bool("FUSE_LN_BACKWARD_AFFINE_RESIDUAL", true);
+    add_gpt_bool("BF16_RESIDUAL1_LN_BACKWARD", true);
+    add_gpt_tile_bool("FUSE_EMBEDDING_RESIDUAL", true);
+    add_gpt_bool("BF16_PROJECTION_RESIDUAL", true);
+    add_gpt_bool("ELIDE_FLOAT_PROJECTION_OUTPUTS", true);
+    const bool persistent_bf16_requested = env_flag_enabled_or_default(
+        resolved_gpt("BF16_PERSISTENT_BLOCK_OUTPUTS"), false);
+    const std::int64_t persistent_output_capacity =
+        std::max<std::int64_t>(0, trained_layers - 1);
+    const std::int64_t persistent_bf16_count = std::min<std::int64_t>(
+        persistent_output_capacity,
+        env_nonnegative_i64_or(
+            {"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT",
+             "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT"},
+            persistent_bf16_requested ? persistent_output_capacity : 0));
+    const bool persistent_bf16_tail =
+        persistent_bf16_count > 0 &&
+        normalize_env_mode(
+            resolved_gpt("BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT")) == "tail";
+    const std::int64_t persistent_bf16_start = persistent_bf16_tail
+        ? std::max<std::int64_t>(
+              0, persistent_output_capacity - persistent_bf16_count)
+        : 0;
+    add("BF16_PERSISTENT_BLOCK_OUTPUTS_REQUESTED",
+        persistent_bf16_requested ? "1" : "0");
+    add("BF16_PERSISTENT_BLOCK_OUTPUT_COUNT",
+        std::to_string(persistent_bf16_count));
+    add("BF16_PERSISTENT_BLOCK_OUTPUT_START",
+        std::to_string(persistent_bf16_start));
+    add("BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT",
+        persistent_bf16_tail ? "tail" : "head");
+    add_gpt_tile_bool("BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD", false);
+
+    add_gpt_bool("LM_HEAD_DWEIGHT_BEFORE_DHIDDEN", false);
+    add_gpt_bool("LM_HEAD_REVERSE_CHUNKS", true);
+    add_gpt_bool("LM_HEAD_ROW_LOSS_REDUCTION", true);
+    add_gpt_bool("LM_HEAD_ROW_LOSS_SUM_ACCUMULATE", false);
+    add_gpt_bool("LM_HEAD_LOSS_BIN_REDUCTION", true);
+    add_gpt_i64("LM_HEAD_LOSS_BIN_COUNT", 1024);
+    add_gpt_bool("LM_HEAD_BF16_LOGITS", true);
+    add_gpt_bool("BF16_LM_HEAD_LOSS", true);
+    const std::string ce_threads_raw = resolved_tile_gpt("CE_BF16_THREADS");
+    int ce_threads = 1024;
+    if (!ce_threads_raw.empty()) {
+        char* end = nullptr;
+        errno = 0;
+        const long parsed = std::strtol(ce_threads_raw.c_str(), &end, 10);
+        if (errno == 0 && end != ce_threads_raw.c_str() && *end == '\0' &&
+            (parsed == 16 || parsed == 32 || parsed == 64 || parsed == 128 ||
+             parsed == 256 || parsed == 512 || parsed == 576 || parsed == 1024)) {
+            ce_threads = static_cast<int>(parsed);
+        }
+    }
+    add("CE_BF16_THREADS", std::to_string(ce_threads));
+    const std::string correction_threads_raw =
+        resolved_tile_gpt("LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS");
+    int correction_threads = 512;
+    if (!correction_threads_raw.empty()) {
+        char* end = nullptr;
+        errno = 0;
+        const long parsed = std::strtol(
+            correction_threads_raw.c_str(), &end, 10);
+        if (errno == 0 && end != correction_threads_raw.c_str() &&
+            *end == '\0' &&
+            (parsed == 128 || parsed == 256 || parsed == 512 ||
+             parsed == 1024)) {
+            correction_threads = static_cast<int>(parsed);
+        }
+    }
+    add("LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS",
+        std::to_string(correction_threads));
+    add_dual_gpt_tile_bool("CE_BF16_EXP2", false);
+    add_dual_gpt_tile_bool("CE_BF16_VEC_STORES", false);
+    add_dual_gpt_tile_bool("CE_BF16_VEC_NORMAL_STORES", false);
+    add_dual_gpt_tile_bool("CE_BF16_VEC_LOADS", true);
+    add_dual_gpt_tile_bool("LM_HEAD_CE_REVERSE_ROWS", true);
+    add_dual_gpt_tile_bool("CE_BF16_SCALAR_STREAMING_STORES", false);
+    add_dual_gpt_tile_bool("LM_HEAD_CE_DEFAULT_SPECIALIZED", false);
+    add_dual_gpt_tile_bool("LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED", true);
+    add_dual_gpt_tile_bool(
+        "LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED", true);
+    add_dual_gpt_tile_bool(
+        "LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED", true);
+    add_dual_gpt_tile_bool("LM_HEAD_CE_LLMK_STYLE_SPECIALIZED", false);
+    add_dual_gpt_tile_bool(
+        "LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED", false);
+    add_gpt_tile_bool("LM_HEAD_PROB_ONLY_CORRECTIONS", false);
+    add_gpt_tile_bool("LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS", false);
+    add_gpt_tile_bool("LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS", false);
+    add_gpt_bool("LM_HEAD_BF16_DWEIGHT", true);
+    add_gpt_bool("LM_HEAD_PREPACK_BF16_HIDDEN", true);
+    add_gpt_bool("LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM", false);
+    add_gpt_bool("REUSE_FORWARD_LM_HEAD_LOGITS", false);
+    add_gpt_bool("FULL_BATCH_LM_HEAD_REUSE", false);
+    add_bool_value(
+        "PUBLIC_VOCAB_CE",
+        env_or_empty_any({"NFN_NATIVE_GPT_PUBLIC_VOCAB_CE",
+                          "NFN_NATIVE_GPT_STRIDED_PUBLIC_VOCAB_CE",
+                          "NFN_NATIVE_GPT2_PUBLIC_VOCAB_CE",
+                          "NFN_NATIVE_GPT2_STRIDED_PUBLIC_VOCAB_CE"}),
+        true);
+    add_gpt_bool("ZERO_TOKEN_PADDING", true);
+    add_gpt_bool("SKIP_CE_PAD_ZERO", true);
+    add_gpt_bool("DIRECT_U16_TOKENS", true);
+    add_gpt_bool("LM_HEAD_FUSED_LOSS_BACKWARD", true);
+    add_gpt_bool("LM_HEAD_CLASSIFIER_CE_NO_LOSS", false);
+    add_gpt_bool("LM_HEAD_COOPERATIVE_BACKWARD", true);
+    add_gpt_bool("LM_HEAD_COOPERATIVE_LOSS_BINS", false);
+    add_gpt_bool("LM_HEAD_COOPERATIVE_CUDA_GRAPH", true);
+    add_gpt_bool("LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC", false);
+    add_gpt_bool("LM_HEAD_COOPERATIVE_CUBLASLT", false);
+    const bool graph_body_cublaslt_trainer = env_flag_enabled_or_default(
+        resolved_tile_gpt("LM_HEAD_GRAPH_BODY_CUBLASLT"), false);
+    const bool graph_body_cublaslt_tile =
+        any_tile_gpt_alias_enabled("LM_HEAD_GRAPH_BODY_CUBLASLT");
+    const bool graph_body_cublaslt_dhidden_trainer =
+        graph_body_cublaslt_trainer || env_flag_enabled_or_default(
+            resolved_tile_gpt("LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN"), false);
+    const bool graph_body_cublaslt_dhidden_tile =
+        graph_body_cublaslt_tile ||
+        any_tile_gpt_alias_enabled("LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN");
+    const bool graph_body_cublaslt_dweight_trainer =
+        graph_body_cublaslt_trainer || env_flag_enabled_or_default(
+            resolved_tile_gpt("LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT"), false);
+    const bool graph_body_cublaslt_dweight_tile =
+        graph_body_cublaslt_tile ||
+        any_tile_gpt_alias_enabled("LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_TRAINER",
+        graph_body_cublaslt_trainer ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_TILE",
+        graph_body_cublaslt_tile ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN_TRAINER",
+        graph_body_cublaslt_dhidden_trainer ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN_TILE",
+        graph_body_cublaslt_dhidden_tile ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT_TRAINER",
+        graph_body_cublaslt_dweight_trainer ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT_TILE",
+        graph_body_cublaslt_dweight_tile ? "1" : "0");
+    add("LM_HEAD_GRAPH_BODY_SERIAL",
+        any_tile_gpt_alias_enabled("LM_HEAD_GRAPH_BODY_SERIAL") ? "1" : "0");
+    add("LM_HEAD_TRUE_FUSED_COOPERATIVE_TRAINER",
+        env_flag_enabled_or_default(
+            resolved_tile_gpt("LM_HEAD_TRUE_FUSED_COOPERATIVE"), false)
+            ? "1"
+            : "0");
+    add("LM_HEAD_TRUE_FUSED_COOPERATIVE_TILE",
+        any_tile_gpt_alias_enabled("LM_HEAD_TRUE_FUSED_COOPERATIVE")
+            ? "1"
+            : "0");
+    add_tile_gpt_bool("LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION", false);
+    add_gpt_bool("LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT", false);
+    add_gpt_bool("LM_HEAD_PIPELINE_CHUNKS", false);
+    add_gpt_bool("LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM", false);
+    add_gpt_bool("LM_HEAD_OVERLAP_LAST_DWEIGHT", false);
+
+    add_tile_gpt_bool("DIM768_BF16_RESIDUAL_ADD", true);
+    add_tile_gpt_bool("DIM768_FUSED_LAYER_NORM", false);
+    add_tile_gpt_bool("LAYERNORM_AFFINE_TWO_STAGE", true);
+    add_tile_gpt_bool("BF16_BIAS_INPLACE_TILE", true);
+    add_tile_gpt_bool("STORE_MLP_ACTIVATIONS_VEC4", false);
+    add_tile_gpt_bool("F32_TO_BF16_MANY_VEC4", false);
+    add_tile_gpt_bool("BF16_TO_F32_VEC4", false);
+    add_gpt_bool("PACKED_ATTENTION_DPREP_GRID3D", false);
+    add_gpt_bool("PACKED_ATTENTION_DPREP_HD64_SPECIALIZED", true);
+    add_gpt_bool("PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED", true);
+    add("PACKED_ATTENTION_BACKWARD_BATCH_CAP",
+        std::to_string(resolved_bounded_positive(
+            resolved_gpt("PACKED_ATTENTION_BACKWARD_BATCH_CAP"),
+            64,
+            std::numeric_limits<std::int64_t>::max())));
+    add("PACKED_ATTENTION_DPREP_WARPS",
+        std::to_string(resolved_bounded_positive(
+            resolved_gpt("PACKED_ATTENTION_DPREP_WARPS"), 3, 8)));
+
+    add_bool_value(
+        "LINEAR_TK_DWEIGHT",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_TK_DWEIGHT",
+                          "NFN_TILE_CUDA_LINEAR_TK_DWEIGHT"}),
+        false);
+    add_bool_value(
+        "LINEAR_BF16",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16",
+                          "NFN_NATIVE_LINEAR_BF16"}),
+        false);
+    add_bool_value(
+        "LINEAR_TK_DINPUT_DEFAULT_BLOCK",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK",
+                          "NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK"}),
+        false);
+    add_bool_value(
+        "LINEAR_TK_FLOAT_OUT",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_TK_FLOAT_OUT",
+                          "NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT"}),
+        false);
+    add_bool_value(
+        "LINEAR_TK_DINPUT",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_TK_DINPUT",
+                          "NFN_TILE_CUDA_LINEAR_TK_DINPUT"}),
+        false);
+    add_bool_value(
+        "LINEAR_TK_GEMM",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_TK_GEMM",
+                          "NFN_TILE_CUDA_LINEAR_TK_GEMM"}),
+        true);
+    add_bool_value(
+        "LINEAR_BF16_CUBLASLT",
+        env_or_empty_any({"NFN_NATIVE_LINEAR_BF16_CUBLASLT",
+                          "NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT"}),
+        true);
+    add_bool_value(
+        "LINEAR_CUBLASLT",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_CUBLASLT",
+                          "NFN_NATIVE_LINEAR_CUBLASLT"}),
+        false);
+    add_bool_value(
+        "CUBLASLT_DESCRIPTOR_CACHE",
+        env_or_empty_any({"NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE",
+                          "NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE"}),
+        true);
+    add_bool_value(
+        "LINEAR_BF16_CUBLASLT_LARGE_SHAPES",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES",
+                          "NFN_NATIVE_LINEAR_BF16_CUBLASLT_LARGE_SHAPES"}),
+        true);
+    add_bool_value(
+        "LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K",
+                          "NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K"}),
+        false);
+    add_bool_value(
+        "LINEAR_BF16_OUTPUT_CUBLASLT",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT",
+                          "NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT"}),
+        false);
+    add_raw("LINEAR_TK_FORWARD_ENABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE"}));
+    add_raw("LINEAR_TK_FORWARD_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE"}));
+    add_raw("LINEAR_TK_DWEIGHT_ENABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DWEIGHT_ENABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE"}));
+    add_raw("LINEAR_TK_DWEIGHT_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DWEIGHT_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_DWEIGHT_DISABLE_SHAPE"}));
+    add_raw("LINEAR_TK_DINPUT_ENABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE"}));
+    add_raw("LINEAR_TK_DINPUT_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DINPUT_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE"}));
+    add_raw("LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE"}));
+    add_raw("LINEAR_BF16_CUBLASLT_ENABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE"}));
+    add_raw("LINEAR_BF16_CUBLASLT_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE"}));
+    add_bool_value(
+        "LINEAR_BF16_GEMM_EX_FAST_16BF",
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF",
+                          "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF"}),
+        false);
+    add_raw("LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE",
+                              "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE"}));
+    add_raw("LINEAR_BF16_GEMM_EX_ALGO",
+            normalize_env_mode(env_or_empty_any({
+                "NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO",
+                "NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO"})));
+    add_raw("LINEAR_BF16_GEMM_EX_ALGO_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE",
+                              "NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE"}));
+    add_bool_value(
+        "FUSE_FLOAT32_BF16_DWEIGHT_BGRAD",
+        env_or_empty_any({"NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD",
+                          "NFN_NATIVE_GPT2_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD",
+                          "NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD"}),
+        true);
+    add_bool_value(
+        "FUSE_BF16_BF16_DWEIGHT_BGRAD",
+        env_or_empty_any({"NFN_NATIVE_GPT_FUSE_BF16_BF16_DWEIGHT_BGRAD",
+                          "NFN_NATIVE_GPT2_FUSE_BF16_BF16_DWEIGHT_BGRAD",
+                          "NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD"}),
+        true);
+    add_raw("LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE"}));
+    add_raw("LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE",
+                              "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE",
+                              "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE",
+                              "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE"}));
+    add("LINEAR_CUBLASLT_WORKSPACE_MB",
+        std::to_string(resolved_bounded_positive(
+            env_or_empty_any({"NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB",
+                              "NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB"}),
+            128,
+            2048)));
+    const std::string heuristic_index_raw = env_or_empty_any(
+        {"NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX",
+         "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX"});
+    std::int64_t heuristic_index = -1;
+    if (!heuristic_index_raw.empty()) {
+        char* end = nullptr;
+        errno = 0;
+        const long parsed = std::strtol(heuristic_index_raw.c_str(), &end, 10);
+        if (errno == 0 && end != heuristic_index_raw.c_str() && *end == '\0' &&
+            parsed >= 0 && parsed <= 31) {
+            heuristic_index = parsed;
+        }
+    }
+    add("CUBLASLT_HEURISTIC_INDEX", std::to_string(heuristic_index));
+    const std::string heuristic_policy_raw = env_or_empty_any(
+        {"NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY",
+         "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY"});
+    const int heuristic_policy =
+        heuristic_policy_raw == "min_waves" ||
+                heuristic_policy_raw == "MIN_WAVES" ||
+                heuristic_policy_raw == "llmk" || heuristic_policy_raw == "LLMK"
+            ? 1
+            : (heuristic_policy_raw == "max_waves" ||
+                       heuristic_policy_raw == "MAX_WAVES"
+                   ? 2
+                   : 0);
+    add("CUBLASLT_HEURISTIC_POLICY", std::to_string(heuristic_policy));
+    add_raw("CUBLASLT_HEURISTIC_SHAPE",
+            env_or_empty_any({"NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE",
+                              "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE"}));
+    add_raw("CUBLAS_WORKSPACE_CONFIG", env_or_empty("CUBLAS_WORKSPACE_CONFIG"));
+    add_raw("NVIDIA_TF32_OVERRIDE", env_or_empty("NVIDIA_TF32_OVERRIDE"));
+    return digest.finish_hex();
 }
 
 std::string canonical_dense_gpt_model_family(const std::string& model_selector) {
@@ -1190,7 +2201,11 @@ bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
 
 bool selected_graph_is_native_runnable(const Config& cfg) {
     if (!cfg.graph_file.empty()) {
-        return custom_graph_template_metadata_found(cfg) &&
+        const bool graph_metadata_available =
+            resolved_native_template_name(cfg.template_name) == "gpt2_diff"
+            ? cfg.verified_graph_preflight_proof.verified
+            : custom_graph_template_metadata_found(cfg);
+        return graph_metadata_available &&
             selected_template_geometry_matches_compiled_loop(cfg);
     }
     if (selected_template_has_native_family_dataset_loop(cfg)) {
@@ -1207,6 +2222,9 @@ bool custom_graph_file_exists(const Config& cfg) {
     if (cfg.graph_file.empty()) {
         return false;
     }
+    if (!cfg.verified_graph_bytes.empty()) {
+        return true;
+    }
     std::error_code ec;
     return std::filesystem::exists(cfg.graph_file, ec) && !ec;
 }
@@ -1214,6 +2232,9 @@ bool custom_graph_file_exists(const Config& cfg) {
 long long custom_graph_file_size_bytes(const Config& cfg) {
     if (cfg.graph_file.empty()) {
         return -1;
+    }
+    if (!cfg.verified_graph_bytes.empty()) {
+        return static_cast<long long>(cfg.verified_graph_bytes.size());
     }
     std::error_code ec;
     if (!std::filesystem::is_regular_file(cfg.graph_file, ec) || ec) {
@@ -1258,11 +2279,34 @@ struct DenseGptTemplateGeometry {
 struct CustomGraphTemplateMetadata {
     bool found = false;
     DenseGptTemplateGeometry geometry;
+    std::string error;
 };
+
+DenseGptTemplateGeometry gpt2_diff_verified_proof_geometry(const Config& cfg) {
+    DenseGptTemplateGeometry geometry;
+    geometry.source = "verified_native_graph_training_proof";
+    const NativeGraphTrainingProof& proof = cfg.verified_graph_preflight_proof;
+    if (!proof.verified) {
+        return geometry;
+    }
+    geometry.model_dim = proof.model_dim;
+    geometry.num_heads = proof.num_heads;
+    geometry.head_dim = proof.head_dim;
+    geometry.mlp_multiplier = proof.mlp_hidden_dim / proof.model_dim;
+    geometry.vocab_size = proof.vocab_size;
+    geometry.padded_vocab_size = proof.padded_vocab_size;
+    geometry.num_layers = proof.num_layers;
+    geometry.seq_len = proof.max_seq_len;
+    geometry.dropout_p = 0.0;
+    return geometry;
+}
 
 std::string read_custom_graph_prefix(const Config& cfg, std::size_t max_bytes = 16 * 1024 * 1024) {
     if (cfg.graph_file.empty() || !custom_graph_file_exists(cfg)) {
         return {};
+    }
+    if (!cfg.verified_graph_bytes.empty()) {
+        return cfg.verified_graph_bytes.substr(0, max_bytes);
     }
     std::ifstream in(cfg.graph_file, std::ios::binary);
     if (!in) {
@@ -1284,15 +2328,33 @@ std::string template_spec_slice(const std::string& data) {
     return data.substr(pos, std::min<std::size_t>(data.size() - pos, 256 * 1024));
 }
 
-bool parse_json_int_field(const std::string& data, const std::string& key, std::int64_t* out) {
+enum class JsonNumberFieldStatus {
+    kMissing,
+    kValid,
+    kInvalid,
+};
+
+bool valid_json_number_terminator(const std::string& data, std::size_t pos) {
+    while (pos < data.size() &&
+           std::isspace(static_cast<unsigned char>(data[pos]))) {
+        ++pos;
+    }
+    return pos >= data.size() || data[pos] == ',' || data[pos] == '}' ||
+        data[pos] == ']';
+}
+
+JsonNumberFieldStatus parse_json_int_field(
+    const std::string& data,
+    const std::string& key,
+    std::int64_t* out) {
     const std::string needle = "\"" + key + "\"";
     const std::size_t key_pos = data.find(needle);
     if (key_pos == std::string::npos) {
-        return false;
+        return JsonNumberFieldStatus::kMissing;
     }
     const std::size_t colon = data.find(':', key_pos + needle.size());
-    if (colon == std::string::npos) {
-        return false;
+    if (colon == std::string::npos || out == nullptr) {
+        return JsonNumberFieldStatus::kInvalid;
     }
     std::size_t pos = colon + 1;
     while (pos < data.size() && std::isspace(static_cast<unsigned char>(data[pos]))) {
@@ -1304,26 +2366,44 @@ bool parse_json_int_field(const std::string& data, const std::string& key, std::
         ++pos;
     }
     if (pos >= data.size() || !std::isdigit(static_cast<unsigned char>(data[pos]))) {
-        return false;
+        return JsonNumberFieldStatus::kInvalid;
     }
-    std::int64_t value = 0;
+    const std::uint64_t magnitude_limit = negative
+        ? static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1u
+        : static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    std::uint64_t magnitude = 0;
     while (pos < data.size() && std::isdigit(static_cast<unsigned char>(data[pos]))) {
-        value = value * 10 + static_cast<std::int64_t>(data[pos] - '0');
+        const std::uint64_t digit = static_cast<std::uint64_t>(data[pos] - '0');
+        if (magnitude > (magnitude_limit - digit) / 10u) {
+            return JsonNumberFieldStatus::kInvalid;
+        }
+        magnitude = magnitude * 10u + digit;
         ++pos;
     }
-    *out = negative ? -value : value;
-    return true;
+    if (!valid_json_number_terminator(data, pos)) {
+        return JsonNumberFieldStatus::kInvalid;
+    }
+    if (negative && magnitude == magnitude_limit) {
+        *out = std::numeric_limits<std::int64_t>::min();
+    } else {
+        const std::int64_t value = static_cast<std::int64_t>(magnitude);
+        *out = negative ? -value : value;
+    }
+    return JsonNumberFieldStatus::kValid;
 }
 
-bool parse_json_double_field(const std::string& data, const std::string& key, double* out) {
+JsonNumberFieldStatus parse_json_double_field(
+    const std::string& data,
+    const std::string& key,
+    double* out) {
     const std::string needle = "\"" + key + "\"";
     const std::size_t key_pos = data.find(needle);
     if (key_pos == std::string::npos) {
-        return false;
+        return JsonNumberFieldStatus::kMissing;
     }
     const std::size_t colon = data.find(':', key_pos + needle.size());
-    if (colon == std::string::npos) {
-        return false;
+    if (colon == std::string::npos || out == nullptr) {
+        return JsonNumberFieldStatus::kInvalid;
     }
     std::size_t pos = colon + 1;
     while (pos < data.size() && std::isspace(static_cast<unsigned char>(data[pos]))) {
@@ -1331,12 +2411,15 @@ bool parse_json_double_field(const std::string& data, const std::string& key, do
     }
     const char* start = data.c_str() + pos;
     char* end = nullptr;
+    errno = 0;
     const double value = std::strtod(start, &end);
-    if (end == start) {
-        return false;
+    const std::size_t end_pos = static_cast<std::size_t>(end - data.c_str());
+    if (end == start || errno == ERANGE || !std::isfinite(value) ||
+        !valid_json_number_terminator(data, end_pos)) {
+        return JsonNumberFieldStatus::kInvalid;
     }
     *out = value;
-    return true;
+    return JsonNumberFieldStatus::kValid;
 }
 
 bool parse_json_string_field(const std::string& data, const std::string& key, std::string* out) {
@@ -1373,6 +2456,538 @@ bool parse_json_string_field(const std::string& data, const std::string& key, st
     return false;
 }
 
+void skip_strict_json_whitespace(const std::string& data, std::size_t* pos) {
+    while (*pos < data.size() &&
+           (data[*pos] == ' ' || data[*pos] == '\t' ||
+            data[*pos] == '\r' || data[*pos] == '\n')) {
+        ++(*pos);
+    }
+}
+
+bool is_valid_utf8(const std::string& data) {
+    std::size_t pos = 0;
+    while (pos < data.size()) {
+        const std::uint8_t first = static_cast<std::uint8_t>(data[pos++]);
+        if (first <= 0x7f) {
+            continue;
+        }
+        std::uint32_t codepoint = 0;
+        std::size_t continuation_count = 0;
+        if (first >= 0xc2 && first <= 0xdf) {
+            codepoint = first & 0x1f;
+            continuation_count = 1;
+        } else if (first >= 0xe0 && first <= 0xef) {
+            codepoint = first & 0x0f;
+            continuation_count = 2;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            codepoint = first & 0x07;
+            continuation_count = 3;
+        } else {
+            return false;
+        }
+        if (continuation_count > data.size() - pos) {
+            return false;
+        }
+        for (std::size_t i = 0; i < continuation_count; ++i) {
+            const std::uint8_t next = static_cast<std::uint8_t>(data[pos++]);
+            if ((next & 0xc0) != 0x80) {
+                return false;
+            }
+            codepoint = (codepoint << 6) | (next & 0x3f);
+        }
+        if ((continuation_count == 2 && codepoint < 0x800) ||
+            (continuation_count == 3 && codepoint < 0x10000) ||
+            codepoint > 0x10ffff ||
+            (codepoint >= 0xd800 && codepoint <= 0xdfff)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parse_strict_json_string(
+    const std::string& data,
+    std::size_t* pos,
+    std::string* value_out,
+    std::string* error) {
+    if (*pos >= data.size() || data[*pos] != '"') {
+        if (error != nullptr) {
+            *error = "expected a JSON string";
+        }
+        return false;
+    }
+    ++(*pos);
+    std::string value;
+    while (*pos < data.size()) {
+        const unsigned char ch = static_cast<unsigned char>(data[(*pos)++]);
+        if (ch == '"') {
+            if (value_out != nullptr) {
+                *value_out = std::move(value);
+            }
+            return true;
+        }
+        if (ch < 0x20) {
+            if (error != nullptr) {
+                *error = "JSON strings may not contain control characters";
+            }
+            return false;
+        }
+        if (ch != '\\') {
+            value.push_back(static_cast<char>(ch));
+            continue;
+        }
+        if (*pos >= data.size()) {
+            if (error != nullptr) {
+                *error = "unterminated JSON string escape";
+            }
+            return false;
+        }
+        const char escaped = data[(*pos)++];
+        switch (escaped) {
+            case '"': value.push_back('"'); break;
+            case '\\': value.push_back('\\'); break;
+            case '/': value.push_back('/'); break;
+            case 'b': value.push_back('\b'); break;
+            case 'f': value.push_back('\f'); break;
+            case 'n': value.push_back('\n'); break;
+            case 'r': value.push_back('\r'); break;
+            case 't': value.push_back('\t'); break;
+            case 'u': {
+                if (*pos + 4 > data.size()) {
+                    if (error != nullptr) {
+                        *error = "short JSON unicode escape";
+                    }
+                    return false;
+                }
+                for (std::size_t i = 0; i < 4; ++i) {
+                    const unsigned char digit = static_cast<unsigned char>(data[*pos + i]);
+                    if (std::isxdigit(digit) == 0) {
+                        if (error != nullptr) {
+                            *error = "invalid JSON unicode escape";
+                        }
+                        return false;
+                    }
+                }
+                // Contract fields are ASCII. Preserve an otherwise valid escape in
+                // escaped form so it cannot compare equal to an ASCII sentinel.
+                value.append("\\u");
+                value.append(data, *pos, 4);
+                *pos += 4;
+                break;
+            }
+            default:
+                if (error != nullptr) {
+                    *error = "invalid JSON string escape";
+                }
+                return false;
+        }
+    }
+    if (error != nullptr) {
+        *error = "unterminated JSON string";
+    }
+    return false;
+}
+
+bool skip_strict_json_value(
+    const std::string& data,
+    std::size_t* pos,
+    int depth,
+    std::string* error) {
+    if (depth > 32) {
+        if (error != nullptr) {
+            *error = "JSON nesting exceeds the metadata limit";
+        }
+        return false;
+    }
+    skip_strict_json_whitespace(data, pos);
+    if (*pos >= data.size()) {
+        if (error != nullptr) {
+            *error = "unexpected end of JSON value";
+        }
+        return false;
+    }
+    if (data[*pos] == '"') {
+        return parse_strict_json_string(data, pos, nullptr, error);
+    }
+    if (data[*pos] == '{') {
+        ++(*pos);
+        skip_strict_json_whitespace(data, pos);
+        if (*pos < data.size() && data[*pos] == '}') {
+            ++(*pos);
+            return true;
+        }
+        while (*pos < data.size()) {
+            if (!parse_strict_json_string(data, pos, nullptr, error)) {
+                return false;
+            }
+            skip_strict_json_whitespace(data, pos);
+            if (*pos >= data.size() || data[*pos] != ':') {
+                if (error != nullptr) {
+                    *error = "expected ':' after JSON object key";
+                }
+                return false;
+            }
+            ++(*pos);
+            if (!skip_strict_json_value(data, pos, depth + 1, error)) {
+                return false;
+            }
+            skip_strict_json_whitespace(data, pos);
+            if (*pos < data.size() && data[*pos] == '}') {
+                ++(*pos);
+                return true;
+            }
+            if (*pos >= data.size() || data[*pos] != ',') {
+                if (error != nullptr) {
+                    *error = "expected ',' or '}' in JSON object";
+                }
+                return false;
+            }
+            ++(*pos);
+            skip_strict_json_whitespace(data, pos);
+        }
+        if (error != nullptr) {
+            *error = "unterminated JSON object";
+        }
+        return false;
+    }
+    if (data[*pos] == '[') {
+        ++(*pos);
+        skip_strict_json_whitespace(data, pos);
+        if (*pos < data.size() && data[*pos] == ']') {
+            ++(*pos);
+            return true;
+        }
+        while (*pos < data.size()) {
+            if (!skip_strict_json_value(data, pos, depth + 1, error)) {
+                return false;
+            }
+            skip_strict_json_whitespace(data, pos);
+            if (*pos < data.size() && data[*pos] == ']') {
+                ++(*pos);
+                return true;
+            }
+            if (*pos >= data.size() || data[*pos] != ',') {
+                if (error != nullptr) {
+                    *error = "expected ',' or ']' in JSON array";
+                }
+                return false;
+            }
+            ++(*pos);
+        }
+        if (error != nullptr) {
+            *error = "unterminated JSON array";
+        }
+        return false;
+    }
+    const std::size_t start = *pos;
+    if (data.compare(*pos, 4, "true") == 0 || data.compare(*pos, 4, "null") == 0) {
+        *pos += 4;
+        return true;
+    }
+    if (data.compare(*pos, 5, "false") == 0) {
+        *pos += 5;
+        return true;
+    }
+    if (data[*pos] == '-') {
+        ++(*pos);
+    }
+    if (*pos >= data.size()) {
+        if (error != nullptr) {
+            *error = "invalid JSON number";
+        }
+        return false;
+    }
+    if (data[*pos] == '0') {
+        ++(*pos);
+        if (*pos < data.size() && std::isdigit(static_cast<unsigned char>(data[*pos])) != 0) {
+            if (error != nullptr) {
+                *error = "JSON numbers may not contain leading zeroes";
+            }
+            return false;
+        }
+    } else if (std::isdigit(static_cast<unsigned char>(data[*pos])) != 0) {
+        while (*pos < data.size() &&
+               std::isdigit(static_cast<unsigned char>(data[*pos])) != 0) {
+            ++(*pos);
+        }
+    } else {
+        if (error != nullptr) {
+            *error = start == *pos ? "invalid JSON value" : "invalid JSON number";
+        }
+        return false;
+    }
+    if (*pos < data.size() && data[*pos] == '.') {
+        ++(*pos);
+        const std::size_t fraction_start = *pos;
+        while (*pos < data.size() &&
+               std::isdigit(static_cast<unsigned char>(data[*pos])) != 0) {
+            ++(*pos);
+        }
+        if (*pos == fraction_start) {
+            if (error != nullptr) {
+                *error = "invalid JSON number fraction";
+            }
+            return false;
+        }
+    }
+    if (*pos < data.size() && (data[*pos] == 'e' || data[*pos] == 'E')) {
+        ++(*pos);
+        if (*pos < data.size() && (data[*pos] == '+' || data[*pos] == '-')) {
+            ++(*pos);
+        }
+        const std::size_t exponent_start = *pos;
+        while (*pos < data.size() &&
+               std::isdigit(static_cast<unsigned char>(data[*pos])) != 0) {
+            ++(*pos);
+        }
+        if (*pos == exponent_start) {
+            if (error != nullptr) {
+                *error = "invalid JSON number exponent";
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parse_strict_json_object(
+    const std::string& data,
+    std::map<std::string, std::string>* fields_out,
+    std::string* error) {
+    std::size_t pos = 0;
+    skip_strict_json_whitespace(data, &pos);
+    if (pos >= data.size() || data[pos] != '{') {
+        if (error != nullptr) {
+            *error = "expected a JSON object";
+        }
+        return false;
+    }
+    ++pos;
+    std::map<std::string, std::string> fields;
+    skip_strict_json_whitespace(data, &pos);
+    if (pos < data.size() && data[pos] == '}') {
+        ++pos;
+    } else {
+        while (pos < data.size()) {
+            std::string key;
+            if (!parse_strict_json_string(data, &pos, &key, error)) {
+                return false;
+            }
+            if (fields.find(key) != fields.end()) {
+                if (error != nullptr) {
+                    *error = "duplicate JSON object key: " + key;
+                }
+                return false;
+            }
+            skip_strict_json_whitespace(data, &pos);
+            if (pos >= data.size() || data[pos] != ':') {
+                if (error != nullptr) {
+                    *error = "expected ':' after JSON object key";
+                }
+                return false;
+            }
+            ++pos;
+            skip_strict_json_whitespace(data, &pos);
+            const std::size_t value_start = pos;
+            if (!skip_strict_json_value(data, &pos, 1, error)) {
+                return false;
+            }
+            fields.emplace(key, data.substr(value_start, pos - value_start));
+            skip_strict_json_whitespace(data, &pos);
+            if (pos < data.size() && data[pos] == '}') {
+                ++pos;
+                break;
+            }
+            if (pos >= data.size() || data[pos] != ',') {
+                if (error != nullptr) {
+                    *error = "expected ',' or '}' in JSON object";
+                }
+                return false;
+            }
+            ++pos;
+            skip_strict_json_whitespace(data, &pos);
+        }
+    }
+    skip_strict_json_whitespace(data, &pos);
+    if (pos != data.size()) {
+        if (error != nullptr) {
+            *error = "trailing content after JSON object";
+        }
+        return false;
+    }
+    if (fields_out != nullptr) {
+        *fields_out = std::move(fields);
+    }
+    return true;
+}
+
+bool strict_json_has_exact_fields(
+    const std::map<std::string, std::string>& fields,
+    std::initializer_list<const char*> expected) {
+    if (fields.size() != expected.size()) {
+        return false;
+    }
+    return std::all_of(expected.begin(), expected.end(), [&](const char* key) {
+        return fields.find(key) != fields.end();
+    });
+}
+
+bool parse_strict_json_string_value(
+    const std::string& data,
+    std::string* value_out,
+    std::string* error) {
+    std::size_t pos = 0;
+    skip_strict_json_whitespace(data, &pos);
+    if (!parse_strict_json_string(data, &pos, value_out, error)) {
+        return false;
+    }
+    skip_strict_json_whitespace(data, &pos);
+    return pos == data.size();
+}
+
+bool parse_strict_json_positive_int(
+    const std::string& data,
+    std::int64_t* value_out) {
+    if (data.empty() || data[0] < '1' || data[0] > '9') {
+        return false;
+    }
+    std::int64_t value = 0;
+    for (const unsigned char ch : data) {
+        if (std::isdigit(ch) == 0) {
+            return false;
+        }
+        const std::int64_t digit = static_cast<std::int64_t>(ch - '0');
+        if (value > (std::numeric_limits<std::int64_t>::max() - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
+    }
+    if (value_out != nullptr) {
+        *value_out = value;
+    }
+    return true;
+}
+
+bool parse_strict_json_nonnegative_int(
+    const std::string& data,
+    std::int64_t* value_out) {
+    if (data == "0") {
+        if (value_out != nullptr) {
+            *value_out = 0;
+        }
+        return true;
+    }
+    return parse_strict_json_positive_int(data, value_out);
+}
+
+bool parse_strict_json_signed_int(
+    const std::string& data,
+    std::int64_t* value_out) {
+    if (data.empty()) {
+        return false;
+    }
+    bool negative = data[0] == '-';
+    const std::string_view digits = negative
+        ? std::string_view(data).substr(1)
+        : std::string_view(data);
+    if (digits.empty() || (digits.size() > 1 && digits[0] == '0')) {
+        return false;
+    }
+    std::uint64_t magnitude = 0;
+    const std::uint64_t limit = negative
+        ? static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1
+        : static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    for (const unsigned char ch : digits) {
+        if (std::isdigit(ch) == 0) {
+            return false;
+        }
+        const std::uint64_t digit = static_cast<std::uint64_t>(ch - '0');
+        if (magnitude > (limit - digit) / 10) {
+            return false;
+        }
+        magnitude = magnitude * 10 + digit;
+    }
+    if (value_out != nullptr) {
+        if (negative && magnitude == limit) {
+            *value_out = std::numeric_limits<std::int64_t>::min();
+        } else {
+            const std::int64_t signed_magnitude = static_cast<std::int64_t>(magnitude);
+            *value_out = negative ? -signed_magnitude : signed_magnitude;
+        }
+    }
+    return true;
+}
+
+bool parse_strict_json_finite_double(
+    const std::string& data,
+    double* value_out) {
+    try {
+        std::size_t consumed = 0;
+        const double value = std::stod(data, &consumed);
+        if (consumed != data.size() || !std::isfinite(value)) {
+            return false;
+        }
+        if (value_out != nullptr) {
+            *value_out = value;
+        }
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+bool parse_strict_json_string_array(
+    const std::string& data,
+    std::vector<std::string>* values_out,
+    std::string* error) {
+    std::size_t pos = 0;
+    skip_strict_json_whitespace(data, &pos);
+    if (pos >= data.size() || data[pos] != '[') {
+        if (error != nullptr) {
+            *error = "expected a JSON string array";
+        }
+        return false;
+    }
+    ++pos;
+    std::vector<std::string> values;
+    skip_strict_json_whitespace(data, &pos);
+    if (pos < data.size() && data[pos] == ']') {
+        ++pos;
+    } else {
+        while (pos < data.size()) {
+            std::string value;
+            if (!parse_strict_json_string(data, &pos, &value, error)) {
+                return false;
+            }
+            values.push_back(std::move(value));
+            skip_strict_json_whitespace(data, &pos);
+            if (pos < data.size() && data[pos] == ']') {
+                ++pos;
+                break;
+            }
+            if (pos >= data.size() || data[pos] != ',') {
+                if (error != nullptr) {
+                    *error = "expected ',' or ']' in JSON string array";
+                }
+                return false;
+            }
+            ++pos;
+            skip_strict_json_whitespace(data, &pos);
+        }
+    }
+    skip_strict_json_whitespace(data, &pos);
+    if (pos != data.size()) {
+        if (error != nullptr) {
+            *error = "trailing content after JSON string array";
+        }
+        return false;
+    }
+    if (values_out != nullptr) {
+        *values_out = std::move(values);
+    }
+    return true;
+}
+
 CustomGraphTemplateMetadata custom_graph_template_metadata(const Config& cfg) {
     CustomGraphTemplateMetadata meta;
     if (cfg.graph_file.empty()) {
@@ -1388,32 +3003,60 @@ CustomGraphTemplateMetadata custom_graph_template_metadata(const Config& cfg) {
     std::string backbone;
     parse_json_string_field(section, "backbone", &backbone);
     std::int64_t value = 0;
-    if (parse_json_int_field(section, "model_dim", &value)) {
-        geometry.model_dim = value;
+    const auto record_invalid = [&](const std::string& key,
+                                    const std::string& requirement) {
+        if (meta.error.empty()) {
+            meta.error = "graph template_spec." + key + " " + requirement;
+        }
+    };
+    const auto parse_int = [&](const std::string& key,
+                               std::int64_t* destination) {
+        const JsonNumberFieldStatus status =
+            parse_json_int_field(section, key, &value);
+        if (status == JsonNumberFieldStatus::kValid) {
+            *destination = value;
+        } else if (status == JsonNumberFieldStatus::kInvalid) {
+            record_invalid(key, "must be a signed int64 JSON integer");
+        }
+        return status;
+    };
+    parse_int("model_dim", &geometry.model_dim);
+    parse_int("num_layers", &geometry.num_layers);
+    parse_int("vocab_size", &geometry.vocab_size);
+    parse_int("padded_vocab_size", &geometry.padded_vocab_size);
+    parse_int("num_heads", &geometry.num_heads);
+    JsonNumberFieldStatus seq_status = parse_int("seq_len", &geometry.seq_len);
+    if (seq_status == JsonNumberFieldStatus::kMissing) {
+        seq_status = parse_int("max_seq_len", &geometry.seq_len);
     }
-    if (parse_json_int_field(section, "num_layers", &value)) {
-        geometry.num_layers = value;
-    }
-    if (parse_json_int_field(section, "vocab_size", &value)) {
-        geometry.vocab_size = value;
-    }
-    if (parse_json_int_field(section, "padded_vocab_size", &value)) {
-        geometry.padded_vocab_size = value;
-    }
-    if (parse_json_int_field(section, "num_heads", &value)) {
-        geometry.num_heads = value;
-    }
-    if (parse_json_int_field(section, "seq_len", &value) ||
-        parse_json_int_field(section, "max_seq_len", &value) ||
-        parse_json_int_field(section, "context_window", &value)) {
-        geometry.seq_len = value;
+    if (seq_status == JsonNumberFieldStatus::kMissing) {
+        parse_int("context_window", &geometry.seq_len);
     }
     double double_value = 0.0;
-    if (parse_json_double_field(section, "mlp_multiplier", &double_value)) {
-        geometry.mlp_multiplier = static_cast<std::int64_t>(std::llround(double_value));
+    const JsonNumberFieldStatus multiplier_status =
+        parse_json_double_field(section, "mlp_multiplier", &double_value);
+    if (multiplier_status == JsonNumberFieldStatus::kValid) {
+        const long double rounded =
+            std::round(static_cast<long double>(double_value));
+        if (rounded < static_cast<long double>(
+                std::numeric_limits<std::int64_t>::min()) ||
+            rounded > static_cast<long double>(
+                std::numeric_limits<std::int64_t>::max())) {
+            record_invalid(
+                "mlp_multiplier",
+                "must round into the signed int64 range");
+        } else {
+            geometry.mlp_multiplier = static_cast<std::int64_t>(rounded);
+        }
+    } else if (multiplier_status == JsonNumberFieldStatus::kInvalid) {
+        record_invalid("mlp_multiplier", "must be a finite JSON number");
     }
-    if (parse_json_double_field(section, "dropout_p", &double_value)) {
+    const JsonNumberFieldStatus dropout_status =
+        parse_json_double_field(section, "dropout_p", &double_value);
+    if (dropout_status == JsonNumberFieldStatus::kValid) {
         geometry.dropout_p = double_value;
+    } else if (dropout_status == JsonNumberFieldStatus::kInvalid) {
+        record_invalid("dropout_p", "must be a finite JSON number");
     }
     if (geometry.num_heads > 0) {
         geometry.head_dim = geometry.model_dim / geometry.num_heads;
@@ -1439,6 +3082,10 @@ DenseGptTemplateGeometry selected_template_geometry(const Config& cfg) {
     const std::string selector = resolved_native_template_name(cfg.template_name);
     geometry.source = selected_architecture_source(cfg);
     if (!cfg.graph_file.empty()) {
+        if (selector == "gpt2_diff" &&
+            cfg.verified_graph_preflight_proof.verified) {
+            return gpt2_diff_verified_proof_geometry(cfg);
+        }
         CustomGraphTemplateMetadata meta = custom_graph_template_metadata(cfg);
         if (meta.found) {
             return meta.geometry;
@@ -1472,6 +3119,177 @@ DenseGptTemplateGeometry runtime_dense_gpt_geometry(const Config& cfg) {
     return geometry;
 }
 
+std::string gpt2_diff_packed_preflight_error(std::string reason) {
+    return std::string(kGpt2DiffPackedPreflightPrefix) + std::move(reason);
+}
+
+std::string gpt2_diff_graph_geometry_bounds_error(
+    const Config& cfg,
+    const DenseGptTemplateGeometry& geometry) {
+    const auto fail = [](std::string reason) {
+        return gpt2_diff_packed_preflight_error(std::move(reason));
+    };
+    if (cfg.batch_size <= 0 || geometry.seq_len <= 0 ||
+        geometry.seq_len > std::numeric_limits<int>::max() ||
+        geometry.num_layers <= 0 ||
+        geometry.num_layers > std::numeric_limits<int>::max() ||
+        geometry.model_dim <= 0 || geometry.num_heads <= 0 ||
+        geometry.mlp_multiplier <= 0 || geometry.vocab_size <= 0 ||
+        geometry.padded_vocab_size < geometry.vocab_size ||
+        !std::isfinite(geometry.dropout_p)) {
+        return fail("graph geometry contains non-positive or unrepresentable dimensions");
+    }
+    const auto multiply = [](std::int64_t left,
+                             std::int64_t right,
+                             std::int64_t* product) {
+        if (product == nullptr || left <= 0 || right <= 0 ||
+            left > std::numeric_limits<std::int64_t>::max() / right) {
+            return false;
+        }
+        *product = left * right;
+        return true;
+    };
+    const auto add = [](std::int64_t left,
+                        std::int64_t right,
+                        std::int64_t* sum) {
+        if (sum == nullptr || left < 0 || right < 0 ||
+            left > std::numeric_limits<std::int64_t>::max() - right) {
+            return false;
+        }
+        *sum = left + right;
+        return true;
+    };
+    std::int64_t rows = 0;
+    std::int64_t hidden = 0;
+    std::int64_t qkv_dim = 0;
+    std::int64_t activation = 0;
+    std::int64_t hidden_activation = 0;
+    std::int64_t qkv_activation = 0;
+    std::int64_t token_weight = 0;
+    std::int64_t position_weight = 0;
+    std::int64_t qkv_weight = 0;
+    std::int64_t square_weight = 0;
+    std::int64_t fc_weight = 0;
+    std::int64_t block_weight = 0;
+    std::int64_t norm_vectors = 0;
+    std::int64_t final_norm_vectors = 0;
+    std::int64_t layer_weight = 0;
+    std::int64_t global_weight = 0;
+    std::int64_t parameter_count = 0;
+    const bool products_fit =
+        multiply(cfg.batch_size, geometry.seq_len, &rows) &&
+        multiply(geometry.model_dim, geometry.mlp_multiplier, &hidden) &&
+        multiply(geometry.model_dim, 3, &qkv_dim) &&
+        multiply(rows, geometry.model_dim, &activation) &&
+        multiply(rows, hidden, &hidden_activation) &&
+        multiply(rows, qkv_dim, &qkv_activation) &&
+        multiply(geometry.padded_vocab_size, geometry.model_dim, &token_weight) &&
+        multiply(geometry.seq_len, geometry.model_dim, &position_weight) &&
+        multiply(qkv_dim, geometry.model_dim, &qkv_weight) &&
+        multiply(geometry.model_dim, geometry.model_dim, &square_weight) &&
+        multiply(hidden, geometry.model_dim, &fc_weight) &&
+        multiply(geometry.model_dim, 4, &norm_vectors) &&
+        multiply(geometry.model_dim, 2, &final_norm_vectors);
+    if (!products_fit) {
+        return fail("graph geometry overflows checked int64 products");
+    }
+    // Per layer: four norm vectors, QKV weight+bias, attention projection
+    // weight+bias, FC weight+bias, and MLP projection weight+bias.
+    block_weight = norm_vectors;
+    if (!add(block_weight, qkv_weight, &block_weight) ||
+        !add(block_weight, qkv_dim, &block_weight) ||
+        !add(block_weight, square_weight, &block_weight) ||
+        !add(block_weight, geometry.model_dim, &block_weight) ||
+        !add(block_weight, fc_weight, &block_weight) ||
+        !add(block_weight, hidden, &block_weight) ||
+        !add(block_weight, fc_weight, &block_weight) ||
+        !add(block_weight, geometry.model_dim, &block_weight) ||
+        !multiply(block_weight, geometry.num_layers, &layer_weight) ||
+        !add(token_weight, position_weight, &global_weight) ||
+        !add(global_weight, final_norm_vectors, &global_weight) ||
+        !add(global_weight, layer_weight, &parameter_count)) {
+        return fail("graph geometry overflows checked parameter products");
+    }
+    const auto fits_allocation = [](std::int64_t elements, std::size_t bytes) {
+        return elements > 0 &&
+            static_cast<std::uint64_t>(elements) <=
+                std::numeric_limits<std::size_t>::max() / bytes;
+    };
+    if (!fits_allocation(activation, sizeof(float)) ||
+        !fits_allocation(hidden_activation, sizeof(float)) ||
+        !fits_allocation(qkv_activation, sizeof(float)) ||
+        !fits_allocation(parameter_count, sizeof(float))) {
+        return fail("graph geometry exceeds addressable allocation bounds");
+    }
+    return {};
+}
+
+std::string gpt2_diff_packed_configuration_error(const Config& cfg) {
+    if (!dense_gpt_variant_config(cfg.template_name).use_differential_attention) {
+        return {};
+    }
+    if (!packed_qkv_attention_default_enabled()) {
+        return gpt2_diff_packed_preflight_error(
+            "packed QKV attention is disabled; "
+            "NFN_NATIVE_GPT_PACKED_QKV_ATTENTION and "
+            "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION must be unset or enabled");
+    }
+    if (!packed_qkv_attention_shape_supported(cfg.seq_len)) {
+        return gpt2_diff_packed_preflight_error(
+            "train_seq_len must be at least 16 for packed QKV attention (got " +
+            std::to_string(cfg.seq_len) + ")");
+    }
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    if (geometry.model_dim <= 0 || geometry.num_heads <= 0 ||
+        geometry.model_dim % geometry.num_heads != 0) {
+        return gpt2_diff_packed_preflight_error(
+            "model_dim must be positive and exactly divisible by num_heads");
+    }
+    const std::int64_t head_dim = geometry.model_dim / geometry.num_heads;
+    if (head_dim < 2 || (head_dim % 2) != 0) {
+        return gpt2_diff_packed_preflight_error(
+            "head_dim must be even and at least 2 for split differential Q/K branches (got " +
+            std::to_string(head_dim) + ")");
+    }
+    if (!env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
+                              "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
+            true)) {
+        return gpt2_diff_packed_preflight_error(
+            "BF16 QKV gradient handoff is disabled; "
+            "NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF and "
+            "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF must be unset or enabled");
+    }
+    return {};
+}
+
+std::string gpt2_diff_missing_tile_symbols_error(
+    const std::vector<std::string>& missing_symbols) {
+    std::vector<std::string> missing_differential_symbols;
+    for (const char* required : kGpt2DiffPackedTileSymbols) {
+        if (std::find(missing_symbols.begin(), missing_symbols.end(), required) !=
+            missing_symbols.end()) {
+            missing_differential_symbols.emplace_back(required);
+        }
+    }
+    if (missing_differential_symbols.empty()) {
+        return {};
+    }
+    std::ostringstream out;
+    out << "missing required Tile ABI symbol";
+    if (missing_differential_symbols.size() != 1) {
+        out << "s";
+    }
+    out << ": ";
+    for (std::size_t index = 0; index < missing_differential_symbols.size(); ++index) {
+        if (index != 0) {
+            out << ", ";
+        }
+        out << missing_differential_symbols[index];
+    }
+    return gpt2_diff_packed_preflight_error(out.str());
+}
+
 std::string selected_template_geometry_json(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
     std::ostringstream out;
@@ -1492,8 +3310,14 @@ std::string selected_template_geometry_json(const Config& cfg) {
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
-    if (!cfg.graph_file.empty() && !custom_graph_template_metadata_found(cfg)) {
-        return false;
+    if (!cfg.graph_file.empty()) {
+        const bool graph_metadata_available =
+            resolved_native_template_name(cfg.template_name) == "gpt2_diff"
+            ? cfg.verified_graph_preflight_proof.verified
+            : custom_graph_template_metadata_found(cfg);
+        if (!graph_metadata_available) {
+            return false;
+        }
     }
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     return geometry.model_dim > 0 &&
@@ -1538,7 +3362,13 @@ std::string selected_graph_support_status(const Config& cfg) {
 
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
-    const bool custom_graph_metadata_loaded = !cfg.graph_file.empty() && custom_graph_template_metadata(cfg).found;
+    const bool diff_proof_geometry_loaded =
+        !cfg.graph_file.empty() &&
+        resolved_native_template_name(cfg.template_name) == "gpt2_diff" &&
+        cfg.verified_graph_preflight_proof.verified;
+    const bool custom_graph_metadata_loaded =
+        !cfg.graph_file.empty() &&
+        (diff_proof_geometry_loaded || custom_graph_template_metadata(cfg).found);
     const bool template_geometry_dynamic = geometry.model_dim != 768 ||
         geometry.num_heads != 12 ||
         geometry.num_layers != 12 ||
@@ -1548,7 +3378,11 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "{"
         << "\"name\":\"native-dense-gpt-transformer\","
         << "\"shape_source\":\""
-        << (custom_graph_metadata_loaded ? "custom_graph_template_spec" : "selected_dense_gpt_geometry") << "\","
+        << (diff_proof_geometry_loaded
+                ? "verified_native_graph_training_proof"
+                : (custom_graph_metadata_loaded
+                       ? "custom_graph_template_spec"
+                       : "selected_dense_gpt_geometry")) << "\","
         << "\"template_selector\":\"" << json_escape(normalize_template_name(cfg.template_name)) << "\","
         << "\"resolved_template_selector\":\"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\","
         << "\"graph_file\":\"" << json_escape(cfg.graph_file) << "\","
@@ -1802,6 +3636,723 @@ std::int64_t file_size_bytes(const fs::path& path, std::string* error) {
     return static_cast<std::int64_t>(size);
 }
 
+bool is_lowercase_sha256(const std::string& value) {
+    return value.size() == 64 &&
+        std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+            return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+        });
+}
+
+bool sha256_file_hex(
+    const fs::path& path,
+    std::string* digest_out,
+    std::string* error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        if (error != nullptr) {
+            *error = "failed to open file for SHA-256: " + path.string();
+        }
+        return false;
+    }
+    neuralfn::resident_support::Sha256 digest;
+    std::array<std::uint8_t, 1024 * 1024> buffer{};
+    while (in) {
+        in.read(
+            reinterpret_cast<char*>(buffer.data()),
+            static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = in.gcount();
+        if (count > 0) {
+            digest.update(buffer.data(), static_cast<std::size_t>(count));
+        }
+    }
+    if (in.bad()) {
+        if (error != nullptr) {
+            *error = "failed while reading file for SHA-256: " + path.string();
+        }
+        return false;
+    }
+    if (digest_out != nullptr) {
+        *digest_out = digest.finish_hex();
+    }
+    return true;
+}
+
+bool verify_graph_fingerprint(Config* cfg, std::string* error) {
+    if (cfg == nullptr) {
+        if (error != nullptr) {
+            *error = "graph fingerprint verification requires a configuration";
+        }
+        return false;
+    }
+    cfg->verified_graph_fingerprint.clear();
+    cfg->verified_graph_bytes.clear();
+    const bool graph_bound_moa =
+        resolved_native_template_name(cfg->template_name) == "gpt2_moa" ||
+        cfg->activation == "moa";
+    const bool graph_bound_diff =
+        resolved_native_template_name(cfg->template_name) == "gpt2_diff";
+    if (cfg->graph_fingerprint.empty()) {
+        if (graph_bound_diff) {
+            if (error != nullptr) {
+                *error = "gpt2_diff graph training requires --graph-file and --graph-fingerprint";
+            }
+            return false;
+        }
+        if (!cfg->graph_file.empty() && graph_bound_moa) {
+            if (error != nullptr) {
+                *error = "gpt2_moa graph training requires --graph-fingerprint";
+            }
+            return false;
+        }
+        return true;
+    }
+    if (!is_lowercase_sha256(cfg->graph_fingerprint)) {
+        if (error != nullptr) {
+            *error = "--graph-fingerprint must be one lowercase SHA-256 digest";
+        }
+        return false;
+    }
+    if (cfg->graph_file.empty()) {
+        if (error != nullptr) {
+            *error = "--graph-fingerprint requires --graph-file";
+        }
+        return false;
+    }
+    std::string actual;
+    if (graph_bound_diff) {
+        constexpr std::int64_t kMaxVerifiedGraphBytes = 16 * 1024 * 1024;
+        std::vector<std::uint8_t> graph_bytes;
+        if (!read_regular_nofollow_file(
+                fs::path(cfg->graph_file), kMaxVerifiedGraphBytes,
+                &graph_bytes, error)) {
+            return false;
+        }
+        if (graph_bytes.empty()) {
+            if (error != nullptr) {
+                *error = "gpt2_diff graph file must not be empty";
+            }
+            return false;
+        }
+        actual = sha256_bytes_hex(graph_bytes);
+        cfg->verified_graph_bytes.assign(graph_bytes.begin(), graph_bytes.end());
+    } else if (!sha256_file_hex(fs::path(cfg->graph_file), &actual, error)) {
+        return false;
+    }
+    if (actual != cfg->graph_fingerprint) {
+        if (error != nullptr) {
+            *error = "source graph SHA-256 does not match --graph-fingerprint";
+        }
+        return false;
+    }
+    cfg->verified_graph_fingerprint = actual;
+    return true;
+}
+
+bool verify_gpt2_diff_graph_preflight_proof(Config* cfg, std::string* error) {
+    if (cfg == nullptr) {
+        if (error != nullptr) {
+            *error = gpt2_diff_packed_preflight_error(
+                "graph preflight proof verification requires a configuration");
+        }
+        return false;
+    }
+    cfg->verified_graph_preflight_proof = NativeGraphTrainingProof{};
+    const bool graph_bound_diff =
+        resolved_native_template_name(cfg->template_name) == "gpt2_diff";
+    if (!graph_bound_diff) {
+        if (!cfg->graph_preflight_proof.empty()) {
+            if (error != nullptr) {
+                *error = "--graph-preflight-proof is only supported for gpt2_diff graph training";
+            }
+            return false;
+        }
+        return true;
+    }
+    const auto fail = [&](const std::string& message) {
+        if (error != nullptr) {
+            *error = gpt2_diff_packed_preflight_error(message);
+        }
+        return false;
+    };
+    if (cfg->verified_graph_fingerprint.empty() ||
+        !is_lowercase_sha256(cfg->verified_graph_fingerprint)) {
+        return fail("graph preflight proof requires verified source graph bytes");
+    }
+    if (cfg->graph_preflight_proof.empty()) {
+        return fail("--graph-preflight-proof is required for gpt2_diff graph execution and plans");
+    }
+    constexpr std::int64_t kMaxProofBytes = 64 * 1024;
+    std::vector<std::uint8_t> proof_bytes;
+    std::string file_error;
+    if (!read_regular_nofollow_file(
+            fs::path(cfg->graph_preflight_proof), kMaxProofBytes,
+            &proof_bytes, &file_error)) {
+        return fail("invalid graph preflight proof: " + file_error);
+    }
+    if (proof_bytes.empty()) {
+        return fail("invalid graph preflight proof: file must not be empty");
+    }
+    const std::string encoded(
+        reinterpret_cast<const char*>(proof_bytes.data()), proof_bytes.size());
+    if (!is_valid_utf8(encoded)) {
+        return fail("invalid graph preflight proof: file is not valid UTF-8");
+    }
+    std::map<std::string, std::string> envelope;
+    std::string parse_error;
+    if (!parse_strict_json_object(encoded, &envelope, &parse_error)) {
+        return fail("invalid graph preflight proof: " + parse_error);
+    }
+    if (!strict_json_has_exact_fields(
+            envelope, {"contract", "contract_sha256"})) {
+        return fail("invalid graph preflight proof: envelope fields are not canonical");
+    }
+    std::string envelope_contract_sha256;
+    std::string string_error;
+    if (!parse_strict_json_string_value(
+            envelope.at("contract_sha256"),
+            &envelope_contract_sha256, &string_error) ||
+        !is_lowercase_sha256(envelope_contract_sha256)) {
+        return fail("invalid graph preflight proof: contract_sha256 is not a canonical lowercase digest");
+    }
+    const std::string& contract_bytes = envelope.at("contract");
+    const std::vector<std::uint8_t> contract_vector(
+        contract_bytes.begin(), contract_bytes.end());
+    if (sha256_bytes_hex(contract_vector) != envelope_contract_sha256) {
+        return fail("invalid graph preflight proof: contract_sha256 does not match the raw contract bytes");
+    }
+    const std::string canonical_envelope =
+        "{\"contract\":" + contract_bytes +
+        ",\"contract_sha256\":\"" + envelope_contract_sha256 + "\"}\n";
+    if (encoded != canonical_envelope) {
+        return fail("invalid graph preflight proof: envelope is not canonical compact JSON with one trailing newline");
+    }
+    std::map<std::string, std::string> root;
+    if (!parse_strict_json_object(contract_bytes, &root, &parse_error)) {
+        return fail("invalid graph preflight proof contract: " + parse_error);
+    }
+    if (!strict_json_has_exact_fields(
+            root,
+            {"schema", "version", "training_selector", "adapter_mode",
+             "source_graph_sha256", "validator_contract", "configuration_contract",
+             "topology_contract",
+             "root_shape_sha256", "block_shape_sha256", "attention_shape_sha256",
+             "mlp_shape_sha256", "geometry", "passed"})) {
+        return fail("invalid graph preflight proof: contract fields are not canonical");
+    }
+    NativeGraphTrainingProof proof;
+    const auto require_string = [&](const char* key, std::string* destination) {
+        std::string local_error;
+        if (!parse_strict_json_string_value(
+                root.at(key), destination, &local_error)) {
+            return fail(
+                std::string("invalid graph preflight proof: ") + key +
+                " must be a JSON string");
+        }
+        return true;
+    };
+    if (!parse_strict_json_positive_int(root.at("version"), &proof.version)) {
+        return fail("invalid graph preflight proof: version must be a positive int64");
+    }
+    if (!require_string("schema", &proof.schema) ||
+        !require_string("training_selector", &proof.training_selector) ||
+        !require_string("adapter_mode", &proof.adapter_mode) ||
+        !require_string("source_graph_sha256", &proof.source_graph_sha256) ||
+        !require_string("validator_contract", &proof.validator_contract) ||
+        !require_string("configuration_contract", &proof.configuration_contract) ||
+        !require_string("topology_contract", &proof.topology_contract) ||
+        !require_string("root_shape_sha256", &proof.root_shape_sha256) ||
+        !require_string("block_shape_sha256", &proof.block_shape_sha256) ||
+        !require_string("attention_shape_sha256", &proof.attention_shape_sha256) ||
+        !require_string("mlp_shape_sha256", &proof.mlp_shape_sha256)) {
+        return false;
+    }
+    proof.contract_sha256 = envelope_contract_sha256;
+    std::map<std::string, std::string> geometry;
+    if (!parse_strict_json_object(root.at("geometry"), &geometry, &parse_error) ||
+        !strict_json_has_exact_fields(
+            geometry,
+            {"head_dim", "max_seq_len", "mlp_hidden_dim", "model_dim",
+             "num_heads", "num_kv_heads", "num_layers", "padded_vocab_size",
+             "vocab_size"})) {
+        return fail("invalid graph preflight proof: geometry fields are not canonical");
+    }
+    const auto require_geometry_positive = [&](const char* key, std::int64_t* destination) {
+        if (!parse_strict_json_positive_int(geometry.at(key), destination)) {
+            return fail(
+                std::string("invalid graph preflight proof: geometry.") + key +
+                " must be a positive int64");
+        }
+        return true;
+    };
+    if (!require_geometry_positive("head_dim", &proof.head_dim) ||
+        !require_geometry_positive("max_seq_len", &proof.max_seq_len) ||
+        !require_geometry_positive("mlp_hidden_dim", &proof.mlp_hidden_dim) ||
+        !require_geometry_positive("model_dim", &proof.model_dim) ||
+        !require_geometry_positive("num_heads", &proof.num_heads) ||
+        !require_geometry_positive("num_kv_heads", &proof.num_kv_heads) ||
+        !require_geometry_positive("num_layers", &proof.num_layers) ||
+        !require_geometry_positive("padded_vocab_size", &proof.padded_vocab_size) ||
+        !require_geometry_positive("vocab_size", &proof.vocab_size)) {
+        return false;
+    }
+    if (root.at("passed") != "true") {
+        return fail("invalid graph preflight proof: passed must be true");
+    }
+    proof.passed = true;
+    if (proof.schema != kGpt2DiffProofSchema ||
+        proof.version != kGpt2DiffProofVersion ||
+        proof.training_selector != "gpt2_diff" ||
+        proof.adapter_mode != kGpt2DiffProofAdapterMode ||
+        proof.validator_contract != kGpt2DiffProofValidatorContract ||
+        proof.configuration_contract != kGpt2DiffProofConfigurationContract ||
+        proof.topology_contract != kGpt2DiffProofTopologyContract) {
+        return fail("invalid graph preflight proof: semantic contract identity is not canonical");
+    }
+    if (proof.source_graph_sha256 != cfg->verified_graph_fingerprint) {
+        return fail("invalid graph preflight proof: source_graph_sha256 does not match the verified graph bytes");
+    }
+    if (proof.root_shape_sha256 != kGpt2DiffProofRootShapeSha256 ||
+        proof.block_shape_sha256 != kGpt2DiffProofBlockShapeSha256 ||
+        proof.attention_shape_sha256 != kGpt2DiffProofAttentionShapeSha256 ||
+        proof.mlp_shape_sha256 != kGpt2DiffProofMlpShapeSha256) {
+        return fail("invalid graph preflight proof: reviewed topology shape hashes do not match gpt2_diff");
+    }
+    if (!is_lowercase_sha256(proof.source_graph_sha256) ||
+        !is_lowercase_sha256(proof.root_shape_sha256) ||
+        !is_lowercase_sha256(proof.block_shape_sha256) ||
+        !is_lowercase_sha256(proof.attention_shape_sha256) ||
+        !is_lowercase_sha256(proof.mlp_shape_sha256) ||
+        !is_lowercase_sha256(proof.contract_sha256)) {
+        return fail("invalid graph preflight proof: SHA-256 fields are not canonical lowercase digests");
+    }
+    if (proof.model_dim % proof.num_heads != 0 ||
+        proof.head_dim != proof.model_dim / proof.num_heads ||
+        proof.num_kv_heads != proof.num_heads ||
+        proof.vocab_size != 50257 || proof.padded_vocab_size != 50304 ||
+        proof.model_dim > std::numeric_limits<std::int64_t>::max() / 4 ||
+        proof.mlp_hidden_dim != proof.model_dim * 4) {
+        return fail("invalid graph preflight proof: effective geometry is not canonical dense gpt2_diff");
+    }
+
+    std::ostringstream canonical;
+    canonical
+        << "{\"adapter_mode\":\"" << json_escape(proof.adapter_mode)
+        << "\",\"attention_shape_sha256\":\"" << proof.attention_shape_sha256
+        << "\",\"block_shape_sha256\":\"" << proof.block_shape_sha256
+        << "\",\"configuration_contract\":\""
+        << json_escape(proof.configuration_contract)
+        << "\",\"geometry\":{\"head_dim\":" << proof.head_dim
+        << ",\"max_seq_len\":" << proof.max_seq_len
+        << ",\"mlp_hidden_dim\":" << proof.mlp_hidden_dim
+        << ",\"model_dim\":" << proof.model_dim
+        << ",\"num_heads\":" << proof.num_heads
+        << ",\"num_kv_heads\":" << proof.num_kv_heads
+        << ",\"num_layers\":" << proof.num_layers
+        << ",\"padded_vocab_size\":" << proof.padded_vocab_size
+        << ",\"vocab_size\":" << proof.vocab_size << "}"
+        << ",\"mlp_shape_sha256\":\"" << proof.mlp_shape_sha256
+        << "\",\"passed\":true"
+        << ",\"root_shape_sha256\":\"" << proof.root_shape_sha256
+        << "\",\"schema\":\"" << json_escape(proof.schema)
+        << "\",\"source_graph_sha256\":\"" << proof.source_graph_sha256
+        << "\",\"topology_contract\":\"" << json_escape(proof.topology_contract)
+        << "\",\"training_selector\":\"" << json_escape(proof.training_selector)
+        << "\",\"validator_contract\":\"" << json_escape(proof.validator_contract)
+        << "\",\"version\":" << proof.version << "}";
+    const std::string canonical_bytes = canonical.str();
+    if (canonical_bytes != contract_bytes) {
+        return fail("invalid graph preflight proof: contract is not canonical compact sorted JSON");
+    }
+    if ((cfg->seq_len_explicit && cfg->seq_len != proof.max_seq_len) ||
+        (cfg->num_layers_explicit && cfg->num_layers != proof.num_layers)) {
+        return fail("invalid graph preflight proof: explicit runtime geometry conflicts with the planner proof");
+    }
+    if (normalize_template_name(cfg->activation) != "gelu") {
+        return fail("gpt2_diff requires GELU activation from the reviewed graph contract");
+    }
+    proof.verified = true;
+    cfg->verified_graph_preflight_proof = std::move(proof);
+    return true;
+}
+
+fs::path native_gpt_moa_metadata_path(const fs::path& model_checkpoint_path) {
+    const std::string name = model_checkpoint_path.filename().string();
+    constexpr std::string_view suffix = ".bin";
+    if (name.rfind("model_", 0) == 0 &&
+        name.size() > suffix.size() &&
+        name.substr(name.size() - suffix.size()) == suffix) {
+        return model_checkpoint_path.parent_path() /
+            (name.substr(0, name.size() - suffix.size()) + ".moa.json");
+    }
+    return fs::path(model_checkpoint_path.string() + ".moa.json");
+}
+
+bool native_gpt_moa_regular_nonsymlink_file(
+    const fs::path& path,
+    const std::string& label,
+    std::string* error) {
+    std::error_code status_error;
+    const fs::file_status status = fs::symlink_status(path, status_error);
+    if (status_error || !fs::is_regular_file(status)) {
+        if (error != nullptr) {
+            *error = label + " must be an existing regular non-symlink file: " + path.string();
+        }
+        return false;
+    }
+    return true;
+}
+
+bool read_native_gpt_moa_resume_metadata(
+    const Config& cfg,
+    const fs::path& checkpoint_path,
+    std::int64_t checkpoint_nbytes,
+    std::int64_t max_seq_len,
+    std::int64_t vocab_size,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t model_dim,
+    std::int64_t num_heads,
+    std::string* selected_activation_out,
+    fs::path* metadata_path_out,
+    std::string* error) {
+    constexpr std::int64_t kMaxMetadataBytes = 1024 * 1024;
+    const std::vector<std::string> canonical_candidates = {
+        "gelu", "relu", "silu", "relu2",
+    };
+    const auto fail = [&](const std::string& message) {
+        if (error != nullptr) {
+            *error = "invalid MoA resume metadata: " + message;
+        }
+        return false;
+    };
+    if (cfg.verified_graph_fingerprint.empty() ||
+        !is_lowercase_sha256(cfg.verified_graph_fingerprint)) {
+        return fail("resume requires a verified source graph SHA-256");
+    }
+    if (cfg.moa_interval <= 0) {
+        return fail("selection interval must be positive");
+    }
+    const std::string model_filename = checkpoint_path.filename().string();
+    if (model_filename.size() != std::string("model_00000000.bin").size() ||
+        model_filename.rfind("model_", 0) != 0 ||
+        model_filename.substr(model_filename.size() - 4) != ".bin" ||
+        !std::all_of(
+            model_filename.begin() + 6,
+            model_filename.begin() + 14,
+            [](unsigned char ch) { return std::isdigit(ch) != 0; })) {
+        return fail("checkpoint must be named model_XXXXXXXX.bin");
+    }
+    if (!native_gpt_moa_regular_nonsymlink_file(
+            checkpoint_path, "MoA resume model", error)) {
+        return false;
+    }
+    const std::string step = model_filename.substr(6, 8);
+    const fs::path metadata_path = native_gpt_moa_metadata_path(checkpoint_path);
+    if (metadata_path.filename().string() != "model_" + step + ".moa.json") {
+        return fail("metadata must be named model_XXXXXXXX.moa.json");
+    }
+    if (!native_gpt_moa_regular_nonsymlink_file(
+            metadata_path, "MoA resume metadata", error)) {
+        return false;
+    }
+    std::error_code metadata_size_error;
+    const std::uintmax_t metadata_size = fs::file_size(metadata_path, metadata_size_error);
+    if (metadata_size_error || metadata_size == 0 ||
+        metadata_size > static_cast<std::uintmax_t>(kMaxMetadataBytes)) {
+        return fail("metadata size must be between 1 byte and 1 MiB");
+    }
+    std::ifstream metadata_in(metadata_path, std::ios::binary);
+    if (!metadata_in) {
+        return fail("failed to open metadata: " + metadata_path.string());
+    }
+    std::string metadata(static_cast<std::size_t>(metadata_size), '\0');
+    metadata_in.read(metadata.data(), static_cast<std::streamsize>(metadata.size()));
+    if (metadata_in.gcount() != static_cast<std::streamsize>(metadata.size())) {
+        return fail("metadata changed while it was being read");
+    }
+    char unexpected_extra = '\0';
+    if (metadata_in.get(unexpected_extra)) {
+        return fail("metadata changed while it was being read");
+    }
+    if (!metadata_in.eof()) {
+        return fail("failed while reading metadata: " + metadata_path.string());
+    }
+    if (!is_valid_utf8(metadata)) {
+        return fail("metadata is not valid UTF-8");
+    }
+
+    std::string parse_error;
+    std::map<std::string, std::string> root;
+    if (!parse_strict_json_object(metadata, &root, &parse_error)) {
+        return fail("metadata is not strict JSON: " + parse_error);
+    }
+    if (!strict_json_has_exact_fields(
+            root,
+            {"schema", "version", "preset", "checkpoint_kind", "model",
+             "done_marker", "source_graph", "selection", "geometry"})) {
+        return fail("root fields are not canonical");
+    }
+    const auto require_string = [&](const std::map<std::string, std::string>& object,
+                                    const char* key,
+                                    std::string* value) {
+        std::string local_error;
+        if (!parse_strict_json_string_value(object.at(key), value, &local_error)) {
+            return fail(std::string("field ") + key + " must be a JSON string");
+        }
+        return true;
+    };
+    std::string value;
+    if (!require_string(root, "schema", &value) ||
+        value != "neuralfn.native_dense_moa.inference_checkpoint") {
+        return fail("schema is not neuralfn.native_dense_moa.inference_checkpoint");
+    }
+    std::int64_t integer = 0;
+    if (!parse_strict_json_positive_int(root.at("version"), &integer) || integer != 1) {
+        return fail("version is not 1");
+    }
+    if (!require_string(root, "preset", &value) || value != "gpt2_moa") {
+        return fail("preset is not gpt2_moa");
+    }
+    if (!require_string(root, "checkpoint_kind", &value) || value != "trained_dense_v5") {
+        return fail("checkpoint_kind is not trained_dense_v5");
+    }
+
+    std::map<std::string, std::string> model;
+    if (!parse_strict_json_object(root.at("model"), &model, &parse_error) ||
+        !strict_json_has_exact_fields(model, {"path", "format", "nbytes", "sha256"})) {
+        return fail("model fields are not canonical");
+    }
+    if (!require_string(model, "path", &value) || value != model_filename ||
+        value.find('/') != std::string::npos || value.find('\\') != std::string::npos) {
+        return fail("model.path is not the contained checkpoint filename");
+    }
+    if (!require_string(model, "format", &value) ||
+        value != "neuralfn.native_dense_gpt.v5") {
+        return fail("model.format is not neuralfn.native_dense_gpt.v5");
+    }
+    if (!parse_strict_json_positive_int(model.at("nbytes"), &integer) ||
+        integer != checkpoint_nbytes) {
+        return fail("model.nbytes does not match the checkpoint");
+    }
+    std::string declared_model_sha;
+    if (!require_string(model, "sha256", &declared_model_sha) ||
+        !is_lowercase_sha256(declared_model_sha)) {
+        return fail("model.sha256 is not a lowercase SHA-256 digest");
+    }
+    std::string actual_model_sha;
+    std::string checksum_error;
+    if (!sha256_file_hex(checkpoint_path, &actual_model_sha, &checksum_error)) {
+        return fail(checksum_error);
+    }
+    if (actual_model_sha != declared_model_sha) {
+        return fail("model SHA-256 does not match the checkpoint bytes");
+    }
+
+    const std::string expected_done_filename = "DONE_" + step;
+    if (!require_string(root, "done_marker", &value) || value != expected_done_filename ||
+        value.find('/') != std::string::npos || value.find('\\') != std::string::npos) {
+        return fail("done_marker is not the contained DONE_XXXXXXXX filename");
+    }
+    const fs::path done_path = checkpoint_path.parent_path() / expected_done_filename;
+    if (!native_gpt_moa_regular_nonsymlink_file(done_path, "MoA resume DONE marker", error)) {
+        return false;
+    }
+    std::error_code done_size_error;
+    const std::uintmax_t done_size = fs::file_size(done_path, done_size_error);
+    if (done_size_error || done_size != 0) {
+        return fail("DONE marker must be empty");
+    }
+
+    std::map<std::string, std::string> source_graph;
+    if (!parse_strict_json_object(root.at("source_graph"), &source_graph, &parse_error) ||
+        !strict_json_has_exact_fields(
+            source_graph, {"filename", "sha256", "byte_identity_verified"})) {
+        return fail("source_graph fields are not canonical");
+    }
+    std::string source_graph_filename;
+    if (!require_string(source_graph, "filename", &source_graph_filename) ||
+        source_graph_filename.empty() || source_graph_filename == "." ||
+        source_graph_filename == ".." ||
+        source_graph_filename.find('/') != std::string::npos ||
+        source_graph_filename.find('\\') != std::string::npos ||
+        fs::path(source_graph_filename).filename().string() != source_graph_filename) {
+        return fail("source_graph.filename is unsafe");
+    }
+    std::string source_graph_sha;
+    if (!require_string(source_graph, "sha256", &source_graph_sha) ||
+        !is_lowercase_sha256(source_graph_sha) ||
+        source_graph_sha != cfg.verified_graph_fingerprint) {
+        return fail("source_graph.sha256 does not match the verified graph bytes");
+    }
+    if (source_graph.at("byte_identity_verified") != "true") {
+        return fail("source_graph.byte_identity_verified must be true");
+    }
+
+    std::map<std::string, std::string> selection;
+    if (!parse_strict_json_object(root.at("selection"), &selection, &parse_error) ||
+        !strict_json_has_exact_fields(selection, {"activation", "candidates", "interval"})) {
+        return fail("selection fields are not canonical");
+    }
+    std::string activation;
+    if (!require_string(selection, "activation", &activation)) {
+        return false;
+    }
+    std::vector<std::string> candidates;
+    if (!parse_strict_json_string_array(selection.at("candidates"), &candidates, &parse_error) ||
+        candidates != canonical_candidates) {
+        return fail("selection.candidates are not canonical");
+    }
+    if (std::find(candidates.begin(), candidates.end(), activation) == candidates.end()) {
+        return fail("selection.activation is not a canonical candidate");
+    }
+    if (!parse_strict_json_positive_int(selection.at("interval"), &integer) ||
+        integer != cfg.moa_interval) {
+        return fail("selection.interval does not match --moa-interval");
+    }
+
+    std::map<std::string, std::string> geometry;
+    if (!parse_strict_json_object(root.at("geometry"), &geometry, &parse_error) ||
+        !strict_json_has_exact_fields(
+            geometry,
+            {"max_seq_len", "vocab_size", "padded_vocab_size", "num_layers",
+             "model_dim", "num_heads", "head_dim", "mlp_hidden_dim"})) {
+        return fail("geometry fields are not canonical");
+    }
+    const std::vector<std::pair<std::string, std::int64_t>> expected_geometry = {
+        {"max_seq_len", max_seq_len},
+        {"vocab_size", vocab_size},
+        {"padded_vocab_size", padded_vocab_size},
+        {"num_layers", num_layers},
+        {"model_dim", model_dim},
+        {"num_heads", num_heads},
+        {"head_dim", num_heads > 0 ? model_dim / num_heads : 0},
+        {"mlp_hidden_dim", 4 * model_dim},
+    };
+    for (const auto& field : expected_geometry) {
+        if (field.second <= 0 ||
+            !parse_strict_json_positive_int(geometry.at(field.first), &integer) ||
+            integer != field.second) {
+            return fail("geometry." + field.first + " does not match the dense-v5 checkpoint");
+        }
+    }
+
+    if (model_dim % num_heads != 0 || padded_vocab_size < vocab_size) {
+        return fail("dense-v5 geometry is invalid for gpt2_moa");
+    }
+
+    if (selected_activation_out != nullptr) {
+        *selected_activation_out = activation;
+    }
+    if (metadata_path_out != nullptr) {
+        *metadata_path_out = metadata_path;
+    }
+    return true;
+}
+
+bool write_native_gpt_moa_inference_metadata(
+    const Config& cfg,
+    const fs::path& checkpoint_path,
+    const fs::path& done_marker,
+    const std::string& selected_activation,
+    std::int64_t max_seq_len,
+    std::int64_t vocab_size,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t model_dim,
+    std::int64_t num_heads,
+    fs::path* metadata_path_out,
+    std::string* error) {
+    static const std::vector<std::string> candidates = {
+        "gelu", "relu", "silu", "relu2",
+    };
+    if (cfg.verified_graph_fingerprint.empty() ||
+        !is_lowercase_sha256(cfg.verified_graph_fingerprint)) {
+        if (error != nullptr) {
+            *error = "refusing to emit MoA metadata without a verified source graph SHA-256";
+        }
+        return false;
+    }
+    if (std::find(candidates.begin(), candidates.end(), selected_activation) == candidates.end()) {
+        if (error != nullptr) {
+            *error = "refusing to emit MoA metadata with a noncanonical selected activation";
+        }
+        return false;
+    }
+    if (cfg.moa_interval <= 0) {
+        if (error != nullptr) {
+            *error = "refusing to emit MoA metadata with a non-positive selection interval";
+        }
+        return false;
+    }
+    if (max_seq_len <= 0 || vocab_size <= 0 || padded_vocab_size < vocab_size ||
+        num_layers <= 0 || model_dim <= 0 || num_heads <= 0 ||
+        model_dim % num_heads != 0) {
+        if (error != nullptr) {
+            *error = "refusing to emit MoA metadata with invalid dense GPT geometry";
+        }
+        return false;
+    }
+
+    std::string checksum;
+    if (!sha256_file_hex(checkpoint_path, &checksum, error)) {
+        return false;
+    }
+    const std::int64_t nbytes = file_size_bytes(checkpoint_path, error);
+    if (nbytes <= 0) {
+        return false;
+    }
+    const fs::path metadata_path = native_gpt_moa_metadata_path(checkpoint_path);
+    std::ostringstream out;
+    out
+        << "{\n"
+        << "  \"schema\": \"neuralfn.native_dense_moa.inference_checkpoint\",\n"
+        << "  \"version\": 1,\n"
+        << "  \"preset\": \"gpt2_moa\",\n"
+        << "  \"checkpoint_kind\": \"trained_dense_v5\",\n"
+        << "  \"model\": {\"path\": \"" << json_escape(checkpoint_path.filename().string())
+        << "\", \"format\": \"neuralfn.native_dense_gpt.v5\", \"nbytes\": "
+        << nbytes << ", \"sha256\": \"" << checksum << "\"},\n"
+        << "  \"done_marker\": \"" << json_escape(done_marker.filename().string()) << "\",\n"
+        << "  \"source_graph\": {\"filename\": \""
+        << json_escape(fs::path(cfg.graph_file).filename().string())
+        << "\", \"sha256\": \"" << cfg.verified_graph_fingerprint
+        << "\", \"byte_identity_verified\": true},\n"
+        << "  \"selection\": {\"activation\": \"" << json_escape(selected_activation)
+        << "\", \"candidates\": [\"gelu\", \"relu\", \"silu\", \"relu2\"], \"interval\": "
+        << cfg.moa_interval << "},\n"
+        << "  \"geometry\": {\"max_seq_len\": " << max_seq_len
+        << ", \"vocab_size\": " << vocab_size
+        << ", \"padded_vocab_size\": " << padded_vocab_size
+        << ", \"num_layers\": " << num_layers
+        << ", \"model_dim\": " << model_dim
+        << ", \"num_heads\": " << num_heads
+        << ", \"head_dim\": " << (model_dim / num_heads)
+        << ", \"mlp_hidden_dim\": " << (4 * model_dim) << "}\n"
+        << "}\n";
+    const std::string encoded = out.str();
+    ExclusiveOutputFile metadata_out(metadata_path);
+    if (!metadata_out) {
+        if (error != nullptr) {
+            *error = "refusing to overwrite or follow MoA inference metadata target: " +
+                metadata_path.string();
+        }
+        return false;
+    }
+    metadata_out.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    metadata_out.close();
+    if (!metadata_out) {
+        if (error != nullptr) {
+            *error = "failed to finish MoA inference metadata: " + metadata_path.string();
+        }
+        return false;
+    }
+    metadata_out.commit();
+    if (metadata_path_out != nullptr) {
+        *metadata_path_out = metadata_path;
+    }
+    return true;
+}
+
 std::int64_t native_gpt_checkpoint_step(const fs::path& path) {
     std::string name = path.filename().string();
     const std::string prefix = "model_";
@@ -1846,6 +4397,1086 @@ fs::path native_gpt_parameter_state_checkpoint_path(const fs::path& model_checkp
         return model_checkpoint_path.parent_path() / ("parameters_" + raw_step + ".bin");
     }
     return fs::path(model_checkpoint_path.string() + ".parameters.bin");
+}
+
+fs::path native_gpt_diff_parameter_checkpoint_path(const fs::path& model_checkpoint_path) {
+    const std::string name = model_checkpoint_path.filename().string();
+    if (name.rfind("model_", 0) == 0 && name.size() == 18 &&
+        name.substr(name.size() - 4) == ".bin") {
+        return model_checkpoint_path.parent_path() /
+            ("diff_parameters_" + name.substr(6, 8) + ".bin");
+    }
+    return fs::path(model_checkpoint_path.string() + ".diff_parameters.bin");
+}
+
+fs::path native_gpt_diff_optimizer_checkpoint_path(const fs::path& model_checkpoint_path) {
+    const std::string name = model_checkpoint_path.filename().string();
+    if (name.rfind("model_", 0) == 0 && name.size() == 18 &&
+        name.substr(name.size() - 4) == ".bin") {
+        return model_checkpoint_path.parent_path() /
+            ("diff_optimizer_" + name.substr(6, 8) + ".bin");
+    }
+    return fs::path(model_checkpoint_path.string() + ".diff_optimizer.bin");
+}
+
+fs::path native_gpt_diff_metadata_path(const fs::path& model_checkpoint_path) {
+    const std::string name = model_checkpoint_path.filename().string();
+    if (name.rfind("model_", 0) == 0 && name.size() == 18 &&
+        name.substr(name.size() - 4) == ".bin") {
+        return model_checkpoint_path.parent_path() /
+            (name.substr(0, name.size() - 4) + ".diff.json");
+    }
+    return fs::path(model_checkpoint_path.string() + ".diff.json");
+}
+
+struct NativeGptDiffContinuationContract {
+    std::int64_t optimizer_steps_completed = 0;
+    std::int64_t train_microbatches_completed = 0;
+    std::int64_t microbatch_in_optimizer_step = 0;
+    std::int64_t batch_size = 0;
+    std::int64_t seq_len = 0;
+    std::int64_t microbatch_tokens = 0;
+    std::int64_t requested_train_batch_tokens = 0;
+    std::int64_t effective_train_batch_tokens = 0;
+    std::int64_t grad_accum_steps = 0;
+    bool train_seed_explicit = false;
+    std::int64_t train_seed = 0;
+    std::int64_t sampler_start_batch = 0;
+    std::int64_t sampler_total_batches = 0;
+    std::int64_t train_shard_count = 0;
+    std::int64_t train_shard_total_bytes = 0;
+    std::string train_shards_sha256;
+    double learning_rate = 0.0;
+    std::string lr_schedule;
+    std::int64_t lr_schedule_total_steps = 0;
+    std::int64_t warmup_steps = 0;
+    double final_lr_fraction = 0.0;
+    double weight_decay = 0.0;
+    double beta1 = 0.0;
+    double beta2 = 0.0;
+    double adam_eps = 0.0;
+    double grad_clip_norm = 0.0;
+    std::int64_t lm_head_row_chunk_size = 0;
+    bool bf16_block_weight_params = false;
+    bool bf16_block_dweight_staging = false;
+    bool dweight_first_microbatch_beta_zero = false;
+    std::string numerics_profile_sha256;
+};
+
+struct NativeGptDiffResumeState {
+    std::vector<float> lambdas;
+    std::vector<float> avgs;
+    std::vector<float> avg_sqs;
+    std::vector<float> dense_parameters;
+    std::vector<float> dense_optimizer;
+    fs::path metadata_path;
+    std::int64_t checkpoint_step = 0;
+    std::int64_t dense_tensor_count = 0;
+    std::int64_t dense_parameter_count = 0;
+    std::int64_t dense_optimizer_state_elements = 0;
+    std::int64_t grad_accum_steps = 0;
+    std::int64_t consumed_microbatches = 0;
+    NativeGptDiffContinuationContract continuation;
+};
+
+bool read_native_gpt_diff_resume_state(
+    const Config& cfg,
+    const fs::path& checkpoint_path,
+    std::int64_t checkpoint_nbytes,
+    std::int64_t checkpoint_step,
+    std::int64_t max_seq_len,
+    std::int64_t vocab_size,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t model_dim,
+    std::int64_t num_heads,
+    std::int64_t expected_grad_accum_steps,
+    const NativeGptDiffContinuationContract& expected_continuation,
+    NativeGptDiffResumeState* state_out,
+    std::string* error) {
+    constexpr std::int64_t kMaxMetadataBytes = 1024 * 1024;
+    constexpr std::int64_t kDiffParameterMagic = 20260808;
+    constexpr std::int64_t kDiffOptimizerMagic = 20260809;
+    constexpr std::int64_t kDiffSidecarVersion = 1;
+    constexpr std::int64_t kDiffHeaderInts = 16;
+    constexpr std::int64_t kDiffHeaderBytes = kDiffHeaderInts * 8;
+    const auto fail = [&](const std::string& message) {
+        if (error != nullptr) {
+            *error = "invalid gpt2_diff resume metadata: " + message;
+        }
+        return false;
+    };
+    if (state_out == nullptr) {
+        return fail("resume state destination is null");
+    }
+    *state_out = NativeGptDiffResumeState{};
+    if (cfg.verified_graph_fingerprint.empty() ||
+        !is_lowercase_sha256(cfg.verified_graph_fingerprint)) {
+        return fail("resume requires a verified source graph SHA-256");
+    }
+    if (!cfg.verified_graph_preflight_proof.verified ||
+        cfg.verified_graph_preflight_proof.schema != kGpt2DiffProofSchema ||
+        cfg.verified_graph_preflight_proof.version != kGpt2DiffProofVersion ||
+        !is_lowercase_sha256(
+            cfg.verified_graph_preflight_proof.contract_sha256)) {
+        return fail("resume requires a verified graph preflight proof");
+    }
+    const std::string model_filename = checkpoint_path.filename().string();
+    if (model_filename.size() != 18 || model_filename.rfind("model_", 0) != 0 ||
+        model_filename.substr(14) != ".bin" ||
+        !std::all_of(
+            model_filename.begin() + 6,
+            model_filename.begin() + 14,
+            [](unsigned char ch) { return std::isdigit(ch) != 0; })) {
+        return fail("checkpoint must be named model_XXXXXXXX.bin");
+    }
+    const std::string step_text = model_filename.substr(6, 8);
+    const fs::path metadata_path = native_gpt_diff_metadata_path(checkpoint_path);
+    if (metadata_path.filename().string() != "model_" + step_text + ".diff.json") {
+        return fail("metadata must be named model_XXXXXXXX.diff.json");
+    }
+    std::vector<std::uint8_t> metadata_bytes;
+    std::string file_error;
+    if (!read_regular_nofollow_file(
+            metadata_path, kMaxMetadataBytes, &metadata_bytes, &file_error)) {
+        return fail(file_error);
+    }
+    if (metadata_bytes.empty()) {
+        return fail("metadata size must be between 1 byte and 1 MiB");
+    }
+    const std::string metadata(
+        reinterpret_cast<const char*>(metadata_bytes.data()), metadata_bytes.size());
+    if (!is_valid_utf8(metadata)) {
+        return fail("metadata is not valid UTF-8");
+    }
+    std::string parse_error;
+    std::map<std::string, std::string> root;
+    if (!parse_strict_json_object(metadata, &root, &parse_error)) {
+        return fail("metadata is not strict JSON: " + parse_error);
+    }
+    if (!strict_json_has_exact_fields(
+            root,
+            {"schema", "version", "preset", "checkpoint_kind", "step",
+             "model", "dense_parameters", "dense_optimizer", "diff_parameters",
+             "diff_optimizer", "done_marker", "source_graph", "lambda", "geometry",
+             "graph_preflight_proof", "continuation"})) {
+        return fail("root fields are not canonical");
+    }
+    const auto require_string = [&](const std::map<std::string, std::string>& object,
+                                    const char* key,
+                                    std::string* value) {
+        std::string local_error;
+        if (!parse_strict_json_string_value(object.at(key), value, &local_error)) {
+            return fail(std::string("field ") + key + " must be a JSON string");
+        }
+        return true;
+    };
+    std::string value;
+    std::int64_t integer = 0;
+    if (!require_string(root, "schema", &value) ||
+        value != "neuralfn.native_gpt2_diff.training_checkpoint") {
+        return fail("schema is not neuralfn.native_gpt2_diff.training_checkpoint");
+    }
+    if (!parse_strict_json_positive_int(root.at("version"), &integer) || integer != 2) {
+        return fail("version is not 2");
+    }
+    if (!require_string(root, "preset", &value) || value != "gpt2_diff") {
+        return fail("preset is not gpt2_diff");
+    }
+    if (!require_string(root, "checkpoint_kind", &value) ||
+        value != "trained_dense_v5_plus_diff_v1") {
+        return fail("checkpoint_kind is not trained_dense_v5_plus_diff_v1");
+    }
+    if (!parse_strict_json_positive_int(root.at("step"), &integer) ||
+        integer != checkpoint_step) {
+        return fail("step does not match the checkpoint filename");
+    }
+
+    struct Artifact {
+        fs::path path;
+        std::int64_t nbytes = 0;
+        std::vector<std::uint8_t> bytes;
+    };
+    const auto validate_artifact = [&](const char* root_key,
+                                       const fs::path& expected_path,
+                                       const char* expected_format,
+                                       std::int64_t expected_nbytes,
+                                       Artifact* artifact) {
+        std::map<std::string, std::string> object;
+        if (!parse_strict_json_object(root.at(root_key), &object, &parse_error) ||
+            !strict_json_has_exact_fields(object, {"path", "format", "nbytes", "sha256"})) {
+            return fail(std::string(root_key) + " fields are not canonical");
+        }
+        std::string declared_path;
+        if (!require_string(object, "path", &declared_path) ||
+            declared_path != expected_path.filename().string() ||
+            declared_path.find('/') != std::string::npos ||
+            declared_path.find('\\') != std::string::npos) {
+            return fail(std::string(root_key) + ".path is not the contained canonical filename");
+        }
+        if (!require_string(object, "format", &value) || value != expected_format) {
+            return fail(std::string(root_key) + ".format is not canonical");
+        }
+        if (!parse_strict_json_positive_int(object.at("nbytes"), &integer)) {
+            return fail(std::string(root_key) + ".nbytes is not positive");
+        }
+        if (expected_nbytes > 0 && integer != expected_nbytes) {
+            return fail(std::string(root_key) + ".nbytes does not match the expected layout");
+        }
+        std::string declared_sha;
+        if (!require_string(object, "sha256", &declared_sha) ||
+            !is_lowercase_sha256(declared_sha)) {
+            return fail(std::string(root_key) + ".sha256 is not a lowercase SHA-256 digest");
+        }
+        std::vector<std::uint8_t> artifact_bytes;
+        std::string artifact_error;
+        if (!read_regular_nofollow_file(
+                expected_path, integer, &artifact_bytes, &artifact_error)) {
+            return fail(artifact_error);
+        }
+        if (artifact_bytes.size() != static_cast<std::size_t>(integer)) {
+            return fail(std::string(root_key) + ".nbytes does not match the artifact");
+        }
+        const std::string actual_sha = sha256_bytes_hex(artifact_bytes);
+        if (actual_sha != declared_sha) {
+            return fail(std::string(root_key) + " SHA-256 does not match the artifact bytes");
+        }
+        if (artifact != nullptr) {
+            artifact->path = expected_path;
+            artifact->nbytes = integer;
+            artifact->bytes = std::move(artifact_bytes);
+        }
+        return true;
+    };
+
+    const fs::path dense_parameters_path =
+        native_gpt_parameter_state_checkpoint_path(checkpoint_path);
+    const fs::path dense_optimizer_path = native_gpt_optimizer_checkpoint_path(checkpoint_path);
+    const fs::path diff_parameters_path =
+        native_gpt_diff_parameter_checkpoint_path(checkpoint_path);
+    const fs::path diff_optimizer_path =
+        native_gpt_diff_optimizer_checkpoint_path(checkpoint_path);
+    const std::int64_t expected_diff_parameter_bytes =
+        kDiffHeaderBytes + num_layers * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t expected_diff_optimizer_bytes =
+        kDiffHeaderBytes + num_layers * 2 * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t dense_parameter_count =
+        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, model_dim);
+    const std::int64_t dense_tensor_count = 4 + 12 * num_layers;
+    constexpr std::int64_t kDenseStateHeaderBytes = 32 * 8;
+    const std::int64_t expected_dense_parameter_bytes =
+        kDenseStateHeaderBytes + dense_parameter_count * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t expected_dense_optimizer_bytes =
+        kDenseStateHeaderBytes + dense_parameter_count * 2 * static_cast<std::int64_t>(sizeof(float));
+    Artifact model;
+    Artifact dense_parameters;
+    Artifact dense_optimizer;
+    Artifact diff_parameters;
+    Artifact diff_optimizer;
+    if (!validate_artifact(
+            "model", checkpoint_path, "neuralfn.native_dense_gpt.v5",
+            checkpoint_nbytes, &model) ||
+        !validate_artifact(
+            "dense_parameters", dense_parameters_path,
+            "neuralfn.native_dense_gpt.parameters.v1",
+            expected_dense_parameter_bytes, &dense_parameters) ||
+        !validate_artifact(
+            "dense_optimizer", dense_optimizer_path,
+            "neuralfn.native_dense_gpt.optimizer.v1",
+            expected_dense_optimizer_bytes, &dense_optimizer) ||
+        !validate_artifact(
+            "diff_parameters", diff_parameters_path,
+            "neuralfn.native_gpt2_diff.parameters.v1",
+            expected_diff_parameter_bytes, &diff_parameters) ||
+        !validate_artifact(
+            "diff_optimizer", diff_optimizer_path,
+            "neuralfn.native_gpt2_diff.optimizer.v1",
+            expected_diff_optimizer_bytes, &diff_optimizer)) {
+        return false;
+    }
+
+    const std::string expected_done_filename = "DONE_" + step_text;
+    if (!require_string(root, "done_marker", &value) || value != expected_done_filename) {
+        return fail("done_marker is not the contained DONE_XXXXXXXX filename");
+    }
+    const fs::path done_path = checkpoint_path.parent_path() / expected_done_filename;
+    std::vector<std::uint8_t> done_bytes;
+    std::string done_error;
+    if (!read_regular_nofollow_file(done_path, 0, &done_bytes, &done_error)) {
+        return fail(done_error);
+    }
+    if (!done_bytes.empty()) {
+        return fail("DONE marker must be empty");
+    }
+
+    std::map<std::string, std::string> source_graph;
+    if (!parse_strict_json_object(root.at("source_graph"), &source_graph, &parse_error) ||
+        !strict_json_has_exact_fields(
+            source_graph, {"filename", "sha256", "byte_identity_verified"})) {
+        return fail("source_graph fields are not canonical");
+    }
+    std::string source_filename;
+    if (!require_string(source_graph, "filename", &source_filename) ||
+        source_filename.empty() || source_filename == "." || source_filename == ".." ||
+        source_filename.find('/') != std::string::npos ||
+        source_filename.find('\\') != std::string::npos ||
+        fs::path(source_filename).filename().string() != source_filename) {
+        return fail("source_graph.filename is unsafe");
+    }
+    std::string source_sha;
+    if (!require_string(source_graph, "sha256", &source_sha) ||
+        source_sha != cfg.verified_graph_fingerprint) {
+        return fail("source_graph.sha256 does not match the verified graph bytes");
+    }
+    if (source_graph.at("byte_identity_verified") != "true") {
+        return fail("source_graph.byte_identity_verified must be true");
+    }
+
+    std::map<std::string, std::string> graph_preflight_proof;
+    if (!parse_strict_json_object(
+            root.at("graph_preflight_proof"),
+            &graph_preflight_proof, &parse_error) ||
+        !strict_json_has_exact_fields(
+            graph_preflight_proof,
+            {"schema", "version", "contract_sha256"})) {
+        return fail("graph_preflight_proof fields are not canonical");
+    }
+    std::string proof_schema;
+    std::string proof_contract_sha256;
+    std::int64_t proof_version = 0;
+    if (!require_string(graph_preflight_proof, "schema", &proof_schema) ||
+        !parse_strict_json_positive_int(
+            graph_preflight_proof.at("version"), &proof_version) ||
+        !require_string(
+            graph_preflight_proof,
+            "contract_sha256", &proof_contract_sha256) ||
+        proof_schema != kGpt2DiffProofSchema ||
+        proof_version != kGpt2DiffProofVersion ||
+        !is_lowercase_sha256(proof_contract_sha256)) {
+        return fail("graph_preflight_proof identity is not canonical");
+    }
+    if (!cfg.verified_graph_preflight_proof.verified ||
+        proof_schema != cfg.verified_graph_preflight_proof.schema ||
+        proof_version != cfg.verified_graph_preflight_proof.version ||
+        proof_contract_sha256 !=
+            cfg.verified_graph_preflight_proof.contract_sha256) {
+        return fail("graph_preflight_proof does not match this resume");
+    }
+
+    std::map<std::string, std::string> lambda;
+    if (!parse_strict_json_object(root.at("lambda"), &lambda, &parse_error) ||
+        !strict_json_has_exact_fields(lambda, {"count", "dtype", "initial_value", "output_scale"})) {
+        return fail("lambda fields are not canonical");
+    }
+    if (!parse_strict_json_positive_int(lambda.at("count"), &integer) || integer != num_layers ||
+        !require_string(lambda, "dtype", &value) || value != "float32" ||
+        lambda.at("initial_value") != "0.8" || lambda.at("output_scale") != "0.2") {
+        return fail("lambda contract does not match the learned differential layout");
+    }
+
+    std::map<std::string, std::string> geometry;
+    if (!parse_strict_json_object(root.at("geometry"), &geometry, &parse_error) ||
+        !strict_json_has_exact_fields(
+            geometry,
+            {"max_seq_len", "vocab_size", "padded_vocab_size", "num_layers",
+             "model_dim", "num_heads", "head_dim", "mlp_hidden_dim"})) {
+        return fail("geometry fields are not canonical");
+    }
+    const std::vector<std::pair<std::string, std::int64_t>> expected_geometry = {
+        {"max_seq_len", max_seq_len}, {"vocab_size", vocab_size},
+        {"padded_vocab_size", padded_vocab_size}, {"num_layers", num_layers},
+        {"model_dim", model_dim}, {"num_heads", num_heads},
+        {"head_dim", num_heads > 0 ? model_dim / num_heads : 0},
+        {"mlp_hidden_dim", 4 * model_dim},
+    };
+    for (const auto& field : expected_geometry) {
+        if (field.second <= 0 ||
+            !parse_strict_json_positive_int(geometry.at(field.first), &integer) ||
+            integer != field.second) {
+            return fail("geometry." + field.first + " does not match the checkpoint");
+        }
+    }
+
+    std::map<std::string, std::string> continuation_object;
+    if (!parse_strict_json_object(
+            root.at("continuation"), &continuation_object, &parse_error) ||
+        !strict_json_has_exact_fields(
+            continuation_object,
+            {"optimizer_steps_completed", "train_microbatches_completed",
+             "microbatch_in_optimizer_step", "batch_size", "seq_len",
+             "microbatch_tokens", "requested_train_batch_tokens",
+             "effective_train_batch_tokens", "grad_accum_steps",
+             "train_seed_explicit", "train_seed", "sampler_start_batch",
+             "sampler_total_batches", "train_shard_count",
+             "train_shard_total_bytes", "train_shards_sha256",
+             "learning_rate", "lr_schedule",
+             "lr_schedule_total_steps", "warmup_steps", "final_lr_fraction",
+             "weight_decay", "beta1", "beta2", "adam_eps",
+             "grad_clip_norm", "lm_head_row_chunk_size",
+             "bf16_block_weight_params", "bf16_block_dweight_staging",
+             "dweight_first_microbatch_beta_zero",
+             "numerics_profile_sha256"})) {
+        return fail("continuation fields are not canonical");
+    }
+    NativeGptDiffContinuationContract continuation;
+    const auto require_positive = [&](const char* key, std::int64_t* destination) {
+        if (!parse_strict_json_positive_int(continuation_object.at(key), destination)) {
+            return fail(std::string("continuation.") + key + " must be positive");
+        }
+        return true;
+    };
+    const auto require_nonnegative = [&](const char* key, std::int64_t* destination) {
+        if (!parse_strict_json_nonnegative_int(continuation_object.at(key), destination)) {
+            return fail(std::string("continuation.") + key + " must be non-negative");
+        }
+        return true;
+    };
+    const auto require_finite = [&](const char* key, double* destination) {
+        if (!parse_strict_json_finite_double(continuation_object.at(key), destination)) {
+            return fail(std::string("continuation.") + key + " must be finite");
+        }
+        return true;
+    };
+    const auto require_signed = [&](const char* key, std::int64_t* destination) {
+        if (!parse_strict_json_signed_int(continuation_object.at(key), destination)) {
+            return fail(std::string("continuation.") + key + " must be an integer");
+        }
+        return true;
+    };
+    if (!require_positive(
+            "optimizer_steps_completed", &continuation.optimizer_steps_completed) ||
+        !require_positive(
+            "train_microbatches_completed", &continuation.train_microbatches_completed) ||
+        !require_nonnegative(
+            "microbatch_in_optimizer_step", &continuation.microbatch_in_optimizer_step) ||
+        !require_positive("batch_size", &continuation.batch_size) ||
+        !require_positive("seq_len", &continuation.seq_len) ||
+        !require_positive("microbatch_tokens", &continuation.microbatch_tokens) ||
+        !require_positive(
+            "requested_train_batch_tokens",
+            &continuation.requested_train_batch_tokens) ||
+        !require_positive(
+            "effective_train_batch_tokens",
+            &continuation.effective_train_batch_tokens) ||
+        !require_positive("grad_accum_steps", &continuation.grad_accum_steps) ||
+        !require_signed("train_seed", &continuation.train_seed) ||
+        !require_nonnegative("sampler_start_batch", &continuation.sampler_start_batch) ||
+        !require_positive("sampler_total_batches", &continuation.sampler_total_batches) ||
+        !require_positive("train_shard_count", &continuation.train_shard_count) ||
+        !require_positive(
+            "train_shard_total_bytes", &continuation.train_shard_total_bytes) ||
+        !require_finite("learning_rate", &continuation.learning_rate) ||
+        !require_positive(
+            "lr_schedule_total_steps", &continuation.lr_schedule_total_steps) ||
+        !require_nonnegative("warmup_steps", &continuation.warmup_steps) ||
+        !require_finite("final_lr_fraction", &continuation.final_lr_fraction) ||
+        !require_finite("weight_decay", &continuation.weight_decay) ||
+        !require_finite("beta1", &continuation.beta1) ||
+        !require_finite("beta2", &continuation.beta2) ||
+        !require_finite("adam_eps", &continuation.adam_eps) ||
+        !require_finite("grad_clip_norm", &continuation.grad_clip_norm) ||
+        !require_positive(
+            "lm_head_row_chunk_size", &continuation.lm_head_row_chunk_size)) {
+        return false;
+    }
+    if (continuation_object.at("train_seed_explicit") == "true") {
+        continuation.train_seed_explicit = true;
+    } else if (continuation_object.at("train_seed_explicit") == "false") {
+        continuation.train_seed_explicit = false;
+    } else {
+        return fail("continuation.train_seed_explicit must be boolean");
+    }
+    const auto require_boolean = [&](const char* key, bool* destination) {
+        if (continuation_object.at(key) == "true") {
+            *destination = true;
+        } else if (continuation_object.at(key) == "false") {
+            *destination = false;
+        } else {
+            return fail(std::string("continuation.") + key + " must be boolean");
+        }
+        return true;
+    };
+    if (!require_boolean(
+            "bf16_block_weight_params",
+            &continuation.bf16_block_weight_params) ||
+        !require_boolean(
+            "bf16_block_dweight_staging",
+            &continuation.bf16_block_dweight_staging) ||
+        !require_boolean(
+            "dweight_first_microbatch_beta_zero",
+            &continuation.dweight_first_microbatch_beta_zero)) {
+        return false;
+    }
+    if (!require_string(continuation_object, "lr_schedule", &continuation.lr_schedule) ||
+        (continuation.lr_schedule != "constant" && continuation.lr_schedule != "cosine")) {
+        return fail("continuation.lr_schedule is not canonical");
+    }
+    if (!require_string(
+            continuation_object,
+            "train_shards_sha256",
+            &continuation.train_shards_sha256) ||
+        !is_lowercase_sha256(continuation.train_shards_sha256)) {
+        return fail("continuation.train_shards_sha256 is not canonical");
+    }
+    if (!require_string(
+            continuation_object,
+            "numerics_profile_sha256",
+            &continuation.numerics_profile_sha256) ||
+        !is_lowercase_sha256(continuation.numerics_profile_sha256)) {
+        return fail("continuation.numerics_profile_sha256 is not canonical");
+    }
+    const auto continuation_mismatch = [&](bool mismatch, const char* field) {
+        return mismatch
+            ? fail(std::string("continuation.") + field + " does not match this resume")
+            : true;
+    };
+    if (expected_grad_accum_steps <= 0 ||
+        checkpoint_step >
+            std::numeric_limits<std::int64_t>::max() / expected_grad_accum_steps) {
+        return fail("continuation train microbatch count overflows");
+    }
+    if (!continuation_mismatch(
+            continuation.optimizer_steps_completed != checkpoint_step,
+            "optimizer_steps_completed") ||
+        !continuation_mismatch(
+            continuation.train_microbatches_completed !=
+                checkpoint_step * expected_grad_accum_steps,
+            "train_microbatches_completed") ||
+        !continuation_mismatch(
+            continuation.microbatch_in_optimizer_step != 0,
+            "microbatch_in_optimizer_step") ||
+        !continuation_mismatch(
+            continuation.batch_size != expected_continuation.batch_size,
+            "batch_size") ||
+        !continuation_mismatch(
+            continuation.seq_len != expected_continuation.seq_len,
+            "seq_len") ||
+        !continuation_mismatch(
+            continuation.microbatch_tokens != expected_continuation.microbatch_tokens,
+            "microbatch_tokens") ||
+        !continuation_mismatch(
+            continuation.requested_train_batch_tokens !=
+                expected_continuation.requested_train_batch_tokens,
+            "requested_train_batch_tokens") ||
+        !continuation_mismatch(
+            continuation.effective_train_batch_tokens !=
+                expected_continuation.effective_train_batch_tokens,
+            "effective_train_batch_tokens") ||
+        !continuation_mismatch(
+            continuation.grad_accum_steps != expected_grad_accum_steps,
+            "grad_accum_steps") ||
+        !continuation_mismatch(
+            continuation.train_seed_explicit != cfg.train_seed_explicit,
+            "train_seed_explicit") ||
+        !continuation_mismatch(
+            continuation.train_seed != cfg.train_seed,
+            "train_seed") ||
+        !continuation_mismatch(
+            continuation.sampler_start_batch !=
+                expected_continuation.sampler_start_batch,
+            "sampler_start_batch") ||
+        !continuation_mismatch(
+            continuation.sampler_total_batches !=
+                expected_continuation.sampler_total_batches,
+            "sampler_total_batches") ||
+        !continuation_mismatch(
+            continuation.train_shard_count !=
+                expected_continuation.train_shard_count,
+            "train_shard_count") ||
+        !continuation_mismatch(
+            continuation.train_shard_total_bytes !=
+                expected_continuation.train_shard_total_bytes,
+            "train_shard_total_bytes") ||
+        !continuation_mismatch(
+            continuation.train_shards_sha256 !=
+                expected_continuation.train_shards_sha256,
+            "train_shards_sha256") ||
+        !continuation_mismatch(
+            continuation.learning_rate != expected_continuation.learning_rate,
+            "learning_rate") ||
+        !continuation_mismatch(
+            continuation.lr_schedule != expected_continuation.lr_schedule,
+            "lr_schedule") ||
+        !continuation_mismatch(
+            cfg.lr_schedule_total_steps_explicit &&
+                continuation.lr_schedule_total_steps !=
+                    cfg.lr_schedule_total_steps,
+            "lr_schedule_total_steps") ||
+        !continuation_mismatch(
+            continuation.warmup_steps != expected_continuation.warmup_steps,
+            "warmup_steps") ||
+        !continuation_mismatch(
+            continuation.final_lr_fraction != expected_continuation.final_lr_fraction,
+            "final_lr_fraction") ||
+        !continuation_mismatch(
+            continuation.weight_decay != expected_continuation.weight_decay,
+            "weight_decay") ||
+        !continuation_mismatch(
+            continuation.beta1 != expected_continuation.beta1,
+            "beta1") ||
+        !continuation_mismatch(
+            continuation.beta2 != expected_continuation.beta2,
+            "beta2") ||
+        !continuation_mismatch(
+            continuation.adam_eps != expected_continuation.adam_eps,
+            "adam_eps") ||
+        !continuation_mismatch(
+            continuation.grad_clip_norm != expected_continuation.grad_clip_norm,
+            "grad_clip_norm") ||
+        !continuation_mismatch(
+            continuation.lm_head_row_chunk_size !=
+                expected_continuation.lm_head_row_chunk_size,
+            "lm_head_row_chunk_size") ||
+        !continuation_mismatch(
+            continuation.bf16_block_weight_params !=
+                expected_continuation.bf16_block_weight_params,
+            "bf16_block_weight_params") ||
+        !continuation_mismatch(
+            continuation.bf16_block_dweight_staging !=
+                expected_continuation.bf16_block_dweight_staging,
+            "bf16_block_dweight_staging") ||
+        !continuation_mismatch(
+            continuation.dweight_first_microbatch_beta_zero !=
+                expected_continuation.dweight_first_microbatch_beta_zero,
+            "dweight_first_microbatch_beta_zero") ||
+        !continuation_mismatch(
+            continuation.numerics_profile_sha256 !=
+                expected_continuation.numerics_profile_sha256,
+            "numerics_profile_sha256")) {
+        return false;
+    }
+
+    const auto dense_tensor_elements = [&]() {
+        std::vector<std::int64_t> elements;
+        elements.reserve(static_cast<std::size_t>(dense_tensor_count));
+        elements.push_back(padded_vocab_size * model_dim);
+        elements.push_back(max_seq_len * model_dim);
+        for (std::int64_t layer = 0; layer < num_layers; ++layer) {
+            (void)layer;
+            elements.insert(
+                elements.end(),
+                {model_dim, model_dim,
+                 3 * model_dim * model_dim, 3 * model_dim,
+                 model_dim * model_dim, model_dim,
+                 model_dim, model_dim,
+                 4 * model_dim * model_dim, 4 * model_dim,
+                 4 * model_dim * model_dim, model_dim});
+        }
+        elements.push_back(model_dim);
+        elements.push_back(model_dim);
+        return elements;
+    }();
+    const std::int64_t reconstructed_parameter_count = std::accumulate(
+        dense_tensor_elements.begin(), dense_tensor_elements.end(), std::int64_t{0});
+    if (static_cast<std::int64_t>(dense_tensor_elements.size()) != dense_tensor_count ||
+        reconstructed_parameter_count != dense_parameter_count) {
+        return fail("dense tensor layout does not reconstruct the checkpoint parameter count");
+    }
+
+    constexpr std::int32_t kDenseModelMagic = 20240326;
+    constexpr std::int32_t kDenseModelVersion = 5;
+    constexpr std::size_t kDenseModelHeaderInts = 256;
+    constexpr std::size_t kDenseModelHeaderBytes =
+        kDenseModelHeaderInts * sizeof(std::int32_t);
+    if (model.bytes.size() != static_cast<std::size_t>(checkpoint_nbytes) ||
+        model.bytes.size() < kDenseModelHeaderBytes) {
+        return fail("dense model payload size mismatch");
+    }
+    std::array<std::int32_t, kDenseModelHeaderInts> model_header{};
+    std::memcpy(model_header.data(), model.bytes.data(), kDenseModelHeaderBytes);
+    if (model_header[0] != kDenseModelMagic || model_header[1] != kDenseModelVersion ||
+        model_header[2] != max_seq_len || model_header[3] != vocab_size ||
+        model_header[4] != num_layers || model_header[5] != num_heads ||
+        model_header[6] != model_dim || model_header[7] != padded_vocab_size ||
+        std::any_of(
+            model_header.begin() + 8,
+            model_header.end(),
+            [](std::int32_t reserved) { return reserved != 0; })) {
+        return fail("dense model header mismatch");
+    }
+    const std::size_t model_payload_elements =
+        (model.bytes.size() - kDenseModelHeaderBytes) / sizeof(std::uint16_t);
+    if (model_payload_elements != static_cast<std::size_t>(dense_parameter_count)) {
+        return fail("dense model payload element count mismatch");
+    }
+    for (std::size_t i = 0; i < model_payload_elements; ++i) {
+        std::uint16_t bf16 = 0;
+        std::memcpy(
+            &bf16,
+            model.bytes.data() + kDenseModelHeaderBytes + i * sizeof(std::uint16_t),
+            sizeof(bf16));
+        const std::uint32_t float_bits = static_cast<std::uint32_t>(bf16) << 16;
+        float decoded = 0.0f;
+        std::memcpy(&decoded, &float_bits, sizeof(decoded));
+        if (!std::isfinite(decoded)) {
+            return fail("dense model BF16 parameters must be finite");
+        }
+    }
+    model.bytes.clear();
+    model.bytes.shrink_to_fit();
+
+    constexpr std::int64_t kDenseParameterMagic = 20260711;
+    constexpr std::int64_t kDenseOptimizerMagic = 20260710;
+    constexpr std::int64_t kDenseStateVersion = 1;
+    constexpr std::size_t kDenseStateHeaderInts = 32;
+    constexpr std::size_t kDenseStateHeaderSize =
+        kDenseStateHeaderInts * sizeof(std::int64_t);
+    const auto decode_dense_header = [&](const Artifact& artifact,
+                                         std::int64_t expected_magic,
+                                         std::int64_t expected_elements,
+                                         std::array<std::int64_t, kDenseStateHeaderInts>* header) {
+        if (artifact.bytes.size() < kDenseStateHeaderSize) {
+            return fail(artifact.path.filename().string() + " header is truncated");
+        }
+        std::memcpy(header->data(), artifact.bytes.data(), kDenseStateHeaderSize);
+        if ((*header)[0] != expected_magic || (*header)[1] != kDenseStateVersion ||
+            (*header)[2] != checkpoint_step || (*header)[3] != max_seq_len ||
+            (*header)[4] != vocab_size || (*header)[5] != num_layers ||
+            (*header)[6] != num_heads || (*header)[7] != model_dim ||
+            (*header)[8] != padded_vocab_size || (*header)[9] != dense_tensor_count ||
+            (*header)[10] != expected_elements ||
+            (*header)[11] != expected_grad_accum_steps ||
+            (*header)[12] < 0 ||
+            std::any_of(
+                header->begin() + 13,
+                header->end(),
+                [](std::int64_t reserved) { return reserved != 0; })) {
+            return fail(artifact.path.filename().string() + " header mismatch");
+        }
+        return true;
+    };
+    std::array<std::int64_t, kDenseStateHeaderInts> parameter_header{};
+    std::array<std::int64_t, kDenseStateHeaderInts> optimizer_header{};
+    if (!decode_dense_header(
+            dense_parameters, kDenseParameterMagic, dense_parameter_count,
+            &parameter_header) ||
+        !decode_dense_header(
+            dense_optimizer, kDenseOptimizerMagic, dense_parameter_count * 2,
+            &optimizer_header)) {
+        return false;
+    }
+    if (parameter_header[12] != optimizer_header[12] ||
+        parameter_header[12] != continuation.train_microbatches_completed ||
+        checkpoint_step >
+            std::numeric_limits<std::int64_t>::max() /
+                std::max<std::int64_t>(expected_grad_accum_steps, 1) ||
+        parameter_header[12] != checkpoint_step * expected_grad_accum_steps) {
+        return fail("dense state consumed microbatch counts are inconsistent");
+    }
+    state_out->dense_parameters.assign(
+        static_cast<std::size_t>(dense_parameter_count), 0.0f);
+    std::memcpy(
+        state_out->dense_parameters.data(),
+        dense_parameters.bytes.data() + kDenseStateHeaderSize,
+        state_out->dense_parameters.size() * sizeof(float));
+    for (float parameter : state_out->dense_parameters) {
+        if (!std::isfinite(parameter)) {
+            return fail("dense FP32 parameters must be finite");
+        }
+    }
+    dense_parameters.bytes.clear();
+    dense_parameters.bytes.shrink_to_fit();
+    state_out->dense_optimizer.assign(
+        static_cast<std::size_t>(dense_parameter_count * 2), 0.0f);
+    std::memcpy(
+        state_out->dense_optimizer.data(),
+        dense_optimizer.bytes.data() + kDenseStateHeaderSize,
+        state_out->dense_optimizer.size() * sizeof(float));
+    std::size_t optimizer_offset = 0;
+    for (std::int64_t tensor_elements : dense_tensor_elements) {
+        for (std::int64_t i = 0; i < tensor_elements; ++i) {
+            if (!std::isfinite(state_out->dense_optimizer[optimizer_offset + i])) {
+                return fail("dense optimizer first moments must be finite");
+            }
+        }
+        optimizer_offset += static_cast<std::size_t>(tensor_elements);
+        for (std::int64_t i = 0; i < tensor_elements; ++i) {
+            const float second_moment = state_out->dense_optimizer[optimizer_offset + i];
+            if (!std::isfinite(second_moment) || second_moment < 0.0f) {
+                return fail("dense optimizer second moments must be finite and non-negative");
+            }
+        }
+        optimizer_offset += static_cast<std::size_t>(tensor_elements);
+    }
+    if (optimizer_offset != state_out->dense_optimizer.size()) {
+        return fail("dense optimizer payload layout mismatch");
+    }
+    dense_optimizer.bytes.clear();
+    dense_optimizer.bytes.shrink_to_fit();
+
+    const auto read_sidecar = [&](const Artifact& artifact,
+                                  std::int64_t expected_magic,
+                                  bool optimizer,
+                                  std::vector<float>* first,
+                                  std::vector<float>* second) {
+        if (artifact.bytes.size() != static_cast<std::size_t>(artifact.nbytes) ||
+            artifact.bytes.size() < static_cast<std::size_t>(kDiffHeaderBytes)) {
+            return fail(artifact.path.filename().string() + " payload is truncated");
+        }
+        std::array<std::int64_t, kDiffHeaderInts> header{};
+        std::memcpy(header.data(), artifact.bytes.data(), static_cast<std::size_t>(kDiffHeaderBytes));
+        if (header[0] != expected_magic || header[1] != kDiffSidecarVersion ||
+            header[2] != checkpoint_step || header[3] != num_layers ||
+            header[4] != num_layers || header[5] != (optimizer ? 2 : 1) ||
+            header[6] != max_seq_len || header[7] != num_heads ||
+            header[8] != model_dim ||
+            std::any_of(
+                header.begin() + 9,
+                header.end(),
+                [](std::int64_t reserved) { return reserved != 0; })) {
+            return fail(artifact.path.filename().string() + " header mismatch");
+        }
+        first->assign(static_cast<std::size_t>(num_layers), 0.0f);
+        std::size_t payload_offset = static_cast<std::size_t>(kDiffHeaderBytes);
+        const std::size_t tensor_bytes =
+            static_cast<std::size_t>(num_layers) * sizeof(float);
+        std::memcpy(first->data(), artifact.bytes.data() + payload_offset, tensor_bytes);
+        payload_offset += tensor_bytes;
+        if (optimizer) {
+            second->assign(static_cast<std::size_t>(num_layers), 0.0f);
+            std::memcpy(second->data(), artifact.bytes.data() + payload_offset, tensor_bytes);
+            payload_offset += tensor_bytes;
+        }
+        if (payload_offset != artifact.bytes.size()) {
+            return fail(artifact.path.filename().string() + " contains trailing bytes");
+        }
+        return true;
+    };
+    std::vector<float> unused;
+    if (!read_sidecar(
+            diff_parameters, kDiffParameterMagic, false,
+            &state_out->lambdas, &unused) ||
+        !read_sidecar(
+            diff_optimizer, kDiffOptimizerMagic, true,
+            &state_out->avgs, &state_out->avg_sqs)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < state_out->lambdas.size(); ++i) {
+        if (!std::isfinite(state_out->lambdas[i])) {
+            return fail("diff parameter lambda values must be finite");
+        }
+        if (!std::isfinite(state_out->avgs[i])) {
+            return fail("diff optimizer first moments must be finite");
+        }
+        if (!std::isfinite(state_out->avg_sqs[i]) || state_out->avg_sqs[i] < 0.0f) {
+            return fail("diff optimizer second moments must be finite and non-negative");
+        }
+    }
+    state_out->metadata_path = metadata_path;
+    state_out->checkpoint_step = checkpoint_step;
+    state_out->dense_tensor_count = dense_tensor_count;
+    state_out->dense_parameter_count = dense_parameter_count;
+    state_out->dense_optimizer_state_elements = dense_parameter_count * 2;
+    state_out->grad_accum_steps = expected_grad_accum_steps;
+    state_out->consumed_microbatches = parameter_header[12];
+    state_out->continuation = std::move(continuation);
+    return true;
+}
+
+bool write_native_gpt_diff_metadata(
+    const Config& cfg,
+    const fs::path& checkpoint_path,
+    const fs::path& done_marker,
+    std::int64_t checkpoint_step,
+    std::int64_t max_seq_len,
+    std::int64_t vocab_size,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t model_dim,
+    std::int64_t num_heads,
+    const NativeGptDiffContinuationContract& continuation,
+    fs::path* metadata_path_out,
+    std::string* error) {
+    if (cfg.verified_graph_fingerprint.empty() ||
+        !is_lowercase_sha256(cfg.verified_graph_fingerprint) || cfg.graph_file.empty() ||
+        !cfg.verified_graph_preflight_proof.verified ||
+        cfg.verified_graph_preflight_proof.schema != kGpt2DiffProofSchema ||
+        cfg.verified_graph_preflight_proof.version != kGpt2DiffProofVersion ||
+        !is_lowercase_sha256(
+            cfg.verified_graph_preflight_proof.contract_sha256)) {
+        if (error != nullptr) {
+            *error = "refusing to emit gpt2_diff metadata without verified source graph and preflight proof";
+        }
+        return false;
+    }
+    const fs::path dense_parameters = native_gpt_parameter_state_checkpoint_path(checkpoint_path);
+    const fs::path dense_optimizer = native_gpt_optimizer_checkpoint_path(checkpoint_path);
+    const fs::path diff_parameters = native_gpt_diff_parameter_checkpoint_path(checkpoint_path);
+    const fs::path diff_optimizer = native_gpt_diff_optimizer_checkpoint_path(checkpoint_path);
+    struct ArtifactSpec {
+        const char* key;
+        fs::path path;
+        const char* format;
+        std::int64_t nbytes = 0;
+        std::string sha;
+    };
+    std::array<ArtifactSpec, 5> artifacts = {{
+        {"model", checkpoint_path, "neuralfn.native_dense_gpt.v5", 0, ""},
+        {"dense_parameters", dense_parameters, "neuralfn.native_dense_gpt.parameters.v1", 0, ""},
+        {"dense_optimizer", dense_optimizer, "neuralfn.native_dense_gpt.optimizer.v1", 0, ""},
+        {"diff_parameters", diff_parameters, "neuralfn.native_gpt2_diff.parameters.v1", 0, ""},
+        {"diff_optimizer", diff_optimizer, "neuralfn.native_gpt2_diff.optimizer.v1", 0, ""},
+    }};
+    for (ArtifactSpec& artifact : artifacts) {
+        artifact.nbytes = file_size_bytes(artifact.path, error);
+        if (artifact.nbytes <= 0 || !sha256_file_hex(artifact.path, &artifact.sha, error)) {
+            return false;
+        }
+    }
+    if (max_seq_len <= 0 || vocab_size <= 0 || padded_vocab_size < vocab_size ||
+        num_layers <= 0 || model_dim <= 0 || num_heads <= 0 ||
+        model_dim % num_heads != 0 || checkpoint_step <= 0) {
+        if (error != nullptr) {
+            *error = "refusing to emit gpt2_diff metadata with invalid geometry or step";
+        }
+        return false;
+    }
+    if (continuation.optimizer_steps_completed != checkpoint_step ||
+        continuation.train_microbatches_completed <= 0 ||
+        continuation.microbatch_in_optimizer_step != 0 ||
+        continuation.batch_size <= 0 || continuation.seq_len != max_seq_len ||
+        continuation.batch_size >
+            std::numeric_limits<std::int64_t>::max() / continuation.seq_len ||
+        continuation.microbatch_tokens !=
+            continuation.batch_size * continuation.seq_len ||
+        continuation.requested_train_batch_tokens < continuation.microbatch_tokens ||
+        continuation.effective_train_batch_tokens <= 0 ||
+        continuation.grad_accum_steps <= 0 ||
+        continuation.sampler_start_batch < 0 ||
+        continuation.sampler_total_batches <= 0 ||
+        continuation.train_shard_count <= 0 ||
+        continuation.train_shard_total_bytes <= 0 ||
+        !is_lowercase_sha256(continuation.train_shards_sha256) ||
+        !is_lowercase_sha256(continuation.numerics_profile_sha256) ||
+        continuation.lr_schedule_total_steps <= 0 ||
+        continuation.warmup_steps < 0 ||
+        continuation.lm_head_row_chunk_size <= 0 ||
+        (continuation.lr_schedule != "constant" &&
+         continuation.lr_schedule != "cosine") ||
+        !std::isfinite(continuation.learning_rate) ||
+        !std::isfinite(continuation.final_lr_fraction) ||
+        !std::isfinite(continuation.weight_decay) ||
+        !std::isfinite(continuation.beta1) ||
+        !std::isfinite(continuation.beta2) ||
+        !std::isfinite(continuation.adam_eps) ||
+        !std::isfinite(continuation.grad_clip_norm) ||
+        continuation.optimizer_steps_completed >
+            std::numeric_limits<std::int64_t>::max() /
+                continuation.grad_accum_steps ||
+        continuation.train_microbatches_completed !=
+            continuation.optimizer_steps_completed * continuation.grad_accum_steps ||
+        continuation.microbatch_tokens >
+            std::numeric_limits<std::int64_t>::max() /
+                continuation.grad_accum_steps ||
+        continuation.effective_train_batch_tokens !=
+            continuation.microbatch_tokens * continuation.grad_accum_steps) {
+        if (error != nullptr) {
+            *error = "refusing to emit gpt2_diff metadata with an invalid continuation contract";
+        }
+        return false;
+    }
+    const fs::path metadata_path = native_gpt_diff_metadata_path(checkpoint_path);
+    std::ostringstream out;
+    out << std::setprecision(std::numeric_limits<double>::max_digits10);
+    out
+        << "{\n"
+        << "  \"schema\": \"neuralfn.native_gpt2_diff.training_checkpoint\",\n"
+        << "  \"version\": 2,\n"
+        << "  \"preset\": \"gpt2_diff\",\n"
+        << "  \"checkpoint_kind\": \"trained_dense_v5_plus_diff_v1\",\n"
+        << "  \"step\": " << checkpoint_step << ",\n";
+    for (const ArtifactSpec& artifact : artifacts) {
+        out << "  \"" << artifact.key << "\": {\"path\": \""
+            << json_escape(artifact.path.filename().string()) << "\", \"format\": \""
+            << artifact.format << "\", \"nbytes\": " << artifact.nbytes
+            << ", \"sha256\": \"" << artifact.sha << "\"},\n";
+    }
+    out
+        << "  \"done_marker\": \"" << json_escape(done_marker.filename().string()) << "\",\n"
+        << "  \"source_graph\": {\"filename\": \""
+        << json_escape(fs::path(cfg.graph_file).filename().string())
+        << "\", \"sha256\": \"" << cfg.verified_graph_fingerprint
+        << "\", \"byte_identity_verified\": true},\n"
+        << "  \"graph_preflight_proof\": {\"schema\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.schema)
+        << "\", \"version\": " << cfg.verified_graph_preflight_proof.version
+        << ", \"contract_sha256\": \""
+        << cfg.verified_graph_preflight_proof.contract_sha256 << "\"},\n"
+        << "  \"lambda\": {\"count\": " << num_layers
+        << ", \"dtype\": \"float32\", \"initial_value\": 0.8, \"output_scale\": 0.2},\n"
+        << "  \"continuation\": {"
+        << "\"optimizer_steps_completed\": " << continuation.optimizer_steps_completed
+        << ", \"train_microbatches_completed\": " << continuation.train_microbatches_completed
+        << ", \"microbatch_in_optimizer_step\": " << continuation.microbatch_in_optimizer_step
+        << ", \"batch_size\": " << continuation.batch_size
+        << ", \"seq_len\": " << continuation.seq_len
+        << ", \"microbatch_tokens\": " << continuation.microbatch_tokens
+        << ", \"requested_train_batch_tokens\": "
+        << continuation.requested_train_batch_tokens
+        << ", \"effective_train_batch_tokens\": "
+        << continuation.effective_train_batch_tokens
+        << ", \"grad_accum_steps\": " << continuation.grad_accum_steps
+        << ", \"train_seed_explicit\": "
+        << (continuation.train_seed_explicit ? "true" : "false")
+        << ", \"train_seed\": " << continuation.train_seed
+        << ", \"sampler_start_batch\": " << continuation.sampler_start_batch
+        << ", \"sampler_total_batches\": " << continuation.sampler_total_batches
+        << ", \"train_shard_count\": " << continuation.train_shard_count
+        << ", \"train_shard_total_bytes\": "
+        << continuation.train_shard_total_bytes
+        << ", \"train_shards_sha256\": \""
+        << continuation.train_shards_sha256 << "\""
+        << ", \"learning_rate\": " << continuation.learning_rate
+        << ", \"lr_schedule\": \"" << json_escape(continuation.lr_schedule) << "\""
+        << ", \"lr_schedule_total_steps\": " << continuation.lr_schedule_total_steps
+        << ", \"warmup_steps\": " << continuation.warmup_steps
+        << ", \"final_lr_fraction\": " << continuation.final_lr_fraction
+        << ", \"weight_decay\": " << continuation.weight_decay
+        << ", \"beta1\": " << continuation.beta1
+        << ", \"beta2\": " << continuation.beta2
+        << ", \"adam_eps\": " << continuation.adam_eps
+        << ", \"grad_clip_norm\": " << continuation.grad_clip_norm
+        << ", \"lm_head_row_chunk_size\": " << continuation.lm_head_row_chunk_size
+        << ", \"bf16_block_weight_params\": "
+        << (continuation.bf16_block_weight_params ? "true" : "false")
+        << ", \"bf16_block_dweight_staging\": "
+        << (continuation.bf16_block_dweight_staging ? "true" : "false")
+        << ", \"dweight_first_microbatch_beta_zero\": "
+        << (continuation.dweight_first_microbatch_beta_zero ? "true" : "false")
+        << ", \"numerics_profile_sha256\": \""
+        << continuation.numerics_profile_sha256 << "\""
+        << "},\n"
+        << "  \"geometry\": {\"max_seq_len\": " << max_seq_len
+        << ", \"vocab_size\": " << vocab_size
+        << ", \"padded_vocab_size\": " << padded_vocab_size
+        << ", \"num_layers\": " << num_layers
+        << ", \"model_dim\": " << model_dim
+        << ", \"num_heads\": " << num_heads
+        << ", \"head_dim\": " << (model_dim / num_heads)
+        << ", \"mlp_hidden_dim\": " << (4 * model_dim) << "}\n"
+        << "}\n";
+    const std::string encoded = out.str();
+    ExclusiveOutputFile metadata_out(metadata_path);
+    if (!metadata_out) {
+        if (error != nullptr) {
+            *error = "refusing to overwrite or follow gpt2_diff metadata target: " +
+                metadata_path.string();
+        }
+        return false;
+    }
+    metadata_out.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    metadata_out.close();
+    if (!metadata_out) {
+        if (error != nullptr) {
+            *error = "failed to finish gpt2_diff metadata: " + metadata_path.string();
+        }
+        return false;
+    }
+    metadata_out.commit();
+    if (metadata_path_out != nullptr) {
+        *metadata_path_out = metadata_path;
+    }
+    return true;
 }
 
 fs::path expand_user_path(const std::string& raw) {
@@ -2009,7 +5640,10 @@ std::string normalize_lr_schedule(std::string value) {
     return value;
 }
 
-double scheduled_learning_rate(const Config& cfg, std::int64_t step) {
+double scheduled_learning_rate(
+    const Config& cfg,
+    std::int64_t step,
+    std::int64_t schedule_total_steps = 0) {
     const double base_lr = cfg.learning_rate > 0.0 ? cfg.learning_rate : 0.0;
     if (base_lr <= 0.0) {
         return 0.0;
@@ -2024,7 +5658,12 @@ double scheduled_learning_rate(const Config& cfg, std::int64_t step) {
     }
     const double floor_fraction = std::clamp(cfg.final_lr_fraction, 0.0, 1.0);
     const double floor_lr = base_lr * floor_fraction;
-    const std::int64_t decay_steps = std::max<std::int64_t>(1, cfg.max_steps - warmup_steps);
+    const std::int64_t horizon = schedule_total_steps > 0
+        ? schedule_total_steps
+        : (cfg.lr_schedule_total_steps > 0
+               ? static_cast<std::int64_t>(cfg.lr_schedule_total_steps)
+               : static_cast<std::int64_t>(cfg.max_steps));
+    const std::int64_t decay_steps = std::max<std::int64_t>(1, horizon - warmup_steps);
     const double progress = std::clamp(
         static_cast<double>(std::max<std::int64_t>(0, step - warmup_steps)) /
             static_cast<double>(decay_steps),
@@ -4653,6 +8292,8 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     const std::int64_t mlp_hidden = tokens * dim * geometry.mlp_multiplier;
     const std::int64_t logits = tokens * padded_vocab;
     const std::int64_t parameters = layout_count(build_gpt2_parameter_layout(cfg));
+    const bool differential_attention_enabled =
+        dense_gpt_variant_config(cfg.template_name).use_differential_attention;
 
     auto add = [&](std::string name, std::string phase, std::string kernel_abi, std::int64_t elements) {
         StagePlan stage;
@@ -4671,10 +8312,16 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     for (int layer = 0; layer < cfg.num_layers; ++layer) {
         const std::string prefix = "h." + std::to_string(layer) + ".";
         add(prefix + "ln_1.forward", "forward", "nfn_native_tile_layer_norm_float32", hidden);
-        if (packed_qkv_attention_enabled) {
+        if (packed_qkv_attention_enabled || differential_attention_enabled) {
             add(prefix + "attn.c_attn.forward", "forward", "nfn_native_tile_linear_bf16_output_float32(no_bias)", qkv);
             add(prefix + "attn.qkv.bias_inplace_bf16", "forward", "nfn_native_tile_bf16_bits_add_bias_inplace_float32", qkv);
-            add(prefix + "attn.sdpa.forward", "forward", "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32", hidden);
+            add(
+                prefix + "attn.sdpa.forward",
+                "forward",
+                differential_attention_enabled
+                    ? kGpt2DiffPackedForwardSymbol
+                    : "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32",
+                hidden);
         } else {
             add(prefix + "attn.c_attn.forward", "forward", "nfn_native_tile_linear_float32(no_bias)", qkv);
             add(prefix + "attn.qkv.bias_split_to_heads", "forward", "nfn_native_tile_split_qkv_to_heads_add_bias_float32", qkv);
@@ -4717,9 +8364,11 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
         add(
             prefix + "attn.sdpa.backward_to_qkv_from_merged_grad",
             "backward",
-            packed_qkv_attention_enabled
-                ? "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
-                : "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
+            differential_attention_enabled
+                ? kGpt2DiffPackedBackwardSymbol
+                : (packed_qkv_attention_enabled
+                       ? "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+                       : "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32"),
             qkv);
         add(prefix + "attn.c_attn.backward", "backward", "linear input/weight/weight-accumulate/bias/bias-accumulate backward native ABI", hidden + qkv);
         add(prefix + "ln_1.backward", "backward", "nfn_native_tile_layer_norm_backward_input_float32", hidden);
@@ -5112,6 +8761,12 @@ bool print_tile_plan(
         normalized_tile_ops == "rtld-default" ||
         normalized_tile_ops == "rtld_default";
     std::vector<std::string> symbols = required_tile_symbols();
+    if (dense_gpt_variant_config(cfg.template_name).use_differential_attention) {
+        symbols.insert(
+            symbols.end(),
+            kGpt2DiffPackedTileSymbols.begin(),
+            kGpt2DiffPackedTileSymbols.end());
+    }
     const std::vector<BufferPlan> parameter_layout = build_gpt2_parameter_layout(cfg);
     const std::vector<StagePlan> stage_plan = build_gpt2_stage_plan(cfg);
     const bool native_runnable = selected_graph_is_native_runnable(cfg);
@@ -5124,8 +8779,9 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK",
                               "NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"}),
             false);
-    std::string plan_error;
-    if (!unsafe_lm_head_row_chunk_allowed &&
+    std::string plan_error = gpt2_diff_packed_configuration_error(cfg);
+    if (plan_error.empty() &&
+        !unsafe_lm_head_row_chunk_allowed &&
         lm_head_chunk_rows > kDefaultSafeLmHeadRowChunkSize) {
         std::ostringstream message;
         message << "lm_head_row_chunk_size " << lm_head_chunk_rows
@@ -5365,6 +9021,17 @@ bool print_tile_plan(
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
         << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
+        << "  \"graph_fingerprint\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+        << "  \"graph_fingerprint_verified\": "
+        << (!cfg.verified_graph_fingerprint.empty() ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_verified\": "
+        << (cfg.verified_graph_preflight_proof.verified ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_schema\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.schema) << "\",\n"
+        << "  \"graph_preflight_proof_version\": "
+        << cfg.verified_graph_preflight_proof.version << ",\n"
+        << "  \"graph_preflight_contract_sha256\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.contract_sha256) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
@@ -5479,10 +9146,25 @@ bool print_tile_plan(
         << ", \"generate_tokens\": " << cfg.generate_tokens
         << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps
-        << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\"},\n"
+        << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\""
+        << ", \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps
+        << ", \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false")
+        << ", \"effective_lr_schedule_total_steps\": "
+        << (cfg.lr_schedule_total_steps > 0
+                ? cfg.lr_schedule_total_steps
+                : cfg.max_steps)
+        << "},\n"
         << "  \"optimizer\": {\"profile\": \"adamw\""
         << ", \"learning_rate\": " << cfg.learning_rate
         << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\""
+        << ", \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps
+        << ", \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false")
+        << ", \"effective_lr_schedule_total_steps\": "
+        << (cfg.lr_schedule_total_steps > 0
+                ? cfg.lr_schedule_total_steps
+                : cfg.max_steps)
         << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
         << ", \"weight_decay\": " << cfg.weight_decay
         << ", \"beta1\": " << cfg.beta1
@@ -5842,6 +9524,17 @@ int print_selected_graph_unsupported_json(
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
         << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
+        << "  \"graph_fingerprint\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+        << "  \"graph_fingerprint_verified\": "
+        << (!cfg.verified_graph_fingerprint.empty() ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_verified\": "
+        << (cfg.verified_graph_preflight_proof.verified ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_schema\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.schema) << "\",\n"
+        << "  \"graph_preflight_proof_version\": "
+        << cfg.verified_graph_preflight_proof.version << ",\n"
+        << "  \"graph_preflight_contract_sha256\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.contract_sha256) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
@@ -8701,6 +12394,14 @@ int run_embedding_lm_training_json(
         << "  \"tokens_processed\": " << tokens_processed << ",\n"
         << "  \"learning_rate\": " << cfg.learning_rate << ",\n"
         << "  \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\",\n"
+        << "  \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps << ",\n"
+        << "  \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false") << ",\n"
+        << "  \"effective_lr_schedule_total_steps\": "
+        << (cfg.lr_schedule_total_steps > 0
+                ? cfg.lr_schedule_total_steps
+                : cfg.max_steps)
+        << ",\n"
         << "  \"weight_decay\": " << cfg.weight_decay << ",\n"
         << "  \"optimizer\": {\"profile\": \"adamw\""
         << ", \"learning_rate\": " << cfg.learning_rate
@@ -11987,6 +15688,8 @@ int run_transformer_lm_training_json(
     constexpr std::int64_t kPerBlockDirectAccumGradientBuffers = 12;
     constexpr std::int64_t kPerBlockAdamWStateBuffers = 24;
     constexpr std::int64_t kGlobalParameterBuffers = 4;
+    const std::int64_t dense_adamw_checkpoint_descriptor_count =
+        kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers;
     const std::int64_t global_gradient_partial_count =
         partial_count_for(kTokenWeightElements) +
         partial_count_for(position_weight_elements) +
@@ -12003,7 +15706,8 @@ int run_transformer_lm_training_json(
         partial_count_for(kDim);
     const std::int64_t gradient_partial_count =
         global_gradient_partial_count +
-        per_block_gradient_partial_count * trained_layers;
+        per_block_gradient_partial_count * trained_layers +
+        (variant.use_differential_attention ? partial_count_for(trained_layers) : 0);
     const std::int64_t microbatch_tokens = rows;
     const std::int64_t requested_train_batch_tokens =
         std::max<std::int64_t>(microbatch_tokens, static_cast<std::int64_t>(cfg.train_batch_tokens));
@@ -12052,6 +15756,9 @@ int run_transformer_lm_training_json(
          cfg.evo_layer_mutation_scale < 0.0 || cfg.evo_tournament_size <= 0 ||
          cfg.evo_elite_count < 0 || cfg.evo_elite_count > cfg.evo_layer_population)) {
         error = "evo layer index/cadence/population/mutation scale/tournament/elite are outside the valid range";
+    }
+    if (error.empty()) {
+        error = gpt2_diff_packed_configuration_error(cfg);
     }
     if (!cfg.startup_only) {
         std::cerr << "[nfn-native-train] starting dense GPT Tile-CUDA training"
@@ -12414,6 +16121,8 @@ int run_transformer_lm_training_json(
     std::vector<LinearCublasLtPlanCacheEntry> linear_cublaslt_plan_cache;
     std::string checkpoint_path_json;
     std::string done_marker_json;
+    std::string moa_inference_metadata_path_json;
+    bool moa_inference_metadata_written = false;
     std::int64_t checkpoint_step = 0;
     std::int64_t checkpoint_expected_file_size = 0;
     std::int64_t checkpoint_actual_file_size = 0;
@@ -12440,12 +16149,25 @@ int run_transformer_lm_training_json(
     std::int64_t optimizer_checkpoint_d2h_copy_count = 0;
     std::int64_t optimizer_checkpoint_d2h_bytes = 0;
     bool optimizer_checkpoint_written = false;
+    std::string diff_parameter_checkpoint_path_json;
+    std::string diff_optimizer_checkpoint_path_json;
+    std::string diff_metadata_path_json;
+    bool diff_checkpoint_written = false;
     bool resume_checkpoint_requested = !cfg.resume_checkpoint.empty();
     bool resume_checkpoint_loaded = false;
     std::string resume_checkpoint_path_json;
     std::string resume_parameter_state_checkpoint_path_json;
     std::string resume_optimizer_checkpoint_path_json;
     std::string resume_checkpoint_error;
+    std::string resume_moa_metadata_path_json;
+    std::string resume_moa_selected_activation = "gelu";
+    bool resume_moa_metadata_validated = false;
+    bool resume_moa_activation_restored = false;
+    NativeGptDiffResumeState resume_diff_state;
+    bool resume_diff_metadata_validated = false;
+    bool resume_diff_parameter_restored = false;
+    bool resume_diff_optimizer_restored = false;
+    std::string resume_diff_metadata_path_json;
     std::int64_t resume_checkpoint_step = 0;
     std::int64_t resume_checkpoint_tensor_count = 0;
     std::int64_t resume_checkpoint_payload_elements = 0;
@@ -12464,6 +16186,15 @@ int run_transformer_lm_training_json(
     bool resume_sampler_seek_applied = false;
     std::int64_t resume_sampler_seek_batch = 0;
     std::int64_t training_sampler_start_batch = 0;
+    std::int64_t training_sampler_total_batches = 0;
+    std::int64_t effective_lr_schedule_total_steps =
+        cfg.lr_schedule_total_steps > 0
+            ? static_cast<std::int64_t>(cfg.lr_schedule_total_steps)
+            : static_cast<std::int64_t>(cfg.max_steps);
+    NativeGptDiffContinuationContract expected_diff_continuation;
+    std::vector<ScopedFd> stable_diff_train_shard_fds;
+    std::vector<neuralfn::native_train::TokenShardFile>
+        stable_diff_train_shards;
     std::int64_t resume_optimizer_checkpoint_tensor_count = 0;
     std::int64_t resume_optimizer_checkpoint_payload_elements = 0;
     std::int64_t resume_optimizer_checkpoint_h2d_copy_count = 0;
@@ -12491,7 +16222,7 @@ int run_transformer_lm_training_json(
     void* tile_handle = nullptr;
     void* cuda_handle = nullptr;
     std::vector<std::string> missing_symbols;
-    const std::vector<std::string> required_symbols = {
+    std::vector<std::string> required_symbols = {
         "nfn_native_tile_fill_float32",
         "nfn_native_tile_fill_many_float32",
         "nfn_native_tile_fill_many_values_float32",
@@ -12728,6 +16459,12 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
     };
+    if (variant.use_differential_attention) {
+        required_symbols.insert(
+            required_symbols.end(),
+            kGpt2DiffPackedTileSymbols.begin(),
+            kGpt2DiffPackedTileSymbols.end());
+    }
 
     using FillFn = int (*)(float*, std::int64_t, float, void*);
     using FillManyValuesFn = int (*)(float* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
@@ -12984,11 +16721,12 @@ int run_transformer_lm_training_json(
     using DifferentialPackedAttentionForwardFn = int (*)(
         const std::uint16_t*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
-        float, float, float, void*);
+        const float*, float, float, void*);
     using DifferentialPackedAttentionBackwardFn = int (*)(
-        const std::uint16_t*, const float*, std::uint16_t*,
+        const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
-        float, float, void*);
+        const float*, float, float, float*, void*);
+    using DifferentialPackedAttentionReleaseFn = int (*)();
     using AttentionStatsCountFn = std::int64_t (*)();
     using AttentionStatsErrorFn = int (*)();
     using TrainerLinearStatsResetFn = void (*)();
@@ -13320,6 +17058,7 @@ int run_transformer_lm_training_json(
     QkRmsNormPackedBackwardFn qk_rms_norm_packed_backward = nullptr;
     DifferentialPackedAttentionForwardFn differential_packed_attention_forward = nullptr;
     DifferentialPackedAttentionBackwardFn differential_packed_attention_backward = nullptr;
+    DifferentialPackedAttentionReleaseFn differential_packed_attention_release = nullptr;
     AttentionStatsResetFn attention_stats_reset = nullptr;
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
@@ -13595,6 +17334,169 @@ int run_transformer_lm_training_json(
         }
     };
 
+    run_setup_timed("setup.diff_continuation_host_contract", [&]() {
+        if (!variant.use_differential_attention || !error.empty()) {
+            return;
+        }
+        if (!ordered_token_shard_identity(
+                dataset.train_shards,
+                &stable_diff_train_shard_fds,
+                &stable_diff_train_shards,
+                &expected_diff_continuation.train_shard_count,
+                &expected_diff_continuation.train_shard_total_bytes,
+                &expected_diff_continuation.train_shards_sha256,
+                &error)) {
+            return;
+        }
+        try {
+            neuralfn::native_train::SequentialTokenBatchSampler contract_sampler(
+                stable_diff_train_shards,
+                seq_len,
+                batch_size);
+            training_sampler_total_batches = contract_sampler.total_batches();
+        } catch (const std::exception& exc) {
+            error = std::string("failed to establish gpt2_diff sampler contract: ") +
+                exc.what();
+            return;
+        }
+        if (training_sampler_total_batches <= 0) {
+            error = "gpt2_diff continuation requires at least one train batch";
+            return;
+        }
+        if (cfg.train_seed_explicit) {
+            std::uint64_t value = static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(cfg.train_seed));
+            value += 0x9e3779b97f4a7c15ULL;
+            value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+            value ^= value >> 31;
+            training_sampler_start_batch = static_cast<std::int64_t>(
+                value % static_cast<std::uint64_t>(training_sampler_total_batches));
+        }
+        expected_diff_continuation.batch_size = batch_size;
+        expected_diff_continuation.seq_len = seq_len;
+        expected_diff_continuation.microbatch_tokens = microbatch_tokens;
+        expected_diff_continuation.requested_train_batch_tokens =
+            requested_train_batch_tokens;
+        expected_diff_continuation.effective_train_batch_tokens =
+            effective_train_batch_tokens;
+        expected_diff_continuation.grad_accum_steps = grad_accum_steps;
+        expected_diff_continuation.train_seed_explicit = cfg.train_seed_explicit;
+        expected_diff_continuation.train_seed = cfg.train_seed;
+        expected_diff_continuation.sampler_start_batch = training_sampler_start_batch;
+        expected_diff_continuation.sampler_total_batches =
+            training_sampler_total_batches;
+        expected_diff_continuation.learning_rate = cfg.learning_rate;
+        expected_diff_continuation.lr_schedule = cfg.lr_schedule;
+        expected_diff_continuation.lr_schedule_total_steps =
+            effective_lr_schedule_total_steps;
+        expected_diff_continuation.warmup_steps = cfg.warmup_steps;
+        expected_diff_continuation.final_lr_fraction = cfg.final_lr_fraction;
+        expected_diff_continuation.weight_decay = cfg.weight_decay;
+        expected_diff_continuation.beta1 = cfg.beta1;
+        expected_diff_continuation.beta2 = cfg.beta2;
+        expected_diff_continuation.adam_eps = cfg.adam_eps;
+        expected_diff_continuation.grad_clip_norm = cfg.grad_clip_norm;
+        expected_diff_continuation.lm_head_row_chunk_size =
+            cfg.lm_head_row_chunk_size;
+        expected_diff_continuation.bf16_block_weight_params =
+            env_flag_enabled_or_default(
+                env_or_empty_any({"NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS",
+                                  "NFN_NATIVE_GPT2_BF16_BLOCK_WEIGHT_PARAMS"}),
+                true);
+        expected_diff_continuation.bf16_block_dweight_staging =
+            env_flag_enabled_or_default(
+                env_or_empty_any({"NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING",
+                                  "NFN_NATIVE_GPT2_BF16_BLOCK_DWEIGHT_STAGING"}),
+                false);
+        expected_diff_continuation.dweight_first_microbatch_beta_zero =
+            env_flag_enabled_or_default(
+                env_or_empty_any({
+                    "NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO",
+                    "NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO"}),
+                true);
+        expected_diff_continuation.numerics_profile_sha256 =
+            gpt2_diff_numerics_profile_sha256(trained_layers);
+    });
+
+    run_setup_timed("setup.diff_resume_host_preflight", [&]() {
+        if (!variant.use_differential_attention ||
+            !resume_checkpoint_requested || !error.empty()) {
+            return;
+        }
+        constexpr std::int64_t kCheckpointHeaderBytes = 256 * 4;
+        constexpr std::int64_t kBytesPerParam = 2;
+        const fs::path checkpoint_path = expand_user_path(cfg.resume_checkpoint);
+        resume_checkpoint_path_json = checkpoint_path.string();
+        resume_parameter_state_checkpoint_path_json =
+            native_gpt_parameter_state_checkpoint_path(checkpoint_path).string();
+        resume_optimizer_checkpoint_path_json =
+            native_gpt_optimizer_checkpoint_path(checkpoint_path).string();
+        resume_checkpoint_step = native_gpt_checkpoint_step(checkpoint_path);
+        if (resume_checkpoint_step <= 0) {
+            resume_checkpoint_error =
+                "invalid gpt2_diff resume metadata: checkpoint step must be positive";
+            error = resume_checkpoint_error;
+            return;
+        }
+        if (resume_checkpoint_step >
+            std::numeric_limits<std::int64_t>::max() /
+                std::max<std::int64_t>(grad_accum_steps, 1)) {
+            resume_checkpoint_error =
+                "invalid gpt2_diff resume metadata: continuation counter overflow";
+            error = resume_checkpoint_error;
+            return;
+        }
+        expected_diff_continuation.optimizer_steps_completed =
+            resume_checkpoint_step;
+        expected_diff_continuation.train_microbatches_completed =
+            resume_checkpoint_step * grad_accum_steps;
+        expected_diff_continuation.microbatch_in_optimizer_step = 0;
+        const std::int64_t parameter_count =
+            native_gpt2_parameter_count(seq_len, kPaddedVocab, trained_layers, kDim);
+        if (parameter_count <= 0 ||
+            parameter_count >
+                (std::numeric_limits<std::int64_t>::max() - kCheckpointHeaderBytes) /
+                    kBytesPerParam) {
+            resume_checkpoint_error =
+                "invalid gpt2_diff resume metadata: dense model size overflow";
+            error = resume_checkpoint_error;
+            return;
+        }
+        const std::int64_t checkpoint_nbytes =
+            kCheckpointHeaderBytes + parameter_count * kBytesPerParam;
+        std::string metadata_error;
+        if (!read_native_gpt_diff_resume_state(
+                cfg,
+                checkpoint_path,
+                checkpoint_nbytes,
+                resume_checkpoint_step,
+                seq_len,
+                kVocab,
+                kPaddedVocab,
+                trained_layers,
+                kDim,
+                kHeads,
+                grad_accum_steps,
+                expected_diff_continuation,
+                &resume_diff_state,
+                &metadata_error)) {
+            resume_checkpoint_error = metadata_error.empty()
+                ? "invalid gpt2_diff resume metadata: validation failed"
+                : metadata_error;
+            error = resume_checkpoint_error;
+            return;
+        }
+        resume_diff_metadata_validated = true;
+        effective_lr_schedule_total_steps =
+            resume_diff_state.continuation.lr_schedule_total_steps;
+        expected_diff_continuation.lr_schedule_total_steps =
+            effective_lr_schedule_total_steps;
+        resume_diff_metadata_path_json = resume_diff_state.metadata_path.string();
+        resume_parameter_state_available = true;
+        resume_optimizer_state_available = true;
+    });
+
     run_setup_timed("setup.load_tile_ops", [&]() {
         if (error.empty()) {
             const auto tile_ops_dlopen_start = Clock::now();
@@ -13620,7 +17522,12 @@ int run_transformer_lm_training_json(
                         elapsed_ms(required_symbol_scan_start, Clock::now());
                 }
                 if (!missing_symbols.empty()) {
-                    error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
+                    if (variant.use_differential_attention) {
+                        error = gpt2_diff_missing_tile_symbols_error(missing_symbols);
+                    }
+                    if (error.empty()) {
+                        error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
+                    }
                 } else {
                     const auto typed_symbol_load_start = Clock::now();
                     fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
@@ -14213,11 +18120,15 @@ int run_transformer_lm_training_json(
                 differential_packed_attention_forward =
                     load_symbol<DifferentialPackedAttentionForwardFn>(
                         tile_handle,
-                        "nfn_native_tile_differential_packed_attention_forward_bf16");
+                        kGpt2DiffPackedForwardSymbol);
                 differential_packed_attention_backward =
                     load_symbol<DifferentialPackedAttentionBackwardFn>(
                         tile_handle,
-                        "nfn_native_tile_differential_packed_attention_backward_bf16");
+                        kGpt2DiffPackedBackwardSymbol);
+                differential_packed_attention_release =
+                    load_symbol<DifferentialPackedAttentionReleaseFn>(
+                        tile_handle,
+                        kGpt2DiffPackedReleaseSymbol);
                 packed_attention_forward = load_symbol<PackedAttentionForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32");
                 packed_attention_forward_store_lse = load_symbol<PackedAttentionForwardStoreLseFn>(
@@ -14417,6 +18328,23 @@ int run_transformer_lm_training_json(
                     optimized_optimizer_contract_error =
                         "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols";
                     error = optimized_optimizer_contract_error;
+                }
+                if (error.empty() && variant.use_differential_attention &&
+                    (differential_packed_attention_forward == nullptr ||
+                     differential_packed_attention_backward == nullptr ||
+                     differential_packed_attention_release == nullptr)) {
+                    std::vector<std::string> missing_differential_symbols;
+                    if (differential_packed_attention_forward == nullptr) {
+                        missing_differential_symbols.emplace_back(kGpt2DiffPackedForwardSymbol);
+                    }
+                    if (differential_packed_attention_backward == nullptr) {
+                        missing_differential_symbols.emplace_back(kGpt2DiffPackedBackwardSymbol);
+                    }
+                    if (differential_packed_attention_release == nullptr) {
+                        missing_differential_symbols.emplace_back(kGpt2DiffPackedReleaseSymbol);
+                    }
+                    error = gpt2_diff_missing_tile_symbols_error(
+                        missing_differential_symbols);
                 }
                 tile_ops_typed_symbol_load_wall_ms =
                     elapsed_ms(typed_symbol_load_start, Clock::now());
@@ -16759,6 +20687,10 @@ int run_transformer_lm_training_json(
     float *grad_attn_out = nullptr, *grad_qkv = nullptr;
     float *grad_ln1 = nullptr, *grad_x_from_attn = nullptr, *grad_x = nullptr;
     float *grad_sumsq_partials = nullptr, *grad_clip_scale = nullptr;
+    float* differential_lambdas = nullptr;
+    float* differential_lambda_grads = nullptr;
+    float* differential_lambda_avgs = nullptr;
+    float* differential_lambda_avg_sqs = nullptr;
     std::int64_t *token_ids = nullptr, *targets = nullptr;
     std::uint16_t *token_ids_u16 = nullptr, *targets_u16 = nullptr;
     std::uint16_t *token_ids_pinned = nullptr, *targets_pinned = nullptr;
@@ -17674,6 +21606,18 @@ int run_transformer_lm_training_json(
              {&stored_packed_attention_qk_norm_rstd_arena,
               stored_packed_attention_qk_norm_rstd_elements,
               "stored_packed_attention_qk_norm_rstd_arena"},
+             {&differential_lambdas,
+              variant.use_differential_attention ? trained_layers : 0,
+              "differential.lambda"},
+             {&differential_lambda_grads,
+              variant.use_differential_attention ? trained_layers : 0,
+              "differential.lambda.accum_grad"},
+             {&differential_lambda_avgs,
+              variant.use_differential_attention ? trained_layers : 0,
+              "differential.lambda.avg"},
+             {&differential_lambda_avg_sqs,
+              variant.use_differential_attention ? trained_layers : 0,
+              "differential.lambda.avg_sq"},
              {&grad_sumsq_partials, gradient_partial_count, "grad_sumsq_partials"},
              {&grad_clip_scale, 1, "grad_clip_scale"},
     }) {
@@ -17861,7 +21805,8 @@ int run_transformer_lm_training_json(
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
     const std::int64_t nonzero_parameter_fill_buffer_count =
-        direct_bf16_block_weight_init_enabled ? 3 + trained_layers * 2 : 3 + trained_layers * 6;
+        (direct_bf16_block_weight_init_enabled ? 3 + trained_layers * 2 : 3 + trained_layers * 6) +
+        (variant.use_differential_attention ? 1 : 0);
     const std::int64_t nonzero_bf16_parameter_fill_buffer_count =
         direct_bf16_block_weight_init_enabled ? trained_layers * 4 : 0;
 
@@ -18118,7 +22063,8 @@ int run_transformer_lm_training_json(
             return;
         }
         const std::size_t adamw_expected_descriptor_count =
-            static_cast<std::size_t>(4 + trained_layers * 12);
+            static_cast<std::size_t>(
+                4 + trained_layers * 12 + (variant.use_differential_attention ? 1 : 0));
         reserve_adamw_host(adamw_host, adamw_expected_descriptor_count);
         reserve_adamw_host(adamw_float_update_host, adamw_expected_descriptor_count);
         reserve_bf16_param_host(adamw_bf16_param_host, adamw_expected_descriptor_count);
@@ -18230,6 +22176,15 @@ int run_transformer_lm_training_json(
         }
         add(lnf_weight, accum_grad_lnf_weight, lnf_weight_avg, lnf_weight_avg_sq, kDim, 0.0f);
         add(lnf_bias, accum_grad_lnf_bias, lnf_bias_avg, lnf_bias_avg_sq, kDim, 0.0f);
+        if (variant.use_differential_attention) {
+            add(
+                differential_lambdas,
+                differential_lambda_grads,
+                differential_lambda_avgs,
+                differential_lambda_avg_sqs,
+                trained_layers,
+                0.0f);
+        }
         if (!error.empty()) {
             return;
         }
@@ -18447,6 +22402,13 @@ int run_transformer_lm_training_json(
         add(position_weight, position_weight_elements, kInitialPositionWeight, "position_weight");
         add(residual_scale, 1, kResidualScale, "residual_scale");
         add(lnf_weight, kDim, kLnWeight, "lnf_weight");
+        if (variant.use_differential_attention) {
+            add(
+                differential_lambdas,
+                trained_layers,
+                variant.differential_lambda_init,
+                "differential.lambda");
+        }
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockParams& block = blocks[i];
             const std::string prefix = "block" + std::to_string(i);
@@ -18743,6 +22705,103 @@ int run_transformer_lm_training_json(
         const fs::path optimizer_checkpoint_path =
             native_gpt_optimizer_checkpoint_path(model_checkpoint_path);
         resume_optimizer_checkpoint_path_json = optimizer_checkpoint_path.string();
+        if (variant.use_differential_attention) {
+            if (!resume_diff_metadata_validated ||
+                resume_diff_state.dense_optimizer.size() !=
+                    static_cast<std::size_t>(
+                        resume_diff_state.dense_optimizer_state_elements) ||
+                resume_diff_state.avgs.size() != static_cast<std::size_t>(trained_layers) ||
+                resume_diff_state.avg_sqs.size() != static_cast<std::size_t>(trained_layers)) {
+                resume_checkpoint_error =
+                    "invalid gpt2_diff resume metadata: optimizer host preflight state is incomplete";
+                error = resume_checkpoint_error;
+                return;
+            }
+            std::size_t offset = 0;
+            for (std::int64_t i = 0;
+                 i < dense_adamw_checkpoint_descriptor_count;
+                 ++i) {
+                const std::int64_t elements = adamw_host.elements[i];
+                if (elements <= 0 || adamw_host.avgs[i] == nullptr ||
+                    adamw_host.avg_sqs[i] == nullptr ||
+                    offset > resume_diff_state.dense_optimizer.size() ||
+                    static_cast<std::size_t>(elements) >
+                        resume_diff_state.dense_optimizer.size() - offset) {
+                    resume_checkpoint_error =
+                        "invalid gpt2_diff resume metadata: dense optimizer layout changed before restore";
+                    error = resume_checkpoint_error;
+                    return;
+                }
+                const std::size_t bytes =
+                    static_cast<std::size_t>(elements) * sizeof(float);
+                run(cuda_memcpy(
+                        adamw_host.avgs[i],
+                        resume_diff_state.dense_optimizer.data() + offset,
+                        bytes,
+                        kCudaMemcpyHostToDevice),
+                    "resume_optimizer.avg_h2d");
+                if (!error.empty()) {
+                    resume_checkpoint_error = error;
+                    return;
+                }
+                offset += static_cast<std::size_t>(elements);
+                run(cuda_memcpy(
+                        adamw_host.avg_sqs[i],
+                        resume_diff_state.dense_optimizer.data() + offset,
+                        bytes,
+                        kCudaMemcpyHostToDevice),
+                    "resume_optimizer.avg_sq_h2d");
+                if (!error.empty()) {
+                    resume_checkpoint_error = error;
+                    return;
+                }
+                offset += static_cast<std::size_t>(elements);
+                resume_optimizer_checkpoint_h2d_copy_count += 2;
+                resume_optimizer_checkpoint_h2d_bytes +=
+                    static_cast<std::int64_t>(bytes * 2);
+            }
+            if (offset != resume_diff_state.dense_optimizer.size()) {
+                resume_checkpoint_error =
+                    "invalid gpt2_diff resume metadata: dense optimizer payload has trailing values";
+                error = resume_checkpoint_error;
+                return;
+            }
+            const std::size_t diff_bytes =
+                sizeof(float) * static_cast<std::size_t>(trained_layers);
+            run(cuda_memcpy(
+                    differential_lambda_avgs,
+                    resume_diff_state.avgs.data(),
+                    diff_bytes,
+                    kCudaMemcpyHostToDevice),
+                "resume_gpt2_diff.lambda_avg_h2d");
+            if (error.empty()) {
+                run(cuda_memcpy(
+                        differential_lambda_avg_sqs,
+                        resume_diff_state.avg_sqs.data(),
+                        diff_bytes,
+                        kCudaMemcpyHostToDevice),
+                    "resume_gpt2_diff.lambda_avg_sq_h2d");
+            }
+            if (!error.empty()) {
+                resume_checkpoint_error = error;
+                return;
+            }
+            resume_optimizer_state_available = true;
+            resume_optimizer_state_restored = true;
+            resume_diff_optimizer_restored = true;
+            resume_optimizer_checkpoint_tensor_count =
+                dense_adamw_checkpoint_descriptor_count * 2;
+            resume_optimizer_checkpoint_payload_elements =
+                resume_diff_state.dense_optimizer_state_elements;
+            // The strict host preflight deliberately holds the complete decoded
+            // payload until every restore copy succeeds.  Release it at the H2D
+            // boundary so a full GPT-2 continuation does not retain another
+            // optimizer-sized host allocation for the rest of the training leg.
+            std::vector<float>().swap(resume_diff_state.dense_optimizer);
+            std::vector<float>().swap(resume_diff_state.avgs);
+            std::vector<float>().swap(resume_diff_state.avg_sqs);
+            return;
+        }
         if (!fs::exists(optimizer_checkpoint_path)) {
             resume_optimizer_state_available = false;
             return;
@@ -18753,7 +22812,7 @@ int run_transformer_lm_training_json(
         constexpr std::int64_t kOptimizerHeaderInts = 32;
         constexpr std::int64_t kOptimizerHeaderBytes = kOptimizerHeaderInts * 8;
         std::int64_t state_elements = 0;
-        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
+        for (std::int64_t i = 0; i < dense_adamw_checkpoint_descriptor_count; ++i) {
             if (adamw_host.avgs[i] == nullptr || adamw_host.avg_sqs[i] == nullptr ||
                 adamw_host.elements[i] <= 0) {
                 resume_checkpoint_error = "bad AdamW descriptor while loading resume optimizer state";
@@ -18798,7 +22857,7 @@ int run_transformer_lm_training_json(
             header[4] != kVocab || header[5] != trained_layers ||
             header[6] != kHeads || header[7] != kDim ||
             header[8] != kPaddedVocab ||
-            header[9] != static_cast<std::int64_t>(adamw_host.elements.size()) ||
+            header[9] != dense_adamw_checkpoint_descriptor_count ||
             header[10] != state_elements) {
             std::ostringstream message;
             message << "resume optimizer checkpoint header mismatch"
@@ -18812,7 +22871,9 @@ int run_transformer_lm_training_json(
             return;
         }
         std::vector<float> host_state;
-        for (std::size_t i = 0; i < adamw_host.elements.size() && error.empty(); ++i) {
+        for (std::int64_t i = 0;
+             i < dense_adamw_checkpoint_descriptor_count && error.empty();
+             ++i) {
             const std::int64_t elements = adamw_host.elements[i];
             const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(elements);
             host_state.assign(static_cast<std::size_t>(elements), 0.0f);
@@ -18850,8 +22911,39 @@ int run_transformer_lm_training_json(
             }
             return;
         }
+        if (variant.use_differential_attention) {
+            if (!resume_diff_metadata_validated ||
+                resume_diff_state.avgs.size() != static_cast<std::size_t>(trained_layers) ||
+                resume_diff_state.avg_sqs.size() != static_cast<std::size_t>(trained_layers)) {
+                resume_checkpoint_error =
+                    "invalid gpt2_diff resume metadata: optimizer state was not validated";
+                error = resume_checkpoint_error;
+                return;
+            }
+            const std::size_t diff_bytes =
+                sizeof(float) * static_cast<std::size_t>(trained_layers);
+            run(cuda_memcpy(
+                    differential_lambda_avgs,
+                    resume_diff_state.avgs.data(),
+                    diff_bytes,
+                    kCudaMemcpyHostToDevice),
+                "resume_gpt2_diff.lambda_avg_h2d");
+            if (error.empty()) {
+                run(cuda_memcpy(
+                        differential_lambda_avg_sqs,
+                        resume_diff_state.avg_sqs.data(),
+                        diff_bytes,
+                        kCudaMemcpyHostToDevice),
+                    "resume_gpt2_diff.lambda_avg_sq_h2d");
+            }
+            if (!error.empty()) {
+                resume_checkpoint_error = error;
+                return;
+            }
+            resume_diff_optimizer_restored = true;
+        }
         resume_optimizer_state_restored = true;
-        resume_optimizer_checkpoint_tensor_count = static_cast<std::int64_t>(adamw_host.elements.size()) * 2;
+        resume_optimizer_checkpoint_tensor_count = dense_adamw_checkpoint_descriptor_count * 2;
         resume_optimizer_checkpoint_payload_elements = state_elements;
     };
     auto initialize_token_weight = [&](void* stream) {
@@ -19197,6 +23289,193 @@ int run_transformer_lm_training_json(
         if (resume_checkpoint_step < 0) {
             resume_checkpoint_step = 0;
         }
+        if (variant.use_differential_attention) {
+            if (!resume_diff_metadata_validated ||
+                resume_diff_state.checkpoint_step != resume_checkpoint_step ||
+                resume_diff_state.dense_parameter_count <= 0 ||
+                resume_diff_state.dense_parameters.size() !=
+                    static_cast<std::size_t>(resume_diff_state.dense_parameter_count) ||
+                resume_diff_state.lambdas.size() !=
+                    static_cast<std::size_t>(trained_layers)) {
+                resume_checkpoint_error =
+                    "invalid gpt2_diff resume metadata: host preflight state is incomplete";
+                error = resume_checkpoint_error;
+                return;
+            }
+            struct HostResumeTensor {
+                float* float_destination;
+                std::uint16_t* bf16_destination;
+                std::int64_t elements;
+                std::string name;
+            };
+            std::vector<HostResumeTensor> tensors;
+            tensors.reserve(static_cast<std::size_t>(2 + trained_layers * 12 + 2));
+            const auto add = [&](float* float_destination,
+                                 std::uint16_t* bf16_destination,
+                                 std::int64_t elements,
+                                 std::string name) {
+                tensors.push_back(HostResumeTensor{
+                    float_destination,
+                    bf16_destination,
+                    elements,
+                    std::move(name)});
+            };
+            add(token_weight, token_weight_bf16, kTokenWeightElements, "wte.weight");
+            add(position_weight, nullptr, position_weight_elements, "wpe.weight");
+            for (std::size_t i = 0; i < blocks.size(); ++i) {
+                TransformerBlockParams& block = blocks[i];
+                const std::string prefix = "block" + std::to_string(i);
+                add(block.ln1_weight, nullptr, kDim, prefix + ".ln1.weight");
+                add(block.ln1_bias, nullptr, kDim, prefix + ".ln1.bias");
+                add(block.qkv_weight, block.qkv_weight_bf16, kQkvWeightElements,
+                    prefix + ".attn.qkv.weight");
+                add(block.qkv_bias, nullptr, kQkvDim, prefix + ".attn.qkv.bias");
+                add(block.attn_proj_weight, block.attn_proj_weight_bf16,
+                    kAttnProjWeightElements, prefix + ".attn.proj.weight");
+                add(block.attn_proj_bias, nullptr, kDim, prefix + ".attn.proj.bias");
+                add(block.ln2_weight, nullptr, kDim, prefix + ".ln2.weight");
+                add(block.ln2_bias, nullptr, kDim, prefix + ".ln2.bias");
+                add(block.fc_weight, block.fc_weight_bf16, kFcWeightElements,
+                    prefix + ".mlp.fc.weight");
+                add(block.fc_bias, nullptr, kHidden, prefix + ".mlp.fc.bias");
+                add(block.mlp_proj_weight, block.mlp_proj_weight_bf16,
+                    kMlpProjWeightElements, prefix + ".mlp.proj.weight");
+                add(block.mlp_proj_bias, nullptr, kDim, prefix + ".mlp.proj.bias");
+            }
+            add(lnf_weight, nullptr, kDim, "ln_f.weight");
+            add(lnf_bias, nullptr, kDim, "ln_f.bias");
+
+            std::int64_t bf16_staging_elements = 0;
+            std::size_t validated_payload_elements = 0;
+            for (const HostResumeTensor& tensor : tensors) {
+                if (tensor.elements <= 0 ||
+                    (tensor.float_destination == nullptr &&
+                     tensor.bf16_destination == nullptr)) {
+                    resume_checkpoint_error =
+                        "invalid gpt2_diff resume metadata: dense parameter layout changed before restore";
+                    error = resume_checkpoint_error;
+                    return;
+                }
+                if (static_cast<std::uint64_t>(tensor.elements) >
+                        static_cast<std::uint64_t>(
+                            std::numeric_limits<std::size_t>::max()) ||
+                    validated_payload_elements >
+                        resume_diff_state.dense_parameters.size() ||
+                    static_cast<std::size_t>(tensor.elements) >
+                        resume_diff_state.dense_parameters.size() -
+                            validated_payload_elements) {
+                    resume_checkpoint_error =
+                        "invalid gpt2_diff resume metadata: dense parameter layout changed before restore";
+                    error = resume_checkpoint_error;
+                    return;
+                }
+                validated_payload_elements +=
+                    static_cast<std::size_t>(tensor.elements);
+                if (tensor.float_destination == nullptr) {
+                    bf16_staging_elements =
+                        std::max(bf16_staging_elements, tensor.elements);
+                }
+            }
+            if (validated_payload_elements !=
+                resume_diff_state.dense_parameters.size()) {
+                resume_checkpoint_error =
+                    "invalid gpt2_diff resume metadata: dense parameter payload has trailing values";
+                error = resume_checkpoint_error;
+                return;
+            }
+            float* bf16_restore_staging = nullptr;
+            if (bf16_staging_elements > 0) {
+                if (float32_to_bf16_bits == nullptr ||
+                    bf16_staging_elements > static_cast<std::int64_t>(
+                        std::numeric_limits<std::size_t>::max() / sizeof(float))) {
+                    resume_checkpoint_error =
+                        "invalid gpt2_diff resume metadata: dense BF16 restore staging is unavailable";
+                    error = resume_checkpoint_error;
+                    return;
+                }
+                void* raw = nullptr;
+                const int status = device_malloc(
+                    &raw,
+                    sizeof(float) * static_cast<std::size_t>(bf16_staging_elements));
+                if (status != 0) {
+                    resume_checkpoint_error =
+                        cuda_error(status, "cudaMalloc gpt2_diff_resume_bf16_staging");
+                    error = resume_checkpoint_error;
+                    return;
+                }
+                bf16_restore_staging = static_cast<float*>(raw);
+                float_ptrs.push_back(bf16_restore_staging);
+            }
+            std::size_t offset = 0;
+            for (const HostResumeTensor& tensor : tensors) {
+                const std::size_t bytes =
+                    static_cast<std::size_t>(tensor.elements) * sizeof(float);
+                run(cuda_memcpy(
+                        tensor.float_destination != nullptr
+                            ? static_cast<void*>(tensor.float_destination)
+                            : static_cast<void*>(bf16_restore_staging),
+                        resume_diff_state.dense_parameters.data() + offset,
+                        bytes,
+                        kCudaMemcpyHostToDevice),
+                    "resume_parameter_state." + tensor.name + ".float_h2d");
+                if (!error.empty()) {
+                    resume_checkpoint_error = error;
+                    return;
+                }
+                resume_parameter_state_h2d_copy_count += 1;
+                resume_parameter_state_h2d_bytes += static_cast<std::int64_t>(bytes);
+                if (tensor.float_destination == nullptr) {
+                    run(float32_to_bf16_bits(
+                            bf16_restore_staging,
+                            tensor.bf16_destination,
+                            tensor.elements,
+                            nullptr),
+                        "resume_parameter_state." + tensor.name + ".float32_to_bf16");
+                    if (!error.empty()) {
+                        resume_checkpoint_error = error;
+                        return;
+                    }
+                    resume_checkpoint_convert_kernel_launches += 1;
+                }
+                offset += static_cast<std::size_t>(tensor.elements);
+            }
+            const std::size_t diff_bytes =
+                sizeof(float) * static_cast<std::size_t>(trained_layers);
+            run(cuda_memcpy(
+                    differential_lambdas,
+                    resume_diff_state.lambdas.data(),
+                    diff_bytes,
+                    kCudaMemcpyHostToDevice),
+                "resume_gpt2_diff.lambda_h2d");
+            if (!error.empty()) {
+                resume_checkpoint_error = error;
+                return;
+            }
+            refresh_token_weight_bf16("resume_parameter_state.token_weight_bf16_refresh");
+            if (!block_fp32_weight_params_elided) {
+                refresh_block_weight_bf16(
+                    "resume_parameter_state.block_weight_bf16_refresh");
+            }
+            if (error.empty()) {
+                resume_checkpoint_loaded = true;
+                resume_parameter_state_restored = true;
+                resume_diff_parameter_restored = true;
+                resume_checkpoint_tensor_count =
+                    static_cast<std::int64_t>(tensors.size());
+                resume_checkpoint_payload_elements =
+                    resume_diff_state.dense_parameter_count;
+                resume_parameter_state_tensor_count =
+                    static_cast<std::int64_t>(tensors.size());
+                resume_parameter_state_payload_elements =
+                    resume_diff_state.dense_parameter_count;
+                // Keep the validated state flags and scalar counts, but give the
+                // decoded host tensors back once the float and BF16 device state
+                // is complete.
+                std::vector<float>().swap(resume_diff_state.dense_parameters);
+                std::vector<float>().swap(resume_diff_state.lambdas);
+            }
+            return;
+        }
         std::ifstream in(checkpoint_path, std::ios::binary);
         if (!in) {
             resume_checkpoint_error = "failed to open resume checkpoint: " + checkpoint_path.string();
@@ -19254,6 +23533,31 @@ int run_transformer_lm_training_json(
                     << " bytes, expected " << expected_file_size;
             fail_shape(message.str());
             return;
+        }
+        if (native_moa_enabled) {
+            fs::path metadata_path;
+            std::string metadata_error;
+            if (!read_native_gpt_moa_resume_metadata(
+                    cfg,
+                    checkpoint_path,
+                    expected_file_size,
+                    seq_len,
+                    kVocab,
+                    kPaddedVocab,
+                    trained_layers,
+                    kDim,
+                    kHeads,
+                    &resume_moa_selected_activation,
+                    &metadata_path,
+                    &metadata_error)) {
+                resume_checkpoint_error = metadata_error.empty()
+                    ? "failed to validate MoA resume metadata"
+                    : metadata_error;
+                error = resume_checkpoint_error;
+                return;
+            }
+            resume_moa_metadata_path_json = metadata_path.string();
+            resume_moa_metadata_validated = true;
         }
 
         struct ResumeTensor {
@@ -19390,6 +23694,8 @@ int run_transformer_lm_training_json(
             return;
         }
         resume_checkpoint_loaded = true;
+        resume_moa_activation_restored =
+            native_moa_enabled && resume_moa_metadata_validated;
         resume_checkpoint_tensor_count = static_cast<std::int64_t>(tensors.size());
         resume_checkpoint_payload_elements = payload_elements;
         const fs::path parameter_state_path =
@@ -19494,6 +23800,21 @@ int run_transformer_lm_training_json(
         resume_parameter_state_restored = true;
         resume_parameter_state_tensor_count = static_cast<std::int64_t>(tensors.size());
         resume_parameter_state_payload_elements = payload_elements;
+        if (variant.use_differential_attention) {
+            const std::size_t diff_bytes =
+                sizeof(float) * static_cast<std::size_t>(trained_layers);
+            run(cuda_memcpy(
+                    differential_lambdas,
+                    resume_diff_state.lambdas.data(),
+                    diff_bytes,
+                    kCudaMemcpyHostToDevice),
+                "resume_gpt2_diff.lambda_h2d");
+            if (!error.empty()) {
+                resume_checkpoint_error = error;
+                return;
+            }
+            resume_diff_parameter_restored = true;
+        }
         refresh_token_weight_bf16("resume_parameter_state.token_weight_bf16_refresh");
         refresh_block_weight_bf16("resume_parameter_state.block_weight_bf16_refresh");
     };
@@ -19702,36 +24023,51 @@ int run_transformer_lm_training_json(
     };
     set_active_batch_size(batch_size);
 
-    neuralfn::native_train::SequentialTokenBatchSampler sampler(dataset.train_shards, seq_len, batch_size);
-    if (cfg.train_seed_explicit && error.empty()) {
+    neuralfn::native_train::SequentialTokenBatchSampler sampler(
+        variant.use_differential_attention
+            ? stable_diff_train_shards
+            : dataset.train_shards,
+        seq_len,
+        batch_size);
+    if (variant.use_differential_attention && error.empty() &&
+        sampler.total_batches() != training_sampler_total_batches) {
+        error = "gpt2_diff sampler changed after host continuation preflight";
+    }
+    if (!variant.use_differential_attention && cfg.train_seed_explicit && error.empty()) {
         const std::int64_t total_batches = sampler.total_batches();
+        std::uint64_t value = static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(cfg.train_seed));
+        value += 0x9e3779b97f4a7c15ULL;
+        value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+        value ^= value >> 31;
         const std::int64_t required_batches =
-            (resume_checkpoint_step + cfg.max_steps) * std::max<std::int64_t>(grad_accum_steps, 1);
+            (resume_checkpoint_step + cfg.max_steps) *
+            std::max<std::int64_t>(grad_accum_steps, 1);
         if (required_batches > total_batches) {
             std::ostringstream message;
             message << "seeded dense GPT benchmark needs " << required_batches
                     << " non-wrapping train batches but dataset only exposes " << total_batches;
             error = message.str();
         } else {
-            std::uint64_t value = static_cast<std::uint64_t>(
-                static_cast<std::int64_t>(cfg.train_seed));
-            value += 0x9e3779b97f4a7c15ULL;
-            value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
-            value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
-            value ^= value >> 31;
             const std::int64_t available_starts = total_batches - required_batches + 1;
             training_sampler_start_batch =
                 static_cast<std::int64_t>(value % static_cast<std::uint64_t>(available_starts));
         }
     }
     if (error.empty() && (training_sampler_start_batch > 0 || resume_checkpoint_step > 0)) {
-        if (resume_checkpoint_step >
-            std::numeric_limits<std::int64_t>::max() / std::max<std::int64_t>(grad_accum_steps, 1)) {
+        const std::int64_t consumed_microbatches =
+            variant.use_differential_attention && resume_checkpoint_step > 0
+                ? resume_diff_state.consumed_microbatches
+                : resume_checkpoint_step * grad_accum_steps;
+        if (consumed_microbatches < 0 ||
+            training_sampler_start_batch >
+                std::numeric_limits<std::int64_t>::max() - consumed_microbatches) {
             error = "resume sampler seek batch overflow";
             resume_checkpoint_error = error;
         } else {
             resume_sampler_seek_batch =
-                training_sampler_start_batch + resume_checkpoint_step * grad_accum_steps;
+                training_sampler_start_batch + consumed_microbatches;
             if (sampler.seek_batch(resume_sampler_seek_batch)) {
                 resume_sampler_seek_applied = resume_checkpoint_step > 0;
             } else {
@@ -21444,7 +25780,7 @@ int run_transformer_lm_training_json(
         linear_tk_qkv_first_use_prewarm_async_sync_count += 1;
         linear_tk_qkv_first_use_prewarm_async_pending = false;
     };
-    std::string active_moa_activation = "gelu";
+    std::string active_moa_activation = resume_moa_selected_activation;
     auto run_mlp_activation_bf16 = [&](const float* x_in,
                                        const float* bias,
                                        float* biased_out,
@@ -21610,11 +25946,18 @@ int run_transformer_lm_training_json(
                     label + ".attn.qk_norm.forward");
             });
             run_timed_stage(stage_name + ".attention.sdpa", [&]() {
+                if (variant.use_differential_attention && !packed_qkv_attention_enabled) {
+                    error = gpt2_diff_packed_preflight_error(
+                        "internal packed-QKV invariant was not active during forward");
+                    return;
+                }
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
                         if (variant.use_differential_attention) {
                             if (differential_packed_attention_forward == nullptr) {
-                                error = "native GPT differential-attention forward kernel is unavailable";
+                                error = gpt2_diff_packed_preflight_error(
+                                    std::string("required Tile ABI symbol is unavailable during forward: ") +
+                                    kGpt2DiffPackedForwardSymbol);
                             } else {
                                 run(differential_packed_attention_forward(
                                         active_qkv_bf16,
@@ -21623,7 +25966,7 @@ int run_transformer_lm_training_json(
                                         kHeads,
                                         seq_len,
                                         kHeadDim,
-                                        variant.differential_lambda_init,
+                                        differential_lambdas + (&block - blocks.data()),
                                         1.0f - variant.differential_lambda_init,
                                         kNormEps,
                                         nullptr),
@@ -22975,15 +27318,22 @@ int run_transformer_lm_training_json(
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
             run_timed_stage("block_backward.attn_sdpa.to_qkv", [&]() {
+                if (variant.use_differential_attention && !packed_qkv_attention_enabled) {
+                    error = gpt2_diff_packed_preflight_error(
+                        "internal packed-QKV invariant was not active during backward");
+                    return;
+                }
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
                         if (variant.use_differential_attention) {
                             if (differential_packed_attention_backward == nullptr ||
                                 grad_attn_out == nullptr ||
                                 !bf16_qkv_grad_handoff_enabled) {
-                                error = "native GPT differential-attention backward requires float attention gradients and BF16 QKV handoff";
+                                error = gpt2_diff_packed_preflight_error(
+                                    "backward requires the differential Tile ABI symbol, float attention gradients, and BF16 QKV handoff");
                             } else {
                                 run(differential_packed_attention_backward(
+                                        active_qkv_bf16,
                                         active_packed_attn_out_bf16,
                                         grad_attn_out,
                                         active_qkv_grad_bf16,
@@ -22991,8 +27341,10 @@ int run_transformer_lm_training_json(
                                         kHeads,
                                         seq_len,
                                         kHeadDim,
-                                        variant.differential_lambda_init,
+                                        differential_lambdas + (&block - blocks.data()),
                                         1.0f - variant.differential_lambda_init,
+                                        kNormEps,
+                                        differential_lambda_grads + (&block - blocks.data()),
                                         nullptr),
                                     label + ".attn.sdpa.backward_differential_packed_qkv_bf16");
                             }
@@ -23532,7 +27884,7 @@ int run_transformer_lm_training_json(
     ln1_precomputed.resize(blocks.size());
     const std::vector<std::string> moa_candidates = {"gelu", "relu", "silu", "relu2"};
     std::vector<double> moa_last_probe_losses(moa_candidates.size(), 0.0);
-    std::string moa_last_selected_activation = "gelu";
+    std::string moa_last_selected_activation = resume_moa_selected_activation;
     std::int64_t moa_probe_runs = 0;
     std::int64_t moa_candidate_evals = 0;
     std::int64_t moa_selected_activation_changes = 0;
@@ -23844,15 +28196,35 @@ int run_transformer_lm_training_json(
 
     auto next_train_batch = [&]() -> bool {
         set_active_batch_size(batch_size);
-        if (sampler.next_into(token_ids_pinned, targets_pinned, active_rows)) {
+        const auto read_next = [&]() -> bool {
+            if (!variant.use_differential_attention) {
+                return sampler.next_into(
+                    token_ids_pinned, targets_pinned, active_rows);
+            }
+            try {
+                return sampler.next_into(
+                    token_ids_pinned, targets_pinned, active_rows);
+            } catch (const std::exception& exc) {
+                error = std::string("failed to read stable gpt2_diff train shard: ") +
+                    exc.what();
+                return false;
+            }
+        };
+        if (read_next()) {
             upload_pinned_batch();
             return error.empty();
         }
+        if (!error.empty()) {
+            return false;
+        }
         sampler.reset();
         epochs_completed += 1;
-        if (sampler.next_into(token_ids_pinned, targets_pinned, active_rows)) {
+        if (read_next()) {
             upload_pinned_batch();
             return error.empty();
+        }
+        if (!error.empty()) {
+            return false;
         }
         error = "not enough train tokens to build one GPT-2 transformer/LM train batch";
         return false;
@@ -24030,7 +28402,8 @@ int run_transformer_lm_training_json(
 
         const float bias_correction1 = 1.0f - std::pow(beta1, static_cast<float>(step));
         const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(beta2, static_cast<float>(step)));
-        const float step_learning_rate = static_cast<float>(scheduled_learning_rate(cfg, step));
+        const float step_learning_rate = static_cast<float>(scheduled_learning_rate(
+            cfg, step, effective_lr_schedule_total_steps));
         if (error.empty()) {
             const std::int64_t stage_event = stage_begin("adamw_update");
             bool token_weight_shadow_refreshed_by_adamw = false;
@@ -24684,11 +29057,36 @@ int run_transformer_lm_training_json(
         constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
         constexpr std::int64_t kBytesPerParam = 2;
         const fs::path output_dir = cfg.output_dir.empty() ? fs::path(default_output_dir()) : fs::path(cfg.output_dir);
+        if (resume_checkpoint_step < 0 || steps_completed < 0 ||
+            resume_checkpoint_step > 99999999 - steps_completed) {
+            error = "checkpoint step must be in the range [1, 99999999]";
+            return;
+        }
         checkpoint_step = resume_checkpoint_step + steps_completed;
+        if (checkpoint_step < 1 || checkpoint_step > 99999999) {
+            error = "checkpoint step must be in the range [1, 99999999]";
+            return;
+        }
         std::ostringstream checkpoint_name;
         checkpoint_name << "model_" << std::setw(8) << std::setfill('0') << checkpoint_step << ".bin";
         const fs::path checkpoint_path = output_dir / checkpoint_name.str();
         const fs::path done_marker = output_dir / ("DONE_" + checkpoint_name.str().substr(6, 8));
+        const fs::path parameter_state_path =
+            native_gpt_parameter_state_checkpoint_path(checkpoint_path);
+        const fs::path optimizer_checkpoint_path =
+            native_gpt_optimizer_checkpoint_path(checkpoint_path);
+        const fs::path diff_parameter_path =
+            native_gpt_diff_parameter_checkpoint_path(checkpoint_path);
+        const fs::path diff_optimizer_path =
+            native_gpt_diff_optimizer_checkpoint_path(checkpoint_path);
+        const fs::path diff_metadata_target =
+            native_gpt_diff_metadata_path(checkpoint_path);
+        const fs::path moa_metadata_target =
+            native_gpt_moa_metadata_path(checkpoint_path);
+        const bool moa_metadata_required =
+            native_moa_enabled &&
+            resolved_native_template_name(cfg.template_name) == "gpt2_moa" &&
+            !cfg.graph_file.empty();
         checkpoint_path_json = checkpoint_path.string();
         done_marker_json = done_marker.string();
         const std::int64_t parameter_count =
@@ -24701,6 +29099,38 @@ int run_transformer_lm_training_json(
             error = std::string("failed to create checkpoint directory: ") + exc.what();
             return;
         }
+        struct stat output_dir_status {};
+        if (::lstat(output_dir.c_str(), &output_dir_status) != 0 ||
+            !S_ISDIR(output_dir_status.st_mode)) {
+            error = "refusing checkpoint output through a non-directory or symlink: " +
+                output_dir.string();
+            return;
+        }
+        std::vector<fs::path> checkpoint_targets = {
+            checkpoint_path,
+            parameter_state_path,
+            optimizer_checkpoint_path,
+            done_marker,
+        };
+        if (variant.use_differential_attention) {
+            checkpoint_targets.push_back(diff_parameter_path);
+            checkpoint_targets.push_back(diff_optimizer_path);
+            checkpoint_targets.push_back(diff_metadata_target);
+        }
+        if (moa_metadata_required) {
+            checkpoint_targets.push_back(moa_metadata_target);
+        }
+        for (const fs::path& target : checkpoint_targets) {
+            if (target.parent_path() != output_dir ||
+                !checkpoint_target_absent(target, &error)) {
+                if (error.empty()) {
+                    error = "refusing checkpoint target outside output directory: " +
+                        target.string();
+                }
+                return;
+            }
+        }
+        CheckpointOutputTransaction output_transaction;
 
         std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
         header[0] = kCheckpointMagic;
@@ -24712,9 +29142,10 @@ int run_transformer_lm_training_json(
         header[6] = static_cast<std::int32_t>(kDim);
         header[7] = static_cast<std::int32_t>(kPaddedVocab);
 
-        std::ofstream out(checkpoint_path, std::ios::binary | std::ios::trunc);
+        ExclusiveOutputFile out(checkpoint_path);
         if (!out) {
-            error = "failed to open trained checkpoint for writing: " + checkpoint_path.string();
+            error = "refusing to overwrite or follow trained checkpoint target: " +
+                checkpoint_path.string();
             return;
         }
         out.write(reinterpret_cast<const char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
@@ -24941,6 +29372,12 @@ int run_transformer_lm_training_json(
         checkpoint_d2h_bytes = static_cast<std::int64_t>(payload_bytes);
         checkpoint_float32_d2h_bytes_elided =
             static_cast<std::int64_t>(sizeof(float) - sizeof(std::uint16_t)) * payload_offset;
+        for (const std::uint16_t value : host_payload) {
+            if (!std::isfinite(bf16_bits_to_float_host(value))) {
+                error = "refusing to write non-finite bf16 checkpoint payload";
+                return;
+            }
+        }
         out.write(
             reinterpret_cast<const char*>(host_payload.data()),
             static_cast<std::streamsize>(payload_bytes));
@@ -24955,6 +29392,8 @@ int run_transformer_lm_training_json(
             error = "failed to finish trained checkpoint file: " + checkpoint_path.string();
             return;
         }
+        out.commit();
+        output_transaction.track(checkpoint_path);
         checkpoint_actual_file_size =
             fs::exists(checkpoint_path) ? static_cast<std::int64_t>(fs::file_size(checkpoint_path)) : 0;
         if (checkpoint_actual_file_size != checkpoint_expected_file_size) {
@@ -24964,8 +29403,6 @@ int run_transformer_lm_training_json(
             error = message.str();
             return;
         }
-        const fs::path parameter_state_path =
-            native_gpt_parameter_state_checkpoint_path(checkpoint_path);
         parameter_state_checkpoint_path_json = parameter_state_path.string();
         constexpr std::int64_t kParameterStateMagic = 20260711;
         constexpr std::int64_t kParameterStateVersion = 1;
@@ -24974,9 +29411,10 @@ int run_transformer_lm_training_json(
         parameter_state_checkpoint_expected_file_size =
             kParameterStateHeaderBytes +
             payload_offset * static_cast<std::int64_t>(sizeof(float));
-        std::ofstream parameter_state_out(parameter_state_path, std::ios::binary | std::ios::trunc);
+        ExclusiveOutputFile parameter_state_out(parameter_state_path);
         if (!parameter_state_out) {
-            error = "failed to open parameter-state checkpoint for writing: " + parameter_state_path.string();
+            error = "refusing to overwrite or follow parameter-state checkpoint target: " +
+                parameter_state_path.string();
             return;
         }
         std::vector<std::int64_t> parameter_state_header(
@@ -25022,6 +29460,14 @@ int run_transformer_lm_training_json(
             }
             parameter_state_checkpoint_d2h_copy_count += 1;
             parameter_state_checkpoint_d2h_bytes += static_cast<std::int64_t>(tensor_bytes);
+            if (!std::all_of(
+                    host_parameter_tensor.begin(),
+                    host_parameter_tensor.end(),
+                    [](float value) { return std::isfinite(value); })) {
+                error = "refusing to write non-finite parameter-state tensor: " +
+                    tensor.name;
+                return;
+            }
             parameter_state_out.write(
                 reinterpret_cast<const char*>(host_parameter_tensor.data()),
                 static_cast<std::streamsize>(tensor_bytes));
@@ -25035,6 +29481,8 @@ int run_transformer_lm_training_json(
             error = "failed to finish parameter-state checkpoint file: " + parameter_state_path.string();
             return;
         }
+        parameter_state_out.commit();
+        output_transaction.track(parameter_state_path);
         parameter_state_checkpoint_actual_file_size =
             fs::exists(parameter_state_path)
                 ? static_cast<std::int64_t>(fs::file_size(parameter_state_path))
@@ -25051,9 +29499,6 @@ int run_transformer_lm_training_json(
         parameter_state_checkpoint_tensor_count =
             static_cast<std::int64_t>(checkpoint_tensors.size());
         parameter_state_checkpoint_payload_elements = payload_offset;
-        parameter_state_checkpoint_written = true;
-        const fs::path optimizer_checkpoint_path =
-            native_gpt_optimizer_checkpoint_path(checkpoint_path);
         optimizer_checkpoint_path_json = optimizer_checkpoint_path.string();
         constexpr std::int64_t kOptimizerMagic = 20260710;
         constexpr std::int64_t kOptimizerVersion = 1;
@@ -25065,7 +29510,7 @@ int run_transformer_lm_training_json(
             return;
         }
         std::int64_t optimizer_payload_elements = 0;
-        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
+        for (std::int64_t i = 0; i < dense_adamw_checkpoint_descriptor_count; ++i) {
             if (adamw_host.avgs[i] == nullptr || adamw_host.avg_sqs[i] == nullptr ||
                 adamw_host.elements[i] <= 0) {
                 error = "bad AdamW descriptor while writing optimizer checkpoint";
@@ -25081,9 +29526,10 @@ int run_transformer_lm_training_json(
         optimizer_checkpoint_expected_file_size =
             kOptimizerHeaderBytes +
             optimizer_payload_elements * static_cast<std::int64_t>(sizeof(float));
-        std::ofstream optimizer_out(optimizer_checkpoint_path, std::ios::binary | std::ios::trunc);
+        ExclusiveOutputFile optimizer_out(optimizer_checkpoint_path);
         if (!optimizer_out) {
-            error = "failed to open optimizer checkpoint for writing: " + optimizer_checkpoint_path.string();
+            error = "refusing to overwrite or follow optimizer checkpoint target: " +
+                optimizer_checkpoint_path.string();
             return;
         }
         std::vector<std::int64_t> optimizer_header(static_cast<std::size_t>(kOptimizerHeaderInts), 0);
@@ -25096,7 +29542,7 @@ int run_transformer_lm_training_json(
         optimizer_header[6] = kHeads;
         optimizer_header[7] = kDim;
         optimizer_header[8] = kPaddedVocab;
-        optimizer_header[9] = static_cast<std::int64_t>(adamw_host.elements.size());
+        optimizer_header[9] = dense_adamw_checkpoint_descriptor_count;
         optimizer_header[10] = optimizer_payload_elements;
         optimizer_header[11] = grad_accum_steps;
         optimizer_header[12] = checkpoint_step * grad_accum_steps;
@@ -25108,7 +29554,9 @@ int run_transformer_lm_training_json(
             return;
         }
         std::vector<float> host_optimizer_tensor;
-        for (std::size_t i = 0; i < adamw_host.elements.size() && error.empty(); ++i) {
+        for (std::int64_t i = 0;
+             i < dense_adamw_checkpoint_descriptor_count && error.empty();
+             ++i) {
             const std::int64_t elements = adamw_host.elements[i];
             const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(elements);
             host_optimizer_tensor.assign(static_cast<std::size_t>(elements), 0.0f);
@@ -25123,6 +29571,13 @@ int run_transformer_lm_training_json(
             }
             optimizer_checkpoint_d2h_copy_count += 1;
             optimizer_checkpoint_d2h_bytes += static_cast<std::int64_t>(bytes);
+            if (!std::all_of(
+                    host_optimizer_tensor.begin(),
+                    host_optimizer_tensor.end(),
+                    [](float value) { return std::isfinite(value); })) {
+                error = "refusing to write non-finite optimizer first moment";
+                break;
+            }
             optimizer_out.write(
                 reinterpret_cast<const char*>(host_optimizer_tensor.data()),
                 static_cast<std::streamsize>(bytes));
@@ -25141,6 +29596,15 @@ int run_transformer_lm_training_json(
             }
             optimizer_checkpoint_d2h_copy_count += 1;
             optimizer_checkpoint_d2h_bytes += static_cast<std::int64_t>(bytes);
+            if (!std::all_of(
+                    host_optimizer_tensor.begin(),
+                    host_optimizer_tensor.end(),
+                    [](float value) {
+                        return std::isfinite(value) && value >= 0.0f;
+                    })) {
+                error = "refusing to write non-finite or negative optimizer second moment";
+                break;
+            }
             optimizer_out.write(
                 reinterpret_cast<const char*>(host_optimizer_tensor.data()),
                 static_cast<std::streamsize>(bytes));
@@ -25157,6 +29621,8 @@ int run_transformer_lm_training_json(
             error = "failed to finish optimizer checkpoint file: " + optimizer_checkpoint_path.string();
             return;
         }
+        optimizer_out.commit();
+        output_transaction.track(optimizer_checkpoint_path);
         optimizer_checkpoint_actual_file_size =
             fs::exists(optimizer_checkpoint_path)
                 ? static_cast<std::int64_t>(fs::file_size(optimizer_checkpoint_path))
@@ -25170,15 +29636,189 @@ int run_transformer_lm_training_json(
             error = message.str();
             return;
         }
-        optimizer_checkpoint_tensor_count = static_cast<std::int64_t>(adamw_host.elements.size()) * 2;
+        optimizer_checkpoint_tensor_count = dense_adamw_checkpoint_descriptor_count * 2;
         optimizer_checkpoint_payload_elements = optimizer_payload_elements;
-        optimizer_checkpoint_written = true;
-        std::ofstream done(done_marker, std::ios::trunc);
+        if (variant.use_differential_attention) {
+            constexpr std::int64_t kDiffParameterMagic = 20260808;
+            constexpr std::int64_t kDiffOptimizerMagic = 20260809;
+            constexpr std::int64_t kDiffSidecarVersion = 1;
+            constexpr std::int64_t kDiffHeaderInts = 16;
+            constexpr std::int64_t kDiffHeaderBytes = kDiffHeaderInts * 8;
+            diff_parameter_checkpoint_path_json = diff_parameter_path.string();
+            diff_optimizer_checkpoint_path_json = diff_optimizer_path.string();
+            const std::size_t diff_payload_bytes =
+                sizeof(float) * static_cast<std::size_t>(trained_layers);
+            std::vector<float> host_diff_lambdas(static_cast<std::size_t>(trained_layers), 0.0f);
+            std::vector<float> host_diff_avgs(static_cast<std::size_t>(trained_layers), 0.0f);
+            std::vector<float> host_diff_avg_sqs(static_cast<std::size_t>(trained_layers), 0.0f);
+            run(cuda_memcpy(
+                    host_diff_lambdas.data(), differential_lambdas,
+                    diff_payload_bytes, kCudaMemcpyDeviceToHost),
+                "cudaMemcpy gpt2_diff lambda checkpoint");
+            if (error.empty()) {
+                run(cuda_memcpy(
+                        host_diff_avgs.data(), differential_lambda_avgs,
+                        diff_payload_bytes, kCudaMemcpyDeviceToHost),
+                    "cudaMemcpy gpt2_diff lambda avg checkpoint");
+            }
+            if (error.empty()) {
+                run(cuda_memcpy(
+                        host_diff_avg_sqs.data(), differential_lambda_avg_sqs,
+                        diff_payload_bytes, kCudaMemcpyDeviceToHost),
+                    "cudaMemcpy gpt2_diff lambda avg_sq checkpoint");
+            }
+            if (!error.empty()) {
+                return;
+            }
+            for (std::size_t i = 0; i < host_diff_lambdas.size(); ++i) {
+                if (!std::isfinite(host_diff_lambdas[i]) ||
+                    !std::isfinite(host_diff_avgs[i]) ||
+                    !std::isfinite(host_diff_avg_sqs[i]) ||
+                    host_diff_avg_sqs[i] < 0.0f) {
+                    error = "refusing to write invalid gpt2_diff parameter or optimizer state";
+                    return;
+                }
+            }
+            const auto write_header = [&](ExclusiveOutputFile& out,
+                                          std::int64_t magic,
+                                          std::int64_t tensor_count,
+                                          const fs::path& path) {
+                std::array<std::int64_t, kDiffHeaderInts> header{};
+                header[0] = magic;
+                header[1] = kDiffSidecarVersion;
+                header[2] = checkpoint_step;
+                header[3] = trained_layers;
+                header[4] = trained_layers;
+                header[5] = tensor_count;
+                header[6] = seq_len;
+                header[7] = kHeads;
+                header[8] = kDim;
+                out.write(
+                    reinterpret_cast<const char*>(header.data()),
+                    static_cast<std::streamsize>(kDiffHeaderBytes));
+                if (!out && error.empty()) {
+                    error = "failed to write gpt2_diff sidecar header: " + path.string();
+                }
+            };
+            ExclusiveOutputFile diff_parameter_out(diff_parameter_path);
+            if (!diff_parameter_out) {
+                error = "refusing to overwrite or follow gpt2_diff parameter sidecar: " +
+                    diff_parameter_path.string();
+                return;
+            }
+            write_header(diff_parameter_out, kDiffParameterMagic, 1, diff_parameter_path);
+            if (error.empty()) {
+                diff_parameter_out.write(
+                    reinterpret_cast<const char*>(host_diff_lambdas.data()),
+                    static_cast<std::streamsize>(diff_payload_bytes));
+            }
+            diff_parameter_out.close();
+            if (!diff_parameter_out || !error.empty()) {
+                if (error.empty()) {
+                    error = "failed to finish gpt2_diff parameter sidecar: " +
+                        diff_parameter_path.string();
+                }
+                return;
+            }
+            diff_parameter_out.commit();
+            output_transaction.track(diff_parameter_path);
+            ExclusiveOutputFile diff_optimizer_out(diff_optimizer_path);
+            if (!diff_optimizer_out) {
+                error = "refusing to overwrite or follow gpt2_diff optimizer sidecar: " +
+                    diff_optimizer_path.string();
+                return;
+            }
+            write_header(diff_optimizer_out, kDiffOptimizerMagic, 2, diff_optimizer_path);
+            if (error.empty()) {
+                diff_optimizer_out.write(
+                    reinterpret_cast<const char*>(host_diff_avgs.data()),
+                    static_cast<std::streamsize>(diff_payload_bytes));
+                diff_optimizer_out.write(
+                    reinterpret_cast<const char*>(host_diff_avg_sqs.data()),
+                    static_cast<std::streamsize>(diff_payload_bytes));
+            }
+            diff_optimizer_out.close();
+            if (!diff_optimizer_out || !error.empty()) {
+                if (error.empty()) {
+                    error = "failed to finish gpt2_diff optimizer sidecar: " +
+                        diff_optimizer_path.string();
+                }
+                return;
+            }
+            diff_optimizer_out.commit();
+            output_transaction.track(diff_optimizer_path);
+            NativeGptDiffContinuationContract checkpoint_continuation =
+                expected_diff_continuation;
+            checkpoint_continuation.optimizer_steps_completed = checkpoint_step;
+            checkpoint_continuation.train_microbatches_completed =
+                checkpoint_step * grad_accum_steps;
+            checkpoint_continuation.microbatch_in_optimizer_step = 0;
+            checkpoint_continuation.lr_schedule_total_steps =
+                effective_lr_schedule_total_steps;
+            fs::path diff_metadata_path;
+            if (!write_native_gpt_diff_metadata(
+                    cfg,
+                    checkpoint_path,
+                    done_marker,
+                    checkpoint_step,
+                    seq_len,
+                    kVocab,
+                    kPaddedVocab,
+                    trained_layers,
+                    kDim,
+                    kHeads,
+                    checkpoint_continuation,
+                    &diff_metadata_path,
+                    &error)) {
+                return;
+            }
+            diff_metadata_path_json = diff_metadata_path.string();
+            output_transaction.track(diff_metadata_path);
+        }
+        if (moa_metadata_required) {
+            fs::path metadata_path;
+            if (!write_native_gpt_moa_inference_metadata(
+                    cfg,
+                    checkpoint_path,
+                    done_marker,
+                    active_moa_activation,
+                    seq_len,
+                    kVocab,
+                    kPaddedVocab,
+                    trained_layers,
+                    kDim,
+                    kHeads,
+                    &metadata_path,
+                    &error)) {
+                return;
+            }
+            moa_inference_metadata_path_json = metadata_path.string();
+            output_transaction.track(metadata_path);
+            moa_inference_metadata_written = true;
+        }
+        if (!fsync_checkpoint_directory(output_dir, &error)) {
+            return;
+        }
+        ExclusiveOutputFile done(done_marker);
+        if (!done) {
+            error = "refusing to overwrite or follow trained checkpoint DONE marker: " +
+                done_marker.string();
+            return;
+        }
         done.close();
         if (!done) {
             error = "failed to write trained checkpoint DONE marker: " + done_marker.string();
             return;
         }
+        done.commit();
+        output_transaction.track(done_marker);
+        if (!fsync_checkpoint_directory(output_dir, &error)) {
+            return;
+        }
+        output_transaction.commit();
+        parameter_state_checkpoint_written = true;
+        optimizer_checkpoint_written = true;
+        diff_checkpoint_written = variant.use_differential_attention;
         checkpoint_written = true;
     };
 
@@ -25746,6 +30386,14 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaDeviceSynchronize after cudaFreeAsync");
         }
     }
+    if (variant.use_differential_attention &&
+        differential_packed_attention_release != nullptr &&
+        !skip_exit_device_free_enabled) {
+        const int status = differential_packed_attention_release();
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "gpt2_diff workspace teardown");
+        }
+    }
     if (lm_head_ce_done_event != nullptr && cuda_event_destroy != nullptr) {
         const int status = cuda_event_destroy(lm_head_ce_done_event);
         if (status != 0 && error.empty()) {
@@ -26301,6 +30949,17 @@ int run_transformer_lm_training_json(
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
         << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
+        << "  \"graph_fingerprint\": \"" << json_escape(cfg.graph_fingerprint) << "\",\n"
+        << "  \"graph_fingerprint_verified\": "
+        << (!cfg.verified_graph_fingerprint.empty() ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_verified\": "
+        << (cfg.verified_graph_preflight_proof.verified ? "true" : "false") << ",\n"
+        << "  \"graph_preflight_proof_schema\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.schema) << "\",\n"
+        << "  \"graph_preflight_proof_version\": "
+        << cfg.verified_graph_preflight_proof.version << ",\n"
+        << "  \"graph_preflight_contract_sha256\": \""
+        << json_escape(cfg.verified_graph_preflight_proof.contract_sha256) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
@@ -26507,6 +31166,11 @@ int run_transformer_lm_training_json(
         << "  \"warmup_steps\": " << cfg.warmup_steps << ",\n"
         << "  \"learning_rate\": " << cfg.learning_rate << ",\n"
         << "  \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\",\n"
+        << "  \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps << ",\n"
+        << "  \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false") << ",\n"
+        << "  \"effective_lr_schedule_total_steps\": "
+        << effective_lr_schedule_total_steps << ",\n"
         << "  \"final_lr_fraction\": " << cfg.final_lr_fraction << ",\n"
         << "  \"weight_decay\": " << cfg.weight_decay << ",\n"
         << "  \"beta1\": " << cfg.beta1 << ",\n"
@@ -26524,10 +31188,20 @@ int run_transformer_lm_training_json(
         << ", \"generate_tokens\": " << cfg.generate_tokens
         << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps
-        << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\"},\n"
+        << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\""
+        << ", \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps
+        << ", \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false")
+        << ", \"effective_lr_schedule_total_steps\": "
+        << effective_lr_schedule_total_steps << "},\n"
         << "  \"optimizer\": {\"profile\": \"adamw\""
         << ", \"learning_rate\": " << cfg.learning_rate
         << ", \"lr_schedule\": \"" << json_escape(cfg.lr_schedule) << "\""
+        << ", \"lr_schedule_total_steps\": " << cfg.lr_schedule_total_steps
+        << ", \"lr_schedule_total_steps_explicit\": "
+        << (cfg.lr_schedule_total_steps_explicit ? "true" : "false")
+        << ", \"effective_lr_schedule_total_steps\": "
+        << effective_lr_schedule_total_steps
         << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
         << ", \"weight_decay\": " << cfg.weight_decay
         << ", \"beta1\": " << cfg.beta1
@@ -28826,6 +33500,22 @@ int run_transformer_lm_training_json(
         << "  \"resume_checkpoint_loaded\": " << (resume_checkpoint_loaded ? "true" : "false") << ",\n"
         << "  \"resume_checkpoint_path\": \"" << json_escape(resume_checkpoint_path_json) << "\",\n"
         << "  \"resume_checkpoint_error\": \"" << json_escape(resume_checkpoint_error) << "\",\n"
+        << "  \"resume_moa_metadata_path\": \""
+        << json_escape(resume_moa_metadata_path_json) << "\",\n"
+        << "  \"resume_moa_metadata_validated\": "
+        << (resume_moa_metadata_validated ? "true" : "false") << ",\n"
+        << "  \"resume_moa_activation_restored\": "
+        << (resume_moa_activation_restored ? "true" : "false") << ",\n"
+        << "  \"resume_moa_selected_activation\": \""
+        << json_escape(resume_moa_selected_activation) << "\",\n"
+        << "  \"resume_diff_metadata_path\": \""
+        << json_escape(resume_diff_metadata_path_json) << "\",\n"
+        << "  \"resume_diff_metadata_validated\": "
+        << (resume_diff_metadata_validated ? "true" : "false") << ",\n"
+        << "  \"resume_diff_parameter_restored\": "
+        << (resume_diff_parameter_restored ? "true" : "false") << ",\n"
+        << "  \"resume_diff_optimizer_restored\": "
+        << (resume_diff_optimizer_restored ? "true" : "false") << ",\n"
         << "  \"resume_checkpoint_step\": " << resume_checkpoint_step << ",\n"
         << "  \"resume_parameter_state_checkpoint_path\": \""
         << json_escape(resume_parameter_state_checkpoint_path_json) << "\",\n"
@@ -28874,6 +33564,10 @@ int run_transformer_lm_training_json(
         << "    \"checkpoint_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "    \"checkpoint_path\": \"" << json_escape(checkpoint_path_json) << "\",\n"
         << "    \"done_marker\": \"" << json_escape(done_marker_json) << "\",\n"
+        << "    \"moa_inference_metadata_written\": "
+        << (moa_inference_metadata_written ? "true" : "false") << ",\n"
+        << "    \"moa_inference_metadata_path\": \""
+        << json_escape(moa_inference_metadata_path_json) << "\",\n"
         << "    \"checkpoint_step\": " << checkpoint_step << ",\n"
         << "    \"parameter_state_checkpoint_written\": "
         << (parameter_state_checkpoint_written ? "true" : "false") << ",\n"
@@ -28907,6 +33601,14 @@ int run_transformer_lm_training_json(
         << optimizer_checkpoint_expected_file_size << ",\n"
         << "    \"optimizer_checkpoint_actual_file_size\": "
         << optimizer_checkpoint_actual_file_size << ",\n"
+        << "    \"diff_checkpoint_written\": "
+        << (diff_checkpoint_written ? "true" : "false") << ",\n"
+        << "    \"diff_parameter_checkpoint_path\": \""
+        << json_escape(diff_parameter_checkpoint_path_json) << "\",\n"
+        << "    \"diff_optimizer_checkpoint_path\": \""
+        << json_escape(diff_optimizer_checkpoint_path_json) << "\",\n"
+        << "    \"diff_metadata_path\": \""
+        << json_escape(diff_metadata_path_json) << "\",\n"
         << "    \"version\": 5,\n"
         << "    \"precision\": \"bf16\",\n"
         << "    \"num_layers\": " << trained_layers << ",\n"
@@ -29437,6 +34139,126 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
     return passed ? 0 : 2;
 }
 
+constexpr std::string_view kGenericLayerEvoBlockedStatus =
+    "native-preflight-blocked-graph-faithful-layer-evo-missing";
+constexpr std::string_view kGenericLayerEvoBlockingReason =
+    "the generic dense GPT trainer AdamW-updates every tensor in the designated block "
+    "and evolves only block_N.ln1.weight, but the authored GPT2-Evo contract excludes "
+    "every tensor in that block from gradients and AdamW and evolves the whole block";
+constexpr std::string_view kGenericLayerEvoExecutionError =
+    "direct generic dense GPT --layer-evo execution is blocked before Tile load, CUDA "
+    "setup/allocation, output creation, or training mutation because its semantics do "
+    "not implement authored GPT2-Evo whole-block evolution";
+
+const std::array<std::string_view, 3>& generic_layer_evo_missing_gates() {
+    static constexpr std::array<std::string_view, 3> gates = {
+        "exclude every tensor in the designated transformer block from gradient and AdamW updates",
+        "mutate, evaluate, select, and adopt every tensor in the designated transformer block rather than only block_N.ln1.weight",
+        "checkpoint and resume the whole-block evolutionary state with graph-faithful parity",
+    };
+    return gates;
+}
+
+bool isolated_nontraining_mode_selected(const Config& cfg) {
+    return
+        cfg.check_tile_ops ||
+        cfg.smoke_tile_ops ||
+        cfg.smoke_nvfp4_pack ||
+        cfg.smoke_optimizer_step ||
+        cfg.smoke_lm_step ||
+        cfg.smoke_attention_step ||
+        cfg.smoke_mlp_step ||
+        cfg.smoke_norm_residual_step ||
+        cfg.smoke_transformer_block_step ||
+        cfg.smoke_transformer_lm_step ||
+        cfg.smoke_embedding_lm_step ||
+        cfg.checkpoint_metadata_smoke;
+}
+
+std::string generic_layer_evo_requested_action(const Config& cfg) {
+    if (cfg.print_command) {
+        return "print-command";
+    }
+    if (cfg.print_plan) {
+        return "print-plan";
+    }
+    if (cfg.dry_run) {
+        return "dry-run";
+    }
+    if (cfg.startup_only) {
+        return "startup-only";
+    }
+    if (cfg.train_embedding_lm && !cfg.train_transformer_lm) {
+        return "embedding-lm-training";
+    }
+    return "transformer-lm-training";
+}
+
+void print_generic_layer_evo_blocked_json(const Config& cfg) {
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
+        << "  \"backend\": \"" << json_escape(cfg.backend) << "\",\n"
+        << "  \"status\": \"" << kGenericLayerEvoBlockedStatus << "\",\n"
+        << "  \"passed\": false,\n"
+        << "  \"template_name\": \""
+        << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
+        << "  \"resolved_native_template_name\": \""
+        << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
+        << "  \"requested_action\": \""
+        << json_escape(generic_layer_evo_requested_action(cfg)) << "\",\n"
+        << "  \"selected_graph_support_status\": "
+           "\"preflight-only-graph-faithful-layer-evo-missing\",\n"
+        << "  \"selected_graph_native_runnable\": false,\n"
+        << "  \"training_execution_blocked\": true,\n"
+        << "  \"blocking_reason\": \""
+        << json_escape(std::string(kGenericLayerEvoBlockingReason)) << "\",\n"
+        << "  \"error\": \""
+        << json_escape(std::string(kGenericLayerEvoExecutionError)) << "\",\n"
+        << "  \"tile_ops_load_attempted\": false,\n"
+        << "  \"cuda_setup_attempted\": false,\n"
+        << "  \"output_creation_attempted\": false,\n"
+        << "  \"training_mutation_attempted\": false,\n"
+        << "  \"missing_graph_faithful_gates\": [\n";
+    const auto& gates = generic_layer_evo_missing_gates();
+    for (std::size_t index = 0; index < gates.size(); ++index) {
+        std::cout << "    \"" << json_escape(std::string(gates[index])) << "\"";
+        if (index + 1 != gates.size()) {
+            std::cout << ',';
+        }
+        std::cout << '\n';
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"layer_evo\": {\n"
+        << "    \"enabled\": true,\n"
+        << "    \"layer_index\": " << cfg.evo_layer_index << ",\n"
+        << "    \"interval\": " << cfg.evo_layer_interval << ",\n"
+        << "    \"population\": " << cfg.evo_layer_population << ",\n"
+        << "    \"mutation_scale\": " << cfg.evo_layer_mutation_scale << ",\n"
+        << "    \"tournament_size\": " << cfg.evo_tournament_size << ",\n"
+        << "    \"elite_count\": " << cfg.evo_elite_count << ",\n"
+        << "    \"graph_faithful_whole_block_candidate_eval_enabled\": false,\n"
+        << "    \"diagnostic_ln1_candidate_eval_available\": true,\n"
+        << "    \"current_gradient_optimizer_scope\": "
+           "\"all-transformer-block-tensors-including-designated-evo-block\",\n"
+        << "    \"current_evolution_parameter_scope\": \"block_N.ln1.weight-only\",\n"
+        << "    \"required_evolution_parameter_scope\": "
+           "\"every-tensor-in-designated-transformer-block\",\n"
+        << "    \"graph_editor_tensor_flow\": false\n"
+        << "  }\n"
+        << "}\n";
+}
+
+int report_generic_layer_evo_blocked(const Config& cfg) {
+    print_generic_layer_evo_blocked_json(cfg);
+    const bool inspection_only = cfg.print_plan || cfg.dry_run;
+    if (!inspection_only) {
+        std::cerr << "nfn_gpt_native_train: " << kGenericLayerEvoExecutionError << "\n";
+    }
+    return inspection_only ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -29502,6 +34324,14 @@ int main(int argc, char** argv) {
             cfg.graph_file = value_after_equals("--graph-file=");
         } else if (arg.rfind("--graph=", 0) == 0) {
             cfg.graph_file = value_after_equals("--graph=");
+        } else if (arg == "--graph-fingerprint") {
+            cfg.graph_fingerprint = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--graph-fingerprint=", 0) == 0) {
+            cfg.graph_fingerprint = value_after_equals("--graph-fingerprint=");
+        } else if (arg == "--graph-preflight-proof") {
+            cfg.graph_preflight_proof = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--graph-preflight-proof=", 0) == 0) {
+            cfg.graph_preflight_proof = value_after_equals("--graph-preflight-proof=");
         } else if (arg == "--list-templates" || arg == "--list-template-support") {
             cfg.list_templates = true;
         } else if (arg == "--check-tile-ops") {
@@ -29801,10 +34631,36 @@ int main(int argc, char** argv) {
             cfg.learning_rate = parse_double(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--lr-schedule" || arg == "--learning-rate-schedule") {
             cfg.lr_schedule = normalize_lr_schedule(require_value(argc, argv, &i, arg));
+        } else if (arg.rfind("--lr-schedule=", 0) == 0) {
+            cfg.lr_schedule = normalize_lr_schedule(value_after_equals("--lr-schedule="));
+        } else if (arg.rfind("--learning-rate-schedule=", 0) == 0) {
+            cfg.lr_schedule = normalize_lr_schedule(
+                value_after_equals("--learning-rate-schedule="));
+        } else if (arg == "--lr-schedule-total-steps") {
+            cfg.lr_schedule_total_steps =
+                parse_int(require_value(argc, argv, &i, arg), arg);
+            cfg.lr_schedule_total_steps_explicit = true;
+        } else if (arg.rfind("--lr-schedule-total-steps=", 0) == 0) {
+            cfg.lr_schedule_total_steps = parse_int(
+                value_after_equals("--lr-schedule-total-steps="),
+                "--lr-schedule-total-steps");
+            cfg.lr_schedule_total_steps_explicit = true;
         } else if (arg == "--final-lr-fraction" ||
                    arg == "--learning-rate-decay-frac" ||
                    arg == "--learning-rate-decay-fraction") {
             cfg.final_lr_fraction = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--final-lr-fraction=", 0) == 0) {
+            cfg.final_lr_fraction = parse_double(
+                value_after_equals("--final-lr-fraction="),
+                "--final-lr-fraction");
+        } else if (arg.rfind("--learning-rate-decay-frac=", 0) == 0) {
+            cfg.final_lr_fraction = parse_double(
+                value_after_equals("--learning-rate-decay-frac="),
+                "--learning-rate-decay-frac");
+        } else if (arg.rfind("--learning-rate-decay-fraction=", 0) == 0) {
+            cfg.final_lr_fraction = parse_double(
+                value_after_equals("--learning-rate-decay-fraction="),
+                "--learning-rate-decay-fraction");
         } else if (arg == "--weight-decay") {
             cfg.weight_decay = parse_double(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--beta1") {
@@ -29879,6 +34735,17 @@ int main(int argc, char** argv) {
         cfg.template_name = "nanogpt";
     }
     const std::string resolved_template_selector = resolved_native_template_name(cfg.template_name);
+    std::string graph_fingerprint_error;
+    if (!verify_graph_fingerprint(&cfg, &graph_fingerprint_error)) {
+        std::cerr << graph_fingerprint_error << "\n";
+        return 2;
+    }
+    std::string graph_preflight_proof_error;
+    if (!verify_gpt2_diff_graph_preflight_proof(
+            &cfg, &graph_preflight_proof_error)) {
+        std::cerr << graph_preflight_proof_error << "\n";
+        return 2;
+    }
     const bool gpt3_default_context =
         !cfg.seq_len_explicit &&
         cfg.graph_file.empty() &&
@@ -29901,8 +34768,37 @@ int main(int argc, char** argv) {
             cfg.num_layers = static_cast<int>(geometry.num_layers);
         }
     } else {
-        const CustomGraphTemplateMetadata meta = custom_graph_template_metadata(cfg);
+        CustomGraphTemplateMetadata meta;
+        if (resolved_template_selector == "gpt2_diff") {
+            meta.found = cfg.verified_graph_preflight_proof.verified;
+            meta.geometry = gpt2_diff_verified_proof_geometry(cfg);
+            if (!meta.found) {
+                meta.error = "verified graph preflight proof is unavailable";
+            }
+        } else {
+            meta = custom_graph_template_metadata(cfg);
+        }
+        if (resolved_template_selector == "gpt2_diff" && !meta.error.empty()) {
+            std::cerr << gpt2_diff_packed_preflight_error(meta.error) << "\n";
+            return 2;
+        }
         if (meta.found) {
+            if (resolved_template_selector == "gpt2_diff") {
+                DenseGptTemplateGeometry effective_geometry = meta.geometry;
+                if (cfg.seq_len_explicit) {
+                    effective_geometry.seq_len = cfg.seq_len;
+                }
+                if (cfg.num_layers_explicit) {
+                    effective_geometry.num_layers = cfg.num_layers;
+                }
+                const std::string bounds_error =
+                    gpt2_diff_graph_geometry_bounds_error(
+                        cfg, effective_geometry);
+                if (!bounds_error.empty()) {
+                    std::cerr << bounds_error << "\n";
+                    return 2;
+                }
+            }
             if (!cfg.seq_len_explicit && meta.geometry.seq_len > 0) {
                 cfg.seq_len = static_cast<int>(meta.geometry.seq_len);
                 if (!cfg.batch_size_explicit && cfg.seq_len > 0) {
@@ -29917,6 +34813,10 @@ int main(int argc, char** argv) {
     cfg.model_family = canonical_dense_gpt_model_family(model_selector);
     cfg.activation = lower_activation(cfg.activation);
     cfg.lr_schedule = normalize_lr_schedule(cfg.lr_schedule);
+    if (cfg.lr_schedule_total_steps_explicit && cfg.lr_schedule_total_steps <= 0) {
+        std::cerr << "--lr-schedule-total-steps must be a positive integer\n";
+        return 2;
+    }
     cfg.tile_cuda_activation_dtype =
         normalize_tile_cuda_activation_dtype(cfg.tile_cuda_activation_dtype);
     cfg.template_name = normalize_template_name(cfg.template_name);
@@ -29942,6 +34842,10 @@ int main(int argc, char** argv) {
     }
     if (!valid_activation(cfg.activation)) {
         std::cerr << "Invalid activation: " << cfg.activation << "\n";
+        return 2;
+    }
+    if (cfg.activation == "moa" && cfg.moa_interval <= 0) {
+        std::cerr << "--moa-interval must be a positive integer\n";
         return 2;
     }
     cfg.backend = normalize_backend(cfg.backend);
@@ -30033,6 +34937,12 @@ int main(int argc, char** argv) {
             return 2;
         }
         return print_native_checkpoint_layout_json(cfg);
+    }
+
+    if (cfg.layer_evo_enabled &&
+        (cfg.print_command || cfg.print_plan || cfg.dry_run ||
+         !isolated_nontraining_mode_selected(cfg))) {
+        return report_generic_layer_evo_blocked(cfg);
     }
 
     if (cfg.backend == "tile-cuda" && cfg.print_command) {

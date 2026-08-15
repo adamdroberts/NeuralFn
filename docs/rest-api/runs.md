@@ -1,127 +1,271 @@
 # Training Runs
 
-Endpoints for starting, monitoring, and stopping training runs.
+Training runs are scoped to one authenticated project and editor session. Every
+endpoint below uses this prefix:
 
-All endpoints are prefixed with:
-
-```
+```text
 /api/projects/{project_id}/sessions/{session_id}/runs
 ```
 
-**Authentication:** required for all endpoints.
+The caller must have access to the project/session. A hidden or inaccessible
+scope is reported as `404`.
 
----
+## Runtime and request contract
 
-## GET /
+`TrainRequest.runtime` accepts `scalar`, `torch`, or `native-cuda`. If omitted,
+the saved graph runtime is used. The common fields are:
 
-Lists all training runs for the session.
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `method` | string or null | `surrogate` | Requested training method. Native runs resolve to `native-cuda`. |
+| `runtime` | string or null | graph runtime | `scalar`, `torch`, or `native-cuda`. |
+| `dataset_names` | list[string] or null | null | Project-accessible cached dataset aliases. |
+| `train_inputs` | list[list[number]] | `[]` | Inline inputs for non-native runs. |
+| `train_targets` | list[list[number]] | `[]` | Inline targets for non-native runs. |
+| `seq_len` | integer or null | null | Sequence length override. |
+| `epochs` | integer | `200` | Native training interprets this as maximum optimizer steps. |
+| `learning_rate` | number | `0.001` | Optimizer learning rate. |
+| `batch_size` | integer | `8` | Native trainer microbatch size. |
+| `weight_decay` | number | `0.01` | Optimizer weight decay. |
+| `training_mode` | string | `pretrain` | Native training currently accepts only `pretrain`. |
 
-**Response:**
+Native runs require exactly one project-accessible persisted dataset alias.
+They do not accept inline tensors or the in-memory `__semantic_builtin__`
+dataset. The alias is passed out of band so adding a `dataset_source` node does
+not change an exact reviewed graph topology.
 
-```json
-[
-  {
-    "id": "r_001",
-    "status": "completed",
-    "method": "surrogate",
-    "epochs": 10,
-    "final_loss": 0.042,
-    "created_at": "2025-03-15T10:30:00Z"
-  },
-  {
-    "id": "r_002",
-    "status": "stopped",
-    "method": "torch",
-    "epochs": 50,
-    "final_loss": 0.15,
-    "created_at": "2025-03-16T14:00:00Z"
-  }
-]
-```
+## POST /preflight
 
----
-
-## GET /active
-
-Returns a snapshot of the currently running training run. If no run is active, returns an idle placeholder.
-
-**Response (active run):**
+Checks the saved graph with the same Native IR compiler and trainer-adapter
+registry used by the CLI. It does not create a run or persistent artifacts.
 
 ```json
 {
-  "id": "r_003",
-  "status": "running",
+  "runtime": "native-cuda",
+  "dataset_names": ["tiny_tokens"],
+  "epochs": 10,
+  "batch_size": 8,
+  "training_mode": "pretrain"
+}
+```
+
+A compatible response is `200`:
+
+```json
+{
+  "runtime": "native-cuda",
+  "compatible": true,
+  "execution_ready": true,
+  "trainer_family": "gpt2",
+  "training_selector": "gpt2",
+  "native_target": "nfn_gpt_native_train",
+  "issues": [],
+  "compatibility_report": {
+    "compatible": true,
+    "graph_fingerprint": "..."
+  },
+  "training_compatibility": {
+    "compatible": true,
+    "issues": []
+  },
+  "artifact_metadata": {
+    "source_graph": "editor-session",
+    "materialized": false
+  }
+}
+```
+
+Graph incompatibility is also a `200` preflight result with
+`execution_ready: false`. Each error retains its stable graph location:
+
+```json
+{
+  "runtime": "native-cuda",
+  "compatible": false,
+  "execution_ready": false,
+  "issues": [
+    {
+      "path": "root/nodes/model/subgraph/nodes/token_embed",
+      "code": "unsupported_module",
+      "operation": "future_op",
+      "message": "No reviewed Native IR lowerer is registered.",
+      "severity": "error"
+    }
+  ]
+}
+```
+
+Invalid request options, such as a non-pretrain native mode, return `409` with
+a string `detail`. Preflight never falls back to Torch.
+
+The currently execution-ready graph-file adapters are `gpt2`,
+`gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`, `gpt2_stable`,
+`gpt2_zloss`, canonical `llama`, and its exact compile-runtime alias
+`llama_fast`, exact standard-MoE `moe`, `mixllama`, and `mixllama_fast`, plus
+trusted-planner proof-bound `gpt2_diff` training. That is 13 graph-training
+ready and 54 blocked shipped presets. `gpt2_diff` migration and resident
+inference remain blocked because its
+graph-bound learned-lambda bundle is not consumed by migration or resident
+inference and exact low-level differential execution is packed-QKV-only. Its
+low-level `neuralfn.native_gpt2_diff.training_checkpoint` version-2 metadata is
+a strict continuation contract over the source, five binaries, training shards,
+counters/sampler, seed, accumulation, optimizer/LR horizon, BF16 routes, and
+canonical numerics profile of supported effective routes before Tile/CUDA/H2D. Validation
+shards are excluded. REST preparation materializes the exact
+graph/fingerprint/proof triplet and completion accepts only the fully validated
+`.diff.json`; the proof digest is local-handoff integrity, not caller
+authenticity. Migration/resident readiness remains 12/54.
+LLaMA preparation derives all trainer
+geometry plus the source SHA-256 from the graph, and the public SDK re-runs the
+same planner while constructing the command. The compile alias uses the
+canonical `llama` native ABI while retaining source-profile provenance. A graph being structurally lowerable does not make another
+adapter executable.
+
+## POST /
+
+Starts a run and returns a Server-Sent Events stream (`text/event-stream`). A
+native request should use the same body first sent to `/preflight`:
+
+```json
+{
   "method": "torch",
-  "current_epoch": 7,
-  "total_epochs": 50,
-  "current_loss": 0.089,
+  "runtime": "native-cuda",
+  "dataset_names": ["tiny_tokens"],
+  "epochs": 10,
+  "learning_rate": 0.001,
+  "batch_size": 8,
+  "weight_decay": 0.01,
+  "training_mode": "pretrain"
+}
+```
+
+Each SSE frame is a JSON object:
+
+```text
+data: {"event_id":1,"status":"starting","message":"Training session started using native-cuda method"}
+
+data: {"event_id":2,"status":"checkpoint_persisted","checkpoint_path":".../model_00000010.bin"}
+
+data: {"done":true}
+```
+
+The final frame closes the stream. Poll `GET /active` for the authoritative
+terminal status and persisted metadata.
+
+Ordinary dense runs persist a recognized non-empty `.bin`. Graph-bound
+`gpt2_moa` runs persist validated `model_XXXXXXXX.moa.json`, not the sibling `.bin`, after the
+named model, empty DONE marker, source hash, candidates, selected activation,
+and positive interval validate. MoA resume requires the same sidecar and
+restores the selected activation without a fresh probe; missing or changed
+metadata fails closed. This is the graph-bound REST workflow; direct
+selector-only first-leg output remains ordinary dense-v5 and cannot resume
+exactly. Canonical LLaMA runs persist
+the validated `*_native_family_model_00000000.json` metadata path, not its raw
+`.f32` sidecar. Discovery validates the v2 tensor/sidecar/DONE contract and
+requires `training.source_graph.sha256` to match the prepared plan before the
+run can complete. The corresponding source record uses
+`byte_identity_verified: true`; topology preflight remains the Python planner's
+separate `graph_preflight_enforced` assertion.
+
+If native compatibility changes between preflight and launch, or the saved
+graph has no reviewed adapter, start returns `409` before a trainer is
+launched. Its response is `{"detail": <preflight metadata>}` and includes the
+same node-specific `issues`. Other request conflicts use a string `detail`.
+
+## POST /start
+
+Starts the same background run as `POST /`, but returns the initial JSON run
+snapshot instead of holding an SSE connection. This is the acknowledgement
+endpoint used by MCP automation.
+
+```json
+{
+  "run_id": "run-uuid",
+  "status": "running",
+  "running": true,
+  "runtime": "native-cuda",
+  "compatibility_report": {"compatible": true, "graph_fingerprint": "..."},
+  "artifact_metadata": {
+    "materialized": true,
+    "manifest_path": ".../native-ir/native-execution-manifest.json",
+    "training_plan_path": ".../native-ir/native-training-plan.json",
+    "checkpoint_dir": ".../checkpoints",
+    "checkpoint_path": null
+  },
+  "checkpoint_path": null
+}
+```
+
+The compatibility and conflict behavior is identical to `POST /`.
+
+## GET /
+
+Lists up to 100 persisted runs, newest first. Each row includes `id`, `status`,
+`requested_method`, `resolved_method`, `runtime`, dataset/step/loss fields,
+`compatibility_report`, `artifact_metadata`, `checkpoint_path`, and timestamps.
+
+## GET /active
+
+Returns the live run snapshot when a run is active, otherwise the most recent
+persisted run. If the session has never run, the response is:
+
+```json
+{
+  "status": "idle",
+  "running": false,
+  "done": false,
   "events": []
 }
 ```
 
-**Response (no active run):**
-
-```json
-{
-  "id": null,
-  "status": "idle"
-}
-```
-
----
-
-## POST /
-
-Starts a new training run. The response is a **Server-Sent Event (SSE)** stream (`text/event-stream`) that delivers progress updates in real time.
-
-**Request Body:** `TrainRequest`
-
-```json
-{
-  "method": "surrogate",
-  "epochs": 10,
-  "learning_rate": 0.001,
-  "dataset_names": ["tiny_shakespeare"],
-  "train_inputs": null,
-  "train_targets": null
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `method` | string | no | Training method (`"surrogate"`, `"torch"`, etc.). |
-| `epochs` | int | no | Number of training epochs. |
-| `learning_rate` | float | no | Learning rate. |
-| `dataset_names` | list[string] | no | Datasets to train on. |
-| `train_inputs` | dict | no | Explicit training inputs (alternative to datasets). |
-| `train_targets` | dict | no | Explicit training targets (alternative to datasets). |
-
-### SSE Stream Format
-
-Each event is a JSON object. Events include epoch completions, loss updates, and a final summary.
-
-```
-data: {"event": "epoch", "epoch": 1, "loss": 0.95, "lr": 0.001}
-
-data: {"event": "epoch", "epoch": 2, "loss": 0.42, "lr": 0.001}
-
-data: {"event": "done", "done": true, "final_loss": 0.042, "run_id": "r_003"}
-```
-
-The stream closes after the `done` event.
-
----
+Native snapshots keep the Native IR compatibility report and artifact paths
+from run creation. On successful completion, both top-level `checkpoint_path`
+and `artifact_metadata.checkpoint_path` identify the verified, non-empty,
+contained checkpoint: a recognized `.bin` for ordinary dense runs, validated
+`.moa.json` for MoA, or validated inference-checkpoint metadata `.json` for
+canonical LLaMA and standard MoE.
 
 ## POST /{run_id}/stop
 
-Stops a running training run. The run transitions to `"stopped"` status and the SSE stream closes.
+Requests cooperative cancellation for a running non-native trainer:
 
-### Path Parameters
+```json
+{"status": "stopping"}
+```
 
-| Parameter | Description |
-|-----------|-------------|
-| `run_id` | The run to stop. |
+The current compiled native trainer ABI does not expose cooperative
+cancellation. An active native run therefore returns:
 
-**Response:** stop confirmation with final run state.
+```json
+{
+  "status": "unsupported",
+  "message": "The current compiled native trainer ABI does not expose cooperative cancellation."
+}
+```
 
-Returns `404` if the run does not exist. Returns `400` if the run is not currently active.
+This response does not claim the native process stopped. A run not active in
+the server process returns `{"status": "not_running"}`.
+
+## Native artifact persistence
+
+Successful launch materializes immutable per-run data below
+`NEURALFN_ARTIFACTS_DIR/runs/{run_id}/`:
+
+```text
+editor-graph.json
+native-ir/
+  source-graph.json
+  native-execution-manifest.json
+  compatibility-report.json
+  native-training-plan.json
+checkpoints/
+  model_*.bin
+  llama_native_family_model_00000000.json
+  llama_native_family_parameters_00000000.f32
+  llama_native_family_optimizer_00000000.bin
+  llama_native_family_model_DONE
+```
+
+The server stores the runtime, compatibility report, artifact metadata, and
+checkpoint path on `training_runs`. Migration `20260804_0003` adds those
+columns for existing databases.

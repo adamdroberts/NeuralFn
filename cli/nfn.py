@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 
@@ -192,6 +193,7 @@ _NATIVE_GPT_METADATA_ACTION_FLAGS = {
 _NATIVE_TRAIN_FAMILY_TARGETS = {
     "embedding": "nfn_embedding_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
+    "muse-glimmer": "nfn_muse_glimmer_native_train",
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
@@ -212,6 +214,7 @@ _NATIVE_TRAIN_FAMILY_TARGETS = {
     "nano-gpt": "nfn_nanogpt_native_train",
 }
 _NATIVE_TEMPLATE_FAMILY_ALIASES = {
+    "muse-glimmer": "muse-glimmer",
     "llama": "llama",
     "llama-fast": "llama",
     "llama-fast-megakernel": "llama",
@@ -326,6 +329,21 @@ options:
   -h, --help            Show help for the master CLI. (default: False)
   --help-style {short,long,verbose}
                         Help detail level. (default: None)
+
+commands:
+  train                 Train NeuralFn models.
+  embed                 Produce native text embeddings.
+  infer                 Run inference from NeuralFn artifacts.
+  eval                  Evaluate NeuralFn artifacts.
+  kernels               Inspect CUDA Tile kernel coverage.
+  migrate graph-to-native
+                        Lower a graph and optional .pt weights to Native Execution IR.
+  migrate muse-glimmer-to-native
+                        Strictly convert a pinned Muse Glimmer BF16 checkpoint bundle.
+  migrate muse-glimmer-gguf-to-native
+                        Authenticate and bundle official Glimmer K-Quant variants.
+  migrate muse-glimmer-lora-to-native
+                        Attach a strict native LoRA/QLoRA checkpoint to a Glimmer bundle.
 """
     )
 
@@ -346,7 +364,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --tui, --interactive
           --no-tui
           --help-style {short,long,verbose}
-          --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama,embedding}
+          --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama,muse-glimmer,embedding}
           --topology {dense,moe,semantic_router}
           --router-mode {standard,semantic,hash}
           --dataset-alias NAME_OR_PATH
@@ -356,7 +374,13 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --kernel-backend tile-cuda
           --template-name NAME, --template NAME, --preset NAME
           --graph-file PATH, --graph PATH
+          --graph-fingerprint SHA256
+          --graph-preflight-proof PATH
           --tile-cuda-strict, --no-tile-cuda-strict
+          --lr-schedule {cosine,constant}
+          --lr-schedule-total-steps N
+          --train-seed N
+          --resume-from-checkpoint PATH
           --eval-every-steps N
           --train-log-file PATH
           --eval-log-file PATH
@@ -380,6 +404,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn train --base-model gpt3 --dataset-alias /data/tokens --graph-file graph.json
           nfn train --base-model gpt --tinystories --eval-every-steps 1000
           nfn train --base-model gpt --native-cuda-runner compiled-cli
+          nfn train --base-model muse-glimmer --checkpoint MODEL --checkpoint-sha256 SHA256 --dataset DATASET --objective sft --chat-template-sha256 SHA256
           nfn train --base-model embedding --embedding-dataset corpus.txt
 
         Explicit dense GPT runs dispatch before importing the graph-backed runtime.
@@ -406,9 +431,31 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --require-covered-templates
           --require-architecture-forward
           --native-sampler-script PATH (deprecated for native .bin prompts)
-          --runtime {auto,native-cuda,graph}
+          --runtime {auto,cpu,native-cuda,graph}
+          --weight-precision {auto,bf16,k-quant-dynamic,k-quant-17gb}
+          --speculative-decoding, --speculative {off,auto,required}
+          --companion-checkpoint {dflash,mmproj,lora} (repeatable)
           --prompt TEXT
           --prompt-tokens IDS
+          --chat-mode {transcript,stateless}
+          --system-prompt TEXT
+          --chat-template {auto,plain_roles,PATH}
+          --serve (native artifact directories only)
+          --host HOST, --port PORT
+          --served-model-name NAME
+          --queue-capacity N
+          --session-limit N
+          --max-output-tokens N
+          --prefix-cache-capacity N
+          --kv-cache {off,auto,full,turboquant}
+          --turboquant-profile {mse-3.5,qjl-3.5}
+          --turboquant-attention-backend {cpu,tile-cuda}
+          --tile-ops-lib PATH (required for the explicit tile-cuda attention backend)
+          --cuda-runtime-lib PATH_OR_SONAME
+          --cuda-device INDEX
+          --api-key-file PATH
+          --state-db PATH
+          --allow-unauthenticated-remote
           --max-new-tokens N
           --temperature FLOAT (finite >=0; exact zero enables strict deterministic CUDA inference)
           --top-k N
@@ -423,7 +470,12 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn infer --runtime native-cuda --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
+          nfn infer --checkpoint artifacts/glimmer-kquant --runtime native-cuda --weight-precision auto --companion-checkpoint dflash --speculative-decoding auto --prompt "Hello"
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
+          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2-native --serve
+
+        Interactive inference defaults to transcript mode. Use
+        --chat-mode stateless (or /mode stateless) for independent turns.
         """,
     "embed": """\
         usage: nfn embed --checkpoint PATH (--text TEXT | --input PATH)
@@ -491,6 +543,32 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn kernels doctor --json
           nfn kernels examples --write --output-dir examples/tile_cuda
         """,
+    "migrate": """\
+        usage: nfn migrate graph-to-native --graph GRAPH [--weights WEIGHTS] --output-dir DIR [--dry-run]
+               nfn migrate muse-glimmer-to-native --source DIR --output-dir DIR [--component {text,vision,full,assistant}]
+               nfn migrate muse-glimmer-gguf-to-native --gguf FILE [--gguf FILE] [--dflash FILE] [--mmproj FILE] --tokenizer-source DIR --output-dir DIR
+               nfn migrate muse-glimmer-lora-to-native --artifact DIR --checkpoint DIR
+
+        Validate and lower a graph to the versioned Native Execution IR artifact.
+        Graph-only migration remains Torch-free; supplying legacy .pt weights
+        invokes the isolated checkpoint conversion worker.
+
+        options:
+          -h, --help
+          --graph GRAPH       Source NeuralFn graph JSON.
+          --weights WEIGHTS   Optional legacy .pt checkpoint.
+          --output-dir DIR    New artifact directory; existing paths are never overwritten.
+          --dry-run           Validate and print the manifest/report without writing files.
+
+        examples:
+          nfn migrate graph-to-native --graph graph.json --output-dir artifacts/native-model
+          nfn migrate graph-to-native --graph graph.json --weights model.pt --output-dir artifacts/native-model
+          nfn migrate graph-to-native --graph graph.json --output-dir artifacts/native-model --dry-run
+          nfn migrate muse-glimmer-to-native --source Muse-Glimmer-30B --output-dir artifacts/glimmer-text
+          nfn migrate muse-glimmer-to-native --source Muse-Glimmer-30B-assistant --component assistant --target-checkpoint-sha256 SHA256 --output-dir artifacts/glimmer-dflash
+          nfn migrate muse-glimmer-gguf-to-native --gguf Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf --gguf Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf --dflash dflash-Muse-Glimmer-30B-Q4_K_M.gguf --mmproj mmproj-Muse-Glimmer-30B-Q4_K_M.gguf --tokenizer-source Muse-Glimmer-30B --output-dir artifacts/glimmer-kquant
+          nfn migrate muse-glimmer-lora-to-native --artifact artifacts/glimmer-bf16 --checkpoint runs/checkpoint-step-100
+        """,
 }
 
 
@@ -501,6 +579,13 @@ def _is_lightweight_command_help(argv: list[str]) -> bool:
         return False
     idx = 1
     if argv[0] == "kernels" and idx < len(argv) and argv[idx] in {"list", "doctor", "bench", "examples"}:
+        idx += 1
+    if argv[0] == "migrate" and idx < len(argv) and argv[idx] in {
+        "graph-to-native",
+        "muse-glimmer-to-native",
+        "muse-glimmer-gguf-to-native",
+        "muse-glimmer-lora-to-native",
+    }:
         idx += 1
     while idx < len(argv):
         arg = argv[idx]
@@ -590,6 +675,875 @@ def _lightweight_command_help_main(argv: list[str] | None = None) -> int:
         return 2
     print(textwrap.dedent(help_text).strip())
     return 0
+
+
+def _is_lightweight_graph_migrate(argv: list[str]) -> bool:
+    return len(argv) >= 2 and argv[:2] == ["migrate", "graph-to-native"]
+
+
+def _is_lightweight_muse_glimmer_migrate(argv: list[str]) -> bool:
+    return len(argv) >= 2 and argv[:2] == ["migrate", "muse-glimmer-to-native"]
+
+
+def _is_lightweight_muse_glimmer_gguf_migrate(argv: list[str]) -> bool:
+    return len(argv) >= 2 and argv[:2] == ["migrate", "muse-glimmer-gguf-to-native"]
+
+
+def _is_lightweight_muse_glimmer_lora_migrate(argv: list[str]) -> bool:
+    return len(argv) >= 2 and argv[:2] == ["migrate", "muse-glimmer-lora-to-native"]
+
+
+def _lightweight_graph_migrate_main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn migrate graph-to-native",
+        description="Lower a NeuralFn graph and optional legacy .pt weights to Native Execution IR.",
+    )
+    parser.add_argument("--graph", required=True, metavar="GRAPH")
+    parser.add_argument("--weights", metavar="WEIGHTS")
+    parser.add_argument("--output-dir", required=True, metavar="DIR")
+    parser.add_argument("--dry-run", action="store_true")
+    try:
+        args = parser.parse_args(tokens[2:])
+    except SystemExit as exc:
+        return int(exc.code)
+
+    from neuralfn.native_ir import migrate_graph_to_native
+
+    try:
+        result = migrate_graph_to_native(
+            args.graph,
+            output_dir=args.output_dir,
+            weights_path=args.weights,
+            dry_run=bool(args.dry_run),
+        )
+    except (FileExistsError, FileNotFoundError, ImportError, OSError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0 if result.report.compatible else 2
+
+
+def _lightweight_muse_glimmer_migrate_main(argv: list[str] | None = None) -> int:
+    import argparse
+    from dataclasses import asdict
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn migrate muse-glimmer-to-native",
+        description=(
+            "Authenticate and stream-convert the pinned official Muse Glimmer BF16 "
+            "main or DFlash assistant checkpoint."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument("--source", required=True, metavar="DIR")
+    parser.add_argument("--output-dir", metavar="DIR")
+    parser.add_argument(
+        "--component",
+        choices=("text", "vision", "full", "assistant"),
+        default="text",
+    )
+    parser.add_argument("--target-checkpoint-sha256", metavar="SHA256")
+    parser.add_argument("--inspect-only", action="store_true")
+    try:
+        args = parser.parse_args(tokens[2:])
+    except SystemExit as exc:
+        return int(exc.code)
+    if not args.inspect_only and not args.output_dir:
+        print("--output-dir is required unless --inspect-only is selected", file=sys.stderr)
+        return 2
+    if args.component == "assistant" and not args.inspect_only and not args.target_checkpoint_sha256:
+        print("--component assistant requires --target-checkpoint-sha256", file=sys.stderr)
+        return 2
+
+    from neuralfn.native_muse_glimmer_checkpoint import (
+        MuseGlimmerCheckpointError,
+        convert_official_muse_glimmer_assistant_safetensors,
+        convert_official_muse_glimmer_safetensors,
+        inspect_official_muse_glimmer_safetensors,
+    )
+
+    try:
+        if args.inspect_only:
+            bundle = inspect_official_muse_glimmer_safetensors(
+                args.source,
+                assistant=args.component == "assistant",
+            )
+            payload = {
+                "source": str(bundle.root),
+                "component": args.component,
+                "tensor_count": len(bundle.entries),
+                "parameter_count": bundle.parameter_count,
+                "payload_bytes": bundle.payload_bytes,
+                "shards": {
+                    name: {
+                        "nbytes": bundle.shard_nbytes[name],
+                        "sha256": bundle.shard_sha256[name],
+                    }
+                    for name in sorted(bundle.shard_sha256)
+                },
+            }
+        elif args.component == "assistant":
+            converted = convert_official_muse_glimmer_assistant_safetensors(
+                args.source,
+                args.output_dir,
+                target_checkpoint_sha256=args.target_checkpoint_sha256,
+            )
+            payload = asdict(converted)
+        else:
+            converted = convert_official_muse_glimmer_safetensors(
+                args.source,
+                args.output_dir,
+                component=args.component,
+            )
+            payload = asdict(converted)
+    except (FileExistsError, FileNotFoundError, MuseGlimmerCheckpointError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _lightweight_muse_glimmer_gguf_migrate_main(
+    argv: list[str] | None = None,
+) -> int:
+    import argparse
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn migrate muse-glimmer-gguf-to-native",
+        description=(
+            "Authenticate one or both canonical Muse Glimmer K-Quant GGUF files "
+            "and publish a self-contained resident artifact."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument("--gguf", action="append", required=True, metavar="FILE")
+    parser.add_argument(
+        "--dflash",
+        metavar="FILE",
+        help="Optional canonical packed DFlash companion GGUF.",
+    )
+    parser.add_argument(
+        "--mmproj",
+        metavar="FILE",
+        help="Optional canonical packed mmproj vision companion GGUF.",
+    )
+    parser.add_argument("--tokenizer-source", required=True, metavar="DIR")
+    parser.add_argument("--output-dir", required=True, metavar="DIR")
+    parser.add_argument(
+        "--primary",
+        choices=("k-quant-dynamic", "k-quant-17gb"),
+    )
+    try:
+        args = parser.parse_args(tokens[2:])
+    except SystemExit as exc:
+        return int(exc.code)
+    from neuralfn.native_gguf import (
+        GGUFError,
+        publish_muse_glimmer_kquant_execution_bundle,
+    )
+
+    try:
+        manifest_path = publish_muse_glimmer_kquant_execution_bundle(
+            args.gguf,
+            tokenizer_source=args.tokenizer_source,
+            output_root=args.output_dir,
+            primary_variant=args.primary,
+            dflash_path=args.dflash,
+            mmproj_path=args.mmproj,
+        )
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (FileExistsError, FileNotFoundError, GGUFError, OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(
+        json.dumps(
+            {
+                "manifest_path": str(manifest_path),
+                "primary_checkpoint_variant": payload["primary_checkpoint_variant"],
+                "checkpoint_variants": sorted(payload["checkpoint_variants"]),
+                "dflash": "dflash" in payload.get("companion_checkpoints", {}),
+                "mmproj": "mmproj" in payload.get("companion_checkpoints", {}),
+                "resident_cpu": True,
+                "whole_model_cuda": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _lightweight_muse_glimmer_lora_migrate_main(
+    argv: list[str] | None = None,
+) -> int:
+    import argparse
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn migrate muse-glimmer-lora-to-native",
+        description=(
+            "Authenticate and atomically attach a native Muse Glimmer LoRA or "
+            "QLoRA adapter checkpoint to a compatible resident bundle."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument("--artifact", required=True, metavar="DIR")
+    parser.add_argument("--checkpoint", required=True, metavar="DIR")
+    try:
+        args = parser.parse_args(tokens[2:])
+    except SystemExit as exc:
+        return int(exc.code)
+
+    from neuralfn.native_muse_glimmer_checkpoint import (
+        MuseGlimmerCheckpointError,
+        attach_native_muse_glimmer_lora,
+        inspect_native_muse_glimmer_lora_checkpoint,
+    )
+
+    try:
+        descriptor = inspect_native_muse_glimmer_lora_checkpoint(args.checkpoint)
+        manifest_path = attach_native_muse_glimmer_lora(
+            args.artifact, args.checkpoint
+        )
+    except (
+        FileExistsError,
+        FileNotFoundError,
+        MuseGlimmerCheckpointError,
+        OSError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(
+        json.dumps(
+            {
+                "manifest_path": str(manifest_path),
+                "adapter_sha256": descriptor["target_sha256"],
+                "training_adapter": descriptor["source"]["training_adapter"],
+                "resident_cpu": descriptor["capabilities"]["resident_cpu"],
+                "resident_cuda": descriptor["capabilities"]["resident_cuda"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _is_native_serve_request(argv: list[str]) -> bool:
+    return bool(argv and argv[0] == "infer" and _has_any(argv, "--serve"))
+
+
+def _read_native_ir_manifest_candidate(candidate: Path) -> dict | None:
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if (
+        isinstance(payload, dict)
+        and payload.get("schema") == "neuralfn.native_execution_manifest"
+        and payload.get("version") == 1
+    ):
+        return payload
+    return None
+
+
+def _resolve_checkpoint_sibling_manifest(requested: Path) -> Path | None:
+    """Return a sibling manifest only when it binds this exact contained file."""
+
+    manifest_path = requested.parent / "native-execution-manifest.json"
+    if not manifest_path.is_file():
+        return None
+    payload = _read_native_ir_manifest_candidate(manifest_path)
+    checkpoint = payload.get("checkpoint") if payload is not None else None
+    if not isinstance(checkpoint, dict):
+        return None
+    relative = checkpoint.get("artifact_path")
+    if not isinstance(relative, str) or not relative.strip():
+        return None
+    declared = Path(relative)
+    if declared.is_absolute():
+        return None
+    artifact_root = manifest_path.parent.resolve()
+    bound_checkpoint = (artifact_root / declared).resolve()
+    try:
+        bound_checkpoint.relative_to(artifact_root)
+        requested_checkpoint = requested.resolve(strict=True)
+    except (OSError, ValueError):
+        return None
+    return manifest_path if requested_checkpoint == bound_checkpoint else None
+
+
+def _resolve_native_ir_manifest(argv: list[str]) -> Path | None:
+    if (
+        not argv
+        or argv[0] != "infer"
+        or _has_any(argv, "-h", "--help", "--serve", "--graph", "--plan", "--plan-auto")
+    ):
+        return None
+    raw = _arg_value(argv, "--checkpoint", "--native-checkpoint")
+    if not raw:
+        return None
+    requested = Path(raw).expanduser()
+    candidate = (
+        requested / "native-execution-manifest.json" if requested.is_dir() else requested
+    )
+    if not candidate.is_file():
+        return None
+    if candidate.name == "native-execution-manifest.json":
+        return candidate
+    sibling_manifest = _resolve_checkpoint_sibling_manifest(requested)
+    if sibling_manifest is not None:
+        return sibling_manifest
+    if candidate.suffix.lower() == ".bin":
+        # Raw native checkpoints can be hundreds of MiB.  Once no sibling
+        # manifest has claimed the file, leave it to the legacy detector
+        # without attempting to decode the model payload as JSON.
+        return None
+    if _read_native_ir_manifest_candidate(candidate) is not None:
+        return candidate
+    return None
+
+
+def _is_native_ir_infer_request(argv: list[str]) -> bool:
+    return _resolve_native_ir_manifest(argv) is not None
+
+
+def _legacy_infer_inputs(argv: list[str]) -> tuple[str | None, str | None] | None:
+    """Return graph/weights inputs only for the retained Python inference path."""
+
+    if (
+        not argv
+        or argv[0] != "infer"
+        or _has_any(argv, "-h", "--help", "--plan", "--plan-auto")
+        or _resolve_native_ir_manifest(argv) is not None
+    ):
+        return None
+    graph = _arg_value(argv, "--graph")
+    weights = _arg_value(argv, "--weights")
+    checkpoint = _arg_value(argv, "--checkpoint")
+    if graph:
+        return graph, weights or checkpoint
+    candidate = checkpoint or weights
+    if candidate and Path(candidate).suffix.lower() in {".pt", ".pth", ".ckpt"}:
+        return None, candidate
+    return None
+
+
+def _legacy_infer_requests_turboquant(argv: list[str]) -> bool:
+    requested = (_arg_value(argv, "--kv-cache") or "").strip().lower().replace("_", "-")
+    return requested == "turboquant"
+
+
+def _is_blocked_legacy_infer_request(argv: list[str]) -> bool:
+    return _legacy_infer_inputs(argv) is not None and (
+        _has_any(argv, "--serve") or _legacy_infer_requests_turboquant(argv)
+    )
+
+
+def _legacy_infer_migration_guidance(argv: list[str]) -> tuple[str, str]:
+    inputs = _legacy_infer_inputs(argv)
+    if inputs is None:
+        raise ValueError("legacy inference migration guidance requires a legacy artifact")
+    graph, weights = inputs
+    if graph is not None:
+        graph_path = Path(graph)
+        output_dir = graph_path.parent / f"{graph_path.stem}-native"
+        command = [
+            "nfn",
+            "migrate",
+            "graph-to-native",
+            "--graph",
+            graph,
+        ]
+        if weights is not None:
+            command.extend(("--weights", weights))
+        command.extend(("--output-dir", str(output_dir)))
+        return shlex.join(command), str(output_dir)
+
+    assert weights is not None
+    weights_path = Path(weights)
+    output_dir = weights_path.parent / f"{weights_path.stem}-native"
+    command = [
+        "nfn",
+        "migrate",
+        "graph-to-native",
+        "--graph",
+        "MATCHING_GRAPH.json",
+        "--weights",
+        weights,
+        "--output-dir",
+        str(output_dir),
+    ]
+    return shlex.join(command), str(output_dir)
+
+
+def _blocked_legacy_infer_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    inputs = _legacy_infer_inputs(tokens)
+    if inputs is None:
+        return 2
+    graph, weights = inputs
+    migration, _output_dir = _legacy_infer_migration_guidance(tokens)
+    requested_feature = "--serve" if _has_any(tokens, "--serve") else "TurboQuant"
+    if graph is None:
+        assert weights is not None
+        print(
+            f"Graphless Parameter Golf inference does not support {requested_feature}. "
+            "A matching NeuralFn graph is a prerequisite because the checkpoint has no "
+            "serialized topology.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"Legacy graph inference does not support {requested_feature}. Migrate the "
+            "supplied graph before requesting native-only features.",
+            file=sys.stderr,
+        )
+    if graph is None:
+        print(
+            "After replacing MATCHING_GRAPH.json with the actual graph path, use this "
+            "migration template:",
+            file=sys.stderr,
+        )
+    else:
+        print("Run this exact migration command:", file=sys.stderr)
+    print(f"  {migration}", file=sys.stderr)
+    print(
+        "Migration validates and preserves the graph/tensor bundle; it does not make "
+        "legacy weights resident-loadable. Serving and TurboQuant additionally require "
+        "a compatible resident native dense-v5 checkpoint.",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def _legacy_infer_main(
+    argv: list[str] | None = None,
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    migration, _output_dir = _legacy_infer_migration_guidance(tokens)
+    graph, _weights = _legacy_infer_inputs(tokens) or (None, None)
+    if graph is None:
+        print(
+            "DEPRECATED: graphless Parameter Golf inference remains available for "
+            "compatibility but is not a resident native runtime. A matching NeuralFn "
+            "graph is required before migration. Migration template:",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "DEPRECATED: legacy graph inference remains available for compatibility "
+            "but is not a resident native runtime. Migrate with:",
+            file=sys.stderr,
+        )
+    print(f"  {migration}", file=sys.stderr)
+    impl = _load_full_impl()
+    kwargs: dict[str, bool] = {}
+    if stdin_isatty is not None:
+        kwargs["stdin_isatty"] = stdin_isatty
+    if stdout_isatty is not None:
+        kwargs["stdout_isatty"] = stdout_isatty
+    return int(impl.main(tokens, **kwargs))
+
+
+def _native_ir_infer_main(
+    argv: list[str] | None = None,
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> int:
+    import argparse
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn infer",
+        description=(
+            "Run one Native Execution artifact through the in-process resident model/session API."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--checkpoint",
+        "--native-checkpoint",
+        dest="checkpoint",
+        required=True,
+        metavar="ARTIFACT",
+    )
+    parser.add_argument("--runtime", choices=("auto", "cpu", "native-cuda"), default="auto")
+    parser.add_argument(
+        "--weight-precision",
+        choices=("auto", "bf16", "k-quant-dynamic", "k-quant-17gb"),
+        default="auto",
+        help="Select the resident weight artifact; auto is quality-first within the memory budget.",
+    )
+    parser.add_argument(
+        "--speculative-decoding",
+        "--speculative",
+        choices=("off", "auto", "required"),
+        default="auto",
+        help="Use a bound DFlash assistant; required fails instead of using target-only decoding.",
+    )
+    parser.add_argument(
+        "--companion-checkpoint",
+        action="append",
+        choices=("dflash", "mmproj", "lora"),
+        default=[],
+        metavar="NAME",
+        help="Load an authenticated optional DFlash, mmproj, or native LoRA companion.",
+    )
+    parser.add_argument("--prompt", default="")
+    parser.add_argument("--prompt-tokens", default="", metavar="IDS")
+    parser.add_argument("--chat-mode", choices=("transcript", "stateless"), default=None)
+    parser.add_argument("--system-prompt", default="")
+    parser.add_argument("--chat-template", default="auto", metavar="auto|plain_roles|PATH")
+    parser.add_argument("--kv-cache", choices=("off", "auto", "full", "turboquant"), default="auto")
+    parser.add_argument(
+        "--turboquant-profile",
+        choices=("mse-3.5", "qjl-3.5"),
+        default="mse-3.5",
+    )
+    parser.add_argument(
+        "--turboquant-attention-backend",
+        choices=("cpu", "tile-cuda"),
+        default="cpu",
+    )
+    parser.add_argument(
+        "--tile-ops-lib",
+        "--strict-tile-ops-lib",
+        dest="tile_ops_lib",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Strict whole-model CUDA sidecar. The --strict-tile-ops-lib spelling "
+            "is an explicit alias; Tile-CUDA TurboQuant uses the same path when selected."
+        ),
+    )
+    parser.add_argument("--cuda-runtime-lib", default=None, metavar="PATH_OR_SONAME")
+    parser.add_argument("--cuda-device", type=int, default=0, metavar="INDEX")
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help=(
+            "Maximum completion tokens (default: 512 so reasoning-capable ATEM models "
+            "can reach their user-directed answer)."
+        ),
+    )
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=32)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--native-info", action="store_true")
+    try:
+        args = parser.parse_args(tokens[1:])
+    except SystemExit as exc:
+        return int(exc.code)
+
+    input_tty = sys.stdin.isatty() if stdin_isatty is None else bool(stdin_isatty)
+    output_tty = sys.stdout.isatty() if stdout_isatty is None else bool(stdout_isatty)
+    interactive = input_tty and output_tty
+    manifest_path = _resolve_native_ir_manifest(tokens)
+    if manifest_path is None:
+        return 2
+
+    from neuralfn.native_chat import NativeChatConfigurationError
+    from neuralfn.native_cli import (
+        NativeArtifactCLIConfig,
+        parse_native_prompt_token_ids,
+        run_native_artifact_cli,
+    )
+    from neuralfn.native_inference import (
+        KVCacheConfig,
+        NativeInferenceError,
+        NativeModelLoadConfig,
+    )
+
+    try:
+        config = NativeArtifactCLIConfig(
+            artifact=manifest_path,
+            prompt=args.prompt,
+            prompt_token_ids=parse_native_prompt_token_ids(args.prompt_tokens),
+            chat_mode=args.chat_mode,
+            system_prompt=args.system_prompt,
+            chat_template=args.chat_template,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            seed=args.seed,
+            kv_cache=KVCacheConfig(
+                mode=args.kv_cache,
+                turboquant_profile=args.turboquant_profile,
+                turboquant_attention_backend=args.turboquant_attention_backend,
+                tile_ops_lib=(
+                    args.tile_ops_lib
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else None
+                ),
+                cuda_runtime_lib=(
+                    args.cuda_runtime_lib
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else None
+                ),
+                cuda_device=(
+                    args.cuda_device
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else 0
+                ),
+            ),
+            model_load=NativeModelLoadConfig(
+                weight_precision=args.weight_precision,
+                runtime=args.runtime,
+                tile_ops_lib=args.tile_ops_lib,
+                cuda_runtime_lib=args.cuda_runtime_lib,
+                cuda_device=args.cuda_device,
+                speculative_decoding=args.speculative_decoding,
+                companion_checkpoints=tuple(args.companion_checkpoint),
+            ),
+            native_info=bool(args.native_info),
+        )
+        interactive_ui = None
+        if interactive:
+            try:
+                from neuralfn.native_infer_tui import RichNativeInferenceUI
+            except ModuleNotFoundError as exc:
+                if exc.name not in {"neuralfn.native_infer_tui", "rich"}:
+                    raise
+                raise RuntimeError(
+                    "The colorful native inference TUI requires the CLI 'rich' "
+                    "dependency. Reinstall the NeuralFn CLI package instead of "
+                    "falling back to the plain prompt."
+                ) from exc
+
+            interactive_ui = RichNativeInferenceUI()
+        return int(
+            run_native_artifact_cli(
+                config,
+                interactive=interactive,
+                interactive_ui=interactive_ui,
+            )
+        )
+    except KeyboardInterrupt:
+        return 130
+    except (
+        FileNotFoundError,
+        ImportError,
+        NativeChatConfigurationError,
+        NativeInferenceError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+def _native_serve_main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="nfn infer --serve",
+        description=(
+            "Serve one proven resident Native Execution artifact through a lean, "
+            "bounded OpenAI-compatible API."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument("--serve", action="store_true", help="Start the resident inference server.")
+    parser.add_argument(
+        "--checkpoint",
+        "--native-checkpoint",
+        dest="checkpoint",
+        required=True,
+        metavar="ARTIFACT",
+        help="Native artifact directory or native-execution-manifest.json path.",
+    )
+    parser.add_argument("--runtime", choices=("auto", "cpu", "native-cuda"), default="auto")
+    parser.add_argument(
+        "--weight-precision",
+        choices=("auto", "bf16", "k-quant-dynamic", "k-quant-17gb"),
+        default="auto",
+        help="Select the server's resident weight artifact at startup.",
+    )
+    parser.add_argument(
+        "--speculative-decoding",
+        "--speculative",
+        choices=("off", "auto", "required"),
+        default="auto",
+        help="Set startup DFlash policy; requests cannot override this server policy.",
+    )
+    parser.add_argument(
+        "--companion-checkpoint",
+        action="append",
+        choices=("dflash", "mmproj", "lora"),
+        default=[],
+        metavar="NAME",
+        help="Load an authenticated optional DFlash, mmproj, or native LoRA companion at startup.",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--served-model-name", default=None, metavar="NAME")
+    parser.add_argument(
+        "--queue-capacity",
+        type=int,
+        default=8,
+        metavar="N",
+        help="Maximum waiting generations in front of the single compute worker.",
+    )
+    parser.add_argument(
+        "--session-limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum admitted request sessions, including the running request and "
+            "queued reservations (default: queue capacity plus one)."
+        ),
+    )
+    parser.add_argument("--max-output-tokens", type=int, default=256, metavar="N")
+    parser.add_argument(
+        "--kv-cache",
+        choices=("off", "auto", "full", "turboquant"),
+        default="auto",
+        help=(
+            "Resident cache request. Auto selects the jointly proven lossless full cache; "
+            "TurboQuant selects only a jointly proven profile and backend."
+        ),
+    )
+    parser.add_argument(
+        "--turboquant-profile",
+        choices=("mse-3.5", "qjl-3.5"),
+        default="mse-3.5",
+    )
+    parser.add_argument(
+        "--turboquant-attention-backend",
+        choices=("cpu", "tile-cuda"),
+        default="cpu",
+        help="Use CPU packed attention or the explicit strict Tile-CUDA sidecar.",
+    )
+    parser.add_argument("--tile-ops-lib", default=None, metavar="PATH")
+    parser.add_argument("--cuda-runtime-lib", default=None, metavar="PATH_OR_SONAME")
+    parser.add_argument("--cuda-device", type=int, default=0, metavar="INDEX")
+    parser.add_argument(
+        "--chat-template",
+        default="auto",
+        metavar="auto|plain_roles|PATH",
+        help="Use artifact metadata or an explicit lean chat renderer fallback.",
+    )
+    parser.add_argument("--api-key-file", default=None, metavar="PATH")
+    parser.add_argument(
+        "--state-db",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Enable stateful Responses with local compaction, Conversations, and "
+            "restart-safe background jobs using a private versioned SQLite database at PATH."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-capacity",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Retain at most N proven resident Responses prefixes (requires --state-db; default: 0)."
+        ),
+    )
+    parser.add_argument("--allow-unauthenticated-remote", action="store_true")
+    parser.add_argument("--log-level", default="info")
+    try:
+        args = parser.parse_args(tokens[1:])
+    except SystemExit as exc:
+        return int(exc.code)
+
+    from neuralfn.native_inference import (
+        KVCacheConfig,
+        NativeInferenceError,
+        NativeModelLoadConfig,
+    )
+    from neuralfn.native_serve import (
+        NativeServeConfig,
+        NativeServingConfigurationError,
+        run_native_inference_server,
+    )
+
+    try:
+        config = NativeServeConfig(
+            artifact=Path(args.checkpoint),
+            host=args.host,
+            port=args.port,
+            served_model_name=args.served_model_name,
+            queue_capacity=args.queue_capacity,
+            session_limit=args.session_limit,
+            max_output_tokens=args.max_output_tokens,
+            kv_cache=KVCacheConfig(
+                mode=args.kv_cache,
+                turboquant_profile=args.turboquant_profile,
+                turboquant_attention_backend=args.turboquant_attention_backend,
+                tile_ops_lib=(
+                    args.tile_ops_lib
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else None
+                ),
+                cuda_runtime_lib=(
+                    args.cuda_runtime_lib
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else None
+                ),
+                cuda_device=(
+                    args.cuda_device
+                    if args.turboquant_attention_backend == "tile-cuda"
+                    else 0
+                ),
+            ),
+            model_load=NativeModelLoadConfig(
+                weight_precision=args.weight_precision,
+                runtime=args.runtime,
+                tile_ops_lib=args.tile_ops_lib,
+                cuda_runtime_lib=args.cuda_runtime_lib,
+                cuda_device=args.cuda_device,
+                session_count=(
+                    args.session_limit
+                    if args.session_limit is not None
+                    else args.queue_capacity + 1
+                ),
+                speculative_decoding=args.speculative_decoding,
+                companion_checkpoints=tuple(args.companion_checkpoint),
+            ),
+            chat_template=args.chat_template,
+            api_key_file=(Path(args.api_key_file) if args.api_key_file else None),
+            state_db=(Path(args.state_db) if args.state_db else None),
+            prefix_cache_capacity=args.prefix_cache_capacity,
+            allow_unauthenticated_remote=bool(args.allow_unauthenticated_remote),
+            log_level=args.log_level,
+        )
+        run_native_inference_server(config)
+        return 0
+    except KeyboardInterrupt:
+        return 130
+    except (
+        FileNotFoundError,
+        ImportError,
+        NativeInferenceError,
+        NativeServingConfigurationError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def _is_lightweight_kernels_list(argv: list[str]) -> bool:
@@ -1256,7 +2210,7 @@ _TRAIN_TUI_MODELS = (
     ("gpt2", "Dense GPT-2 shape on the GPT trainer"),
     ("gpt3", "Dense GPT-3-like long-context run"),
     ("nanogpt", "NanoGPT template on the dense GPT trainer"),
-    ("gpt2-evo", "GPT-2 dense evo layer delegate"),
+    ("gpt2-evo", "GPT-2 Evo preflight (whole-block training blocked)"),
     ("llama", "LLaMA family native trainer"),
     ("mixllama", "MixLLaMA/MoE family native trainer"),
     ("jepa", "JEPA native family trainer"),
@@ -2199,7 +3153,17 @@ def _native_env_default(names: tuple[str, ...]) -> str:
 
 def _append_native_gpt_quality_defaults(out: list[str]) -> None:
     for flag, env_names in _NATIVE_GPT_QUALITY_DEFAULTS.items():
-        if not _explicit_arg(out, flag):
+        explicit_flags = (flag,)
+        if flag == "--lr-schedule":
+            explicit_flags += ("--learning-rate-schedule",)
+        elif flag == "--final-lr-fraction":
+            explicit_flags += (
+                "--learning-rate-decay-frac",
+                "--learning-rate-decay-fraction",
+            )
+        elif flag == "--train-loss-every-steps":
+            explicit_flags += ("--train-log-every", "--train-log-every-steps")
+        if not _explicit_arg(out, *explicit_flags):
             _append_value_arg(out, flag, _native_env_default(env_names))
     if not _has_native_activation(out):
         activation_default = "moa" if _native_template_name(out) == "gpt2_moa" else "gelu"
@@ -2295,6 +3259,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--dataset-val-file",
         "--tokenizer",
         "--native-cuda-runner",
+        "--pipeline-cuda-devices",
         "--train-log-file",
         "--eval-log-file",
     }
@@ -2315,6 +3280,11 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--native-cuda-tile-ops-lib": "--tile-ops-lib",
         "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
         "--native-cuda-lm-head-row-chunk-size": "--lm-head-row-chunk-size",
+        "--learning-rate-schedule": "--lr-schedule",
+        "--learning-rate-decay-frac": "--final-lr-fraction",
+        "--learning-rate-decay-fraction": "--final-lr-fraction",
+        "--train-log-every": "--train-loss-every-steps",
+        "--train-log-every-steps": "--train-loss-every-steps",
         "--template": "--template-name",
         "--preset": "--template-name",
         "--graph": "--graph-file",
@@ -2365,6 +3335,10 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--learning-rate",
         "--lr-schedule",
         "--learning-rate-schedule",
+        "--lr-schedule-total-steps",
+        "--train-seed",
+        "--resume-from-checkpoint",
+        "--native-cuda-resume-from-checkpoint",
         "--final-lr-fraction",
         "--learning-rate-decay-frac",
         "--learning-rate-decay-fraction",
@@ -2390,6 +3364,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--preset",
         "--graph-file",
         "--graph",
+        "--graph-fingerprint",
+        "--graph-preflight-proof",
         "--native-cuda-checkpoint-every",
         "--native-cuda-sample-every",
         "--native-cuda-generate-tokens",
@@ -2398,6 +3374,14 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--native-cuda-activation",
         "--moa-interval",
         "--native-cuda-moa-interval",
+        "--experts",
+        "--native-cuda-experts",
+        "--top-k",
+        "--native-cuda-top-k",
+        "--layers-per-expert",
+        "--native-cuda-layers-per-expert",
+        "--router-aux-loss-coef",
+        "--native-cuda-router-aux-loss-coef",
     }
     while idx < len(argv):
         arg = argv[idx]
@@ -2870,12 +3854,463 @@ def _run_native_train_with_progress(
             eval_log.close()
 
 
+def _run_native_pipeline_train_with_progress(
+    commands: list[list[str]],
+    env: dict[str, str],
+    *,
+    train_log_file: str | None,
+    eval_log_file: str | None,
+    progress_tui: bool,
+) -> int:
+    """Launch and multiplex one strict native Glimmer process per stage."""
+
+    train_log = _open_optional_log(train_log_file)
+    eval_log = _open_optional_log(eval_log_file)
+    processes: list[subprocess.Popen[str]] = []
+    selector = selectors.DefaultSelector()
+    try:
+        for rank, command in enumerate(commands):
+            _write_log(
+                train_log,
+                f"[nfn-pipeline] rank={rank} command={shlex.join(command)}\n",
+            )
+            process = subprocess.Popen(
+                command,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            processes.append(process)
+            assert process.stdout is not None
+            assert process.stderr is not None
+            selector.register(process.stdout, selectors.EVENT_READ, (rank, "stdout"))
+            selector.register(process.stderr, selectors.EVENT_READ, (rank, "stderr"))
+        if progress_tui:
+            _print_train_tui_panel(
+                "NeuralFn Glimmer Pipeline Training",
+                [
+                    ("world size", str(len(commands))),
+                    ("transport", "NCCL point-to-point + all-reduce"),
+                    ("train log", train_log_file or "off"),
+                    ("eval log", eval_log_file or "off"),
+                ],
+            )
+        while selector.get_map():
+            for key, _events in selector.select(timeout=0.2):
+                line = key.fileobj.readline()
+                rank, stream_name = key.data
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    continue
+                tagged = f"[rank {rank}] {line}"
+                if stream_name == "stdout":
+                    _write_log(eval_log, tagged)
+                    if rank == 0:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    elif progress_tui:
+                        sys.stderr.write(tagged)
+                        sys.stderr.flush()
+                else:
+                    _write_log(train_log, tagged)
+                    sys.stderr.write(tagged)
+                    sys.stderr.flush()
+            failed = [
+                process.returncode
+                for process in processes
+                if process.poll() not in {None, 0}
+            ]
+            if failed:
+                for process in processes:
+                    if process.poll() is None:
+                        process.terminate()
+        return_codes = [process.wait() for process in processes]
+        return next((code for code in return_codes if code != 0), 0)
+    finally:
+        selector.close()
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+        if train_log is not None:
+            train_log.close()
+        if eval_log is not None:
+            eval_log.close()
+
+
+def _replace_value_argument(
+    argv: list[str],
+    aliases: tuple[str, ...],
+    canonical_flag: str,
+    value: str,
+) -> list[str]:
+    """Replace all split/equal spellings of one value option."""
+
+    out: list[str] = []
+    idx = 0
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in aliases:
+            if idx + 1 >= len(argv) or argv[idx + 1].startswith("--"):
+                raise ValueError(f"{arg} requires a value")
+            idx += 2
+            continue
+        if any(arg.startswith(alias + "=") for alias in aliases):
+            idx += 1
+            continue
+        out.append(arg)
+        idx += 1
+    out.extend([canonical_flag, value])
+    return out
+
+
+def _native_glimmer_pipeline_commands(
+    command: list[str], tokens: list[str]
+) -> tuple[list[list[str]], Path | None]:
+    raw_world = _arg_value(command, "--pipeline-parallel-size")
+    if raw_world is None:
+        return [command], None
+    try:
+        world = int(raw_world)
+    except ValueError as exc:
+        raise ValueError("--pipeline-parallel-size must be an integer") from exc
+    if world <= 1:
+        return [command], None
+    if _explicit_arg(command, "--pipeline-parallel-rank"):
+        return [command], None
+    if _explicit_arg(command, "--print-distributed-plan"):
+        return [command], None
+    if _explicit_arg(command, "--cuda-device"):
+        raise ValueError(
+            "multi-rank launch assigns --cuda-device per child; use "
+            "--pipeline-cuda-devices instead"
+        )
+    raw_devices = _arg_value(tokens, "--pipeline-cuda-devices")
+    if raw_devices is None:
+        devices = list(range(world))
+    else:
+        try:
+            devices = [int(value.strip()) for value in raw_devices.split(",")]
+        except ValueError as exc:
+            raise ValueError(
+                "--pipeline-cuda-devices must be a comma-separated integer list"
+            ) from exc
+        if len(devices) != world or any(device < 0 for device in devices) or len(set(devices)) != world:
+            raise ValueError(
+                "--pipeline-cuda-devices must contain one distinct non-negative "
+                "device index per pipeline rank"
+            )
+    temporary_root: Path | None = None
+    bootstrap = _arg_value(command, "--distributed-id-file")
+    if not bootstrap:
+        temporary_root = Path(tempfile.mkdtemp(prefix="nfn-glimmer-pipeline-"))
+        bootstrap = str(temporary_root / "nccl-unique-id.bin")
+    commands: list[list[str]] = []
+    for rank, device in enumerate(devices):
+        child = _replace_value_argument(
+            command,
+            ("--pipeline-parallel-rank",),
+            "--pipeline-parallel-rank",
+            str(rank),
+        )
+        child = _replace_value_argument(
+            child, ("--cuda-device",), "--cuda-device", str(device)
+        )
+        child = _replace_value_argument(
+            child,
+            ("--distributed-id-file",),
+            "--distributed-id-file",
+            bootstrap,
+        )
+        commands.append(child)
+    return commands, temporary_root
+
+
+def _canonical_native_graph_training_tokens(tokens: list[str], plan) -> list[str]:
+    """Make the validated graph, rather than conflicting CLI labels, authoritative."""
+
+    drop_value_flags = (
+        "--base-model",
+        "--model",
+        "--model-family",
+        "--template-name",
+        "--template",
+        "--preset",
+        "--graph-file",
+        "--graph",
+        "--graph-fingerprint",
+        "--graph-preflight-proof",
+        "--num-layers",
+        "--train-seq-len",
+        "--seq-len",
+        "--model-dim",
+        "--native-cuda-model-dim",
+        "--hidden-dim",
+        "--ffn-hidden-dim",
+        "--native-cuda-hidden-dim",
+        "--mlp-multiplier",
+        "--mlp-mult",
+        "--native-cuda-mlp-multiplier",
+        "--multiple-of",
+        "--native-cuda-multiple-of",
+        "--num-heads",
+        "--native-cuda-num-heads",
+        "--num-kv-heads",
+        "--native-cuda-num-kv-heads",
+        "--vocab-size",
+        "--native-cuda-vocab-size",
+        "--padded-vocab-size",
+        "--native-cuda-padded-vocab-size",
+        "--rope-theta",
+        "--rope-base",
+        "--native-cuda-rope-theta",
+        "--rope-factor",
+        "--native-cuda-rope-factor",
+        "--original-max-position",
+        "--native-cuda-original-max-position",
+        "--activation",
+        "--native-cuda-activation",
+        "--moa-interval",
+        "--native-cuda-moa-interval",
+    )
+    out: list[str] = [tokens[0]] if tokens else ["train"]
+    idx = 1
+    while idx < len(tokens):
+        arg = tokens[idx]
+        if arg in drop_value_flags:
+            if idx + 1 >= len(tokens) or tokens[idx + 1].startswith("--"):
+                raise ValueError(f"{arg} requires a value")
+            idx += 2
+            continue
+        if any(arg.startswith(flag + "=") for flag in drop_value_flags):
+            idx += 1
+            continue
+        out.append(arg)
+        idx += 1
+    if plan.trainer_family in {"llama", "mixllama"}:
+        out = [arg for arg in out if arg != "--train-transformer-lm"]
+    out.extend(["--base-model", plan.trainer_family])
+    out.extend(["--graph-file", str(plan.launch_graph)])
+    out.extend(plan.trainer_arguments)
+    if plan.trainer_family == "llama" and not _has_any(
+        out,
+        "--dry-run",
+        "--native-cuda-dry-run",
+        "--print-plan",
+        "--native-cuda-print-plan",
+        "--check-tile-ops",
+        "--native-cuda-check-tile-ops",
+        "--sample-token-batch",
+        "--list-templates",
+        "--native-cuda-list-templates",
+    ):
+        out.append("--train-llama-dataset-loop")
+    if plan.trainer_family == "mixllama" and not _has_any(
+        out,
+        "--dry-run",
+        "--native-cuda-dry-run",
+        "--print-plan",
+        "--native-cuda-print-plan",
+        "--check-tile-ops",
+        "--native-cuda-check-tile-ops",
+        "--sample-token-batch",
+        "--list-templates",
+        "--native-cuda-list-templates",
+    ):
+        out.append("--train-moe-dataset-loop")
+    return out
+
+
+_NATIVE_GRAPH_TRAIN_VALUE_FLAGS = frozenset(
+    {
+        "--train-seq-len",
+        "--train-batch-tokens",
+        "--train-loss-every-steps",
+        "--train-log-every",
+        "--train-log-every-steps",
+    }
+)
+
+
+def _native_graph_training_caller_actions(tokens: list[str]) -> tuple[str, ...]:
+    """Reject caller-selected execution modes before graph canonicalization."""
+
+    actions: list[str] = []
+    for raw in tokens:
+        flag = str(raw).split("=", 1)[0]
+        is_action = (
+            flag == "--no-train-transformer-lm"
+            or flag.startswith("--smoke-")
+            or flag.startswith("--native-cuda-smoke-")
+            or flag.startswith("--native-cuda-train-")
+            or (flag.startswith("--train-") and flag not in _NATIVE_GRAPH_TRAIN_VALUE_FLAGS)
+        )
+        if is_action and flag not in actions:
+            actions.append(flag)
+    return tuple(actions)
+
+
+def _native_graph_training_artifact_dir(command: list[str]) -> Path:
+    output_value = _arg_value(
+        command, "--output-dir", "--native-cuda-output-dir"
+    ) or os.environ.get(
+        "NATIVE_CUDA_OUTPUT_DIR", ""
+    )
+    if str(output_value).strip():
+        output_dir = Path(str(output_value)).expanduser().resolve()
+    else:
+        output_dir = (Path.home() / "NeuralFn" / "artifacts" / "gpt").resolve()
+    return output_dir / "native-ir"
+
+
+def _print_native_graph_training_rejection(plan) -> None:
+    issues = [
+        issue.to_dict()
+        for issue in (*plan.compatibility_report.issues, *plan.training_issues)
+        if issue.severity == "error"
+    ]
+    payload = {
+        "status": "native-graph-training-incompatible",
+        "source_graph": str(plan.source_graph),
+        "graph_fingerprint": plan.compatibility_report.graph_fingerprint,
+        "structurally_compatible": plan.compatibility_report.compatible,
+        "trainer_family": plan.trainer_family,
+        "training_selector": plan.training_selector,
+        "native_target": plan.native_target,
+        "execution_ready": plan.execution_ready,
+        "trainer_consumes_native_ir": plan.trainer_consumes_native_ir,
+        "graph_preflight_enforced": plan.graph_preflight_enforced,
+        "blockers": list(plan.blockers),
+        "issues": issues,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+
+
 def _direct_native_train_cli_main(
     argv: list[str] | None = None,
     *,
     progress_tui: bool = False,
 ) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
+    source_graph = _arg_value(tokens, "--graph-file", "--graph")
+    graph_plan = None
+    graph_plan_materialized = False
+    if source_graph:
+        try:
+            from neuralfn.native_graph_train import plan_native_graph_training
+
+            graph_plan = plan_native_graph_training(source_graph)
+        except (FileExistsError, FileNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            print(f"Native graph training preflight failed: {exc}", file=sys.stderr)
+            return 2
+        if not graph_plan.execution_ready:
+            _print_native_graph_training_rejection(graph_plan)
+            return 2
+        unsupported_actions = _native_graph_training_caller_actions(tokens)
+        if unsupported_actions:
+            print(
+                "Native graph training selects its reviewed production action from the graph; "
+                f"remove: {', '.join(unsupported_actions)}",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            tokens = _canonical_native_graph_training_tokens(tokens, graph_plan)
+        except ValueError as exc:
+            print(f"Invalid native graph training option: {exc}", file=sys.stderr)
+            return 2
+        if graph_plan.training_selector == "gpt2_diff":
+            planner_inspection = _has_any(
+                tokens,
+                "--dry-run",
+                "--native-cuda-dry-run",
+                "--print-plan",
+                "--native-cuda-print-plan",
+            )
+            print_command = _has_any(
+                tokens,
+                "--print-command",
+                "--native-cuda-print-command",
+            )
+            if planner_inspection:
+                # Inspection is a Python planner result, not an unproved native
+                # child command.  It therefore remains non-mutating while the
+                # C++ boundary stays strict for every graph-bound invocation.
+                print(json.dumps(graph_plan.to_dict(), indent=2, sort_keys=True))
+                return 0
+            if print_command:
+                print(
+                    json.dumps(
+                        {
+                            "status": "native-graph-training-materialization-required",
+                            "training_selector": graph_plan.training_selector,
+                            "source_graph": str(graph_plan.source_graph),
+                            "source_graph_sha256": (
+                                graph_plan.compatibility_report.graph_fingerprint
+                            ),
+                            "executable_command": None,
+                            "workflow": (
+                                "Run without --print-command so the trusted planner can "
+                                "materialize source-graph.json and native-training-proof.json "
+                                "before constructing the native child command."
+                            ),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            artifact_dir = _native_graph_training_artifact_dir(tokens)
+            try:
+                materialized_plan = plan_native_graph_training(
+                    graph_plan.source_graph,
+                    artifact_dir=artifact_dir,
+                    materialize=True,
+                )
+            except (
+                FileExistsError,
+                FileNotFoundError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                print(
+                    f"Unable to materialize native graph training preflight: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
+            if (
+                not materialized_plan.execution_ready
+                or materialized_plan.compatibility_report.graph_fingerprint
+                != graph_plan.compatibility_report.graph_fingerprint
+                or materialized_plan.training_selector != graph_plan.training_selector
+                or materialized_plan.graph_preflight_proof is None
+            ):
+                print(
+                    "Source graph changed while preparing native training; refusing to launch.",
+                    file=sys.stderr,
+                )
+                return 2
+            graph_plan = materialized_plan
+            graph_plan_materialized = True
+            try:
+                tokens = _canonical_native_graph_training_tokens(tokens, graph_plan)
+            except ValueError as exc:
+                print(f"Invalid native graph training option: {exc}", file=sys.stderr)
+                return 2
+            print(
+                "[nfn-native-graph] "
+                f"selector={graph_plan.training_selector} "
+                f"fingerprint={graph_plan.compatibility_report.graph_fingerprint} "
+                f"artifact={graph_plan.artifact_metadata['training_plan_path']}",
+                file=sys.stderr,
+            )
     try:
         command = _direct_native_train_cli_argv(tokens)
     except ValueError as exc:
@@ -2893,7 +4328,21 @@ def _direct_native_train_cli_main(
         and _resolve_direct_native_train_family_cli(model) is not None
     )
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))
+    raw_pipeline_world = _arg_value(command, "--pipeline-parallel-size")
+    try:
+        pipeline_world = int(raw_pipeline_world) if raw_pipeline_world is not None else 1
+    except ValueError:
+        pipeline_world = 1
+    automatic_glimmer_pipeline = bool(
+        model in {"muse-glimmer", "muse_glimmer"}
+        and pipeline_world > 1
+        and not _explicit_arg(command, "--pipeline-parallel-rank")
+        and not _explicit_arg(command, "--print-distributed-plan")
+    )
+    if not automatic_glimmer_pipeline:
+        _set_env_default_if_empty(
+            env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0")
+        )
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     train_log_file, eval_log_file = _native_train_log_paths(tokens)
@@ -2918,6 +4367,58 @@ def _direct_native_train_cli_main(
     ):
         print(shlex.join(command))
         return 0
+    graph_training_execution = bool(
+        graph_plan is not None
+        and not graph_plan_materialized
+        and "--dry-run" not in command
+        and "--print-command" not in command
+        and not any(flag in command for flag in native_execution_flags)
+    )
+    if graph_training_execution:
+        from neuralfn.native_graph_train import plan_native_graph_training
+
+        artifact_dir = _native_graph_training_artifact_dir(command)
+        try:
+            materialized_plan = plan_native_graph_training(
+                graph_plan.source_graph,
+                artifact_dir=artifact_dir,
+                materialize=True,
+            )
+        except (FileExistsError, FileNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            print(f"Unable to materialize native graph training preflight: {exc}", file=sys.stderr)
+            return 2
+        if (
+            not materialized_plan.execution_ready
+            or materialized_plan.compatibility_report.graph_fingerprint
+            != graph_plan.compatibility_report.graph_fingerprint
+            or materialized_plan.training_selector != graph_plan.training_selector
+        ):
+            print(
+                "Source graph changed while preparing native training; refusing to launch.",
+                file=sys.stderr,
+            )
+            return 2
+        graph_plan = materialized_plan
+        command = _replace_value_argument(
+            command,
+            ("--graph-file", "--graph"),
+            "--graph-file",
+            str(graph_plan.launch_graph),
+        )
+        if graph_plan.graph_preflight_proof is not None:
+            command = _replace_value_argument(
+                command,
+                ("--graph-preflight-proof",),
+                "--graph-preflight-proof",
+                str(graph_plan.graph_preflight_proof),
+            )
+        print(
+            "[nfn-native-graph] "
+            f"selector={graph_plan.training_selector} "
+            f"fingerprint={graph_plan.compatibility_report.graph_fingerprint} "
+            f"artifact={graph_plan.artifact_metadata['training_plan_path']}",
+            file=sys.stderr,
+        )
     if model == "embedding":
         try:
             from neuralfn.native_embedding import prepare_embedding_training_command
@@ -2930,6 +4431,25 @@ def _direct_native_train_cli_main(
         if _native_command_is_dense_gpt_cli(command):
             return _run_dense_gpt_compiled_cli_capture(command, env)
         return int(subprocess.run(command, env=env, check=False).returncode)
+    if automatic_glimmer_pipeline:
+        try:
+            pipeline_commands, temporary_root = _native_glimmer_pipeline_commands(
+                command, tokens
+            )
+        except ValueError as exc:
+            print(f"Invalid native Glimmer pipeline launch: {exc}", file=sys.stderr)
+            return 2
+        try:
+            return _run_native_pipeline_train_with_progress(
+                pipeline_commands,
+                env,
+                train_log_file=train_log_file,
+                eval_log_file=eval_log_file,
+                progress_tui=progress_tui,
+            )
+        finally:
+            if temporary_root is not None:
+                shutil.rmtree(temporary_root, ignore_errors=True)
     return _run_native_train_with_progress(
         command,
         env,
@@ -3036,6 +4556,30 @@ def main(
         return _native_embedding_infer_main(tokens)
     if _is_direct_native_train_cli_train(tokens):
         return _direct_native_train_cli_main(tokens)
+    if _is_lightweight_graph_migrate(tokens):
+        return _lightweight_graph_migrate_main(tokens)
+    if _is_lightweight_muse_glimmer_migrate(tokens):
+        return _lightweight_muse_glimmer_migrate_main(tokens)
+    if _is_lightweight_muse_glimmer_gguf_migrate(tokens):
+        return _lightweight_muse_glimmer_gguf_migrate_main(tokens)
+    if _is_lightweight_muse_glimmer_lora_migrate(tokens):
+        return _lightweight_muse_glimmer_lora_migrate_main(tokens)
+    if _is_blocked_legacy_infer_request(tokens):
+        return _blocked_legacy_infer_main(tokens)
+    if _is_native_serve_request(tokens):
+        return _native_serve_main(tokens)
+    if _is_native_ir_infer_request(tokens):
+        return _native_ir_infer_main(
+            tokens,
+            stdin_isatty=stdin_isatty,
+            stdout_isatty=stdout_isatty,
+        )
+    if _legacy_infer_inputs(tokens) is not None:
+        return _legacy_infer_main(
+            tokens,
+            stdin_isatty=stdin_isatty,
+            stdout_isatty=stdout_isatty,
+        )
     if stdin_isatty is None and stdout_isatty is None:
         if _is_explicit_native_gpt_train(tokens):
             from train_gpt_native import main as train_gpt_native_main
@@ -3073,6 +4617,14 @@ if __name__ == "__main__":
         main = _direct_native_train_cli_main
     elif _is_explicit_native_gpt_train(sys.argv[1:]):
         from train_gpt_native import main as main
+    elif _is_blocked_legacy_infer_request(sys.argv[1:]):
+        main = _blocked_legacy_infer_main
+    elif _is_native_serve_request(sys.argv[1:]):
+        main = _native_serve_main
+    elif _is_native_ir_infer_request(sys.argv[1:]):
+        main = _native_ir_infer_main
+    elif _legacy_infer_inputs(sys.argv[1:]) is not None:
+        main = _legacy_infer_main
     elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
         main = _lightweight_native_gpt_infer_main
     elif _is_lightweight_native_family_infer(sys.argv[1:]):
@@ -3081,6 +4633,14 @@ if __name__ == "__main__":
         main = _invalid_native_gpt_infer_main
     elif _is_lightweight_root_help(sys.argv[1:]):
         main = _lightweight_root_main
+    elif _is_lightweight_graph_migrate(sys.argv[1:]):
+        main = _lightweight_graph_migrate_main
+    elif _is_lightweight_muse_glimmer_migrate(sys.argv[1:]):
+        main = _lightweight_muse_glimmer_migrate_main
+    elif _is_lightweight_muse_glimmer_gguf_migrate(sys.argv[1:]):
+        main = _lightweight_muse_glimmer_gguf_migrate_main
+    elif _is_lightweight_muse_glimmer_lora_migrate(sys.argv[1:]):
+        main = _lightweight_muse_glimmer_lora_migrate_main
     elif _is_lightweight_command_help(sys.argv[1:]):
         main = _lightweight_command_help_main
     elif _is_lightweight_kernels_list(sys.argv[1:]):
@@ -3101,9 +4661,25 @@ if __name__ == "__main__":
         raise SystemExit(main(sys.argv[1:]))
     if _is_explicit_native_gpt_train(sys.argv[1:]):
         raise SystemExit(main(_native_gpt_argv(sys.argv[1:])))
+    if _is_blocked_legacy_infer_request(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_native_serve_request(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_native_ir_infer_request(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _legacy_infer_inputs(sys.argv[1:]) is not None:
+        raise SystemExit(main(sys.argv[1:]))
     if _is_lightweight_native_gpt_infer(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_lightweight_native_family_infer(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_lightweight_graph_migrate(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_lightweight_muse_glimmer_migrate(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_lightweight_muse_glimmer_gguf_migrate(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_lightweight_muse_glimmer_lora_migrate(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_legacy_graph_train(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))

@@ -101,7 +101,7 @@
 | `openSubgraph(nodeId)` | Navigates into a node's subgraph by extending `currentPath`. |
 | `openVariant(nodeId)` | Navigates into a variant node's resolved subgraph. |
 | `setPath(path)` | Sets the subgraph navigation path directly. |
-| `updateActiveGraphSettings(updates)` | Updates settings (name, training method, configs) on the active subgraph. |
+| `updateActiveGraphSettings(updates)` | Updates settings (name, training method, `scalar | torch | native-cuda` runtime, configs) on the active subgraph. |
 
 ## Selectors
 

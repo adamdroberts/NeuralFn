@@ -119,6 +119,12 @@ class NativeGpt2RunConfig:
     beta2: float = 0.95
     adam_eps: float = 1e-8
     grad_clip_norm: float = 1.0
+    lr_schedule: str = "cosine"
+    lr_schedule_total_steps: int | None = None
+    train_seed: int | None = None
+    resume_from_checkpoint: str = ""
+    graph_fingerprint: str = ""
+    graph_preflight_proof: str = ""
     eval_batches: int = 1
     eval_batch_size: int = 0
     train_loss_every_steps: int = 250
@@ -159,7 +165,76 @@ class NativeGpt2RunConfig:
     model_family: str = "gpt"
     strict_native_command: bool = True
 
+    def _native_only_field_names(self) -> list[str]:
+        native_only: list[str] = []
+        if normalize_native_gpt2_lr_schedule(self.lr_schedule) != "cosine":
+            native_only.append("lr_schedule")
+        if self.lr_schedule_total_steps is not None:
+            native_only.append("lr_schedule_total_steps")
+        if self.train_seed is not None:
+            native_only.append("train_seed")
+        if str(self.resume_from_checkpoint or "").strip():
+            native_only.append("resume_from_checkpoint")
+        if str(self.graph_file or "").strip():
+            native_only.append("graph_file")
+        if str(self.graph_fingerprint or "").strip():
+            native_only.append("graph_fingerprint")
+        if str(self.graph_preflight_proof or "").strip():
+            native_only.append("graph_preflight_proof")
+        return native_only
+
+    def _legacy_command_error(self) -> str:
+        native_only = self._native_only_field_names()
+        if not native_only:
+            return ""
+        return (
+            "the legacy llm.kittens short argv cannot represent native-only "
+            f"fields: {', '.join(native_only)}; use runner='compiled-cli' or the "
+            "tile-cuda binding/launcher resolver"
+        )
+
+    def _validate_compiled_cli_contract(self) -> None:
+        if (
+            self.lr_schedule_total_steps is not None
+            and int(self.lr_schedule_total_steps) <= 0
+        ):
+            raise ValueError("lr_schedule_total_steps must be positive when provided")
+        raw_graph_preflight_proof = str(self.graph_preflight_proof or "")
+        graph_preflight_proof = raw_graph_preflight_proof.strip()
+        if _resolved_native_gpt2_template_name(self.template_name) != "gpt2_diff":
+            if graph_preflight_proof:
+                raise ValueError(
+                    "graph_preflight_proof is only valid for gpt2_diff graph training"
+                )
+            return
+        graph_file = str(self.graph_file or "").strip()
+        raw_graph_fingerprint = str(self.graph_fingerprint or "")
+        graph_fingerprint = raw_graph_fingerprint.strip()
+        if not graph_file and not graph_fingerprint and not graph_preflight_proof:
+            return
+        if not graph_file or not graph_fingerprint or not graph_preflight_proof:
+            raise ValueError(
+                "gpt2_diff requires graph_file, graph_fingerprint, and "
+                "graph_preflight_proof together; direct graph training must use "
+                "plan_native_graph_training(..., materialize=True)"
+            )
+        if (
+            raw_graph_fingerprint != graph_fingerprint
+            or len(graph_fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in graph_fingerprint)
+        ):
+            raise ValueError(
+                "gpt2_diff graph_fingerprint must be 64 lowercase hexadecimal characters"
+            )
+        if raw_graph_preflight_proof != graph_preflight_proof:
+            raise ValueError(
+                "gpt2_diff graph_preflight_proof path must not contain surrounding whitespace"
+            )
+
     def argv(self) -> list[str]:
+        legacy_error = self._legacy_command_error()
+        if legacy_error:
+            raise ValueError(legacy_error)
         args = [
             self.executable,
             "-i",
@@ -214,6 +289,18 @@ class NativeGpt2RunConfig:
 
     def launcher_argv(self, launcher: str | None = None) -> list[str]:
         launcher_path = resolve_native_gpt2_launcher(launcher)
+        if (
+            str(self.kernel_backend or "").strip().lower() == "tile-cuda"
+            and (self.dataset_alias is not None or bool(self._legacy_command_error()))
+        ):
+            compiled = self.compiled_cli_argv()
+            return [
+                launcher_path,
+                "--target",
+                compiled[0],
+                "--",
+                *compiled[1:],
+            ]
         return [
             launcher_path,
             "--target",
@@ -226,7 +313,27 @@ class NativeGpt2RunConfig:
         return shlex.join(self.launcher_argv(launcher))
 
     def compiled_cli_argv(self, cli: str | None = None) -> list[str]:
-        cli_path = resolve_native_gpt2_cli(cli)
+        self._validate_compiled_cli_contract()
+        native_only = self._native_only_field_names()
+        if (
+            native_only
+            and str(self.kernel_backend or "").strip().lower() != "tile-cuda"
+        ):
+            raise ValueError(
+                "native-only schedule, seed, resume, and graph fields require "
+                "kernel_backend='tile-cuda'"
+            )
+        if native_only and self.dataset_alias is None and cli is None:
+            raise ValueError(
+                "strict native GPT fields cannot be represented by legacy short "
+                f"executable {self.executable!r}: {', '.join(native_only)}; use "
+                "build_native_gpt_compiled_cli_run_config(...), or set "
+                "dataset_alias and executable to nfn_gpt_native_train"
+            )
+        requested_cli = cli
+        if requested_cli is None and self.dataset_alias is not None:
+            requested_cli = self.executable
+        cli_path = resolve_native_gpt2_cli(requested_cli)
         dataset_alias = str(self.dataset_alias or "").strip() or str(Path(self.train_data).parent)
         args = [
             cli_path,
@@ -258,6 +365,8 @@ class NativeGpt2RunConfig:
             str(int(self.train_batch_tokens)),
             "--learning-rate",
             str(float(self.learning_rate)),
+            "--lr-schedule",
+            normalize_native_gpt2_lr_schedule(self.lr_schedule),
             "--final-lr-fraction",
             str(float(self.final_lr_fraction)),
             "--weight-decay",
@@ -283,6 +392,16 @@ class NativeGpt2RunConfig:
             args.extend(["--train-seq-len", str(int(self.seq_len))])
         if self.num_layers_explicit:
             args.extend(["--num-layers", str(int(str(self.model_descriptor).removeprefix("d") or "12"))])
+        if self.lr_schedule_total_steps is not None:
+            args.extend(
+                ["--lr-schedule-total-steps", str(int(self.lr_schedule_total_steps))]
+            )
+        if self.train_seed is not None:
+            args.extend(["--train-seed", str(int(self.train_seed))])
+        if str(self.resume_from_checkpoint or "").strip():
+            args.extend(
+                ["--resume-from-checkpoint", str(self.resume_from_checkpoint)]
+            )
         tile_ops_lib = str(self.tile_ops_lib or "").strip()
         if tile_ops_lib:
             args.extend(["--tile-ops-lib", tile_ops_lib])
@@ -328,18 +447,45 @@ class NativeGpt2RunConfig:
             args.extend(["--template-name", str(self.template_name)])
         if str(self.graph_file or "").strip():
             args.extend(["--graph-file", str(self.graph_file)])
+        if str(self.graph_fingerprint or "").strip():
+            args.extend(["--graph-fingerprint", str(self.graph_fingerprint)])
+        if str(self.graph_preflight_proof or "").strip():
+            args.extend(["--graph-preflight-proof", str(self.graph_preflight_proof)])
         return args
 
     def compiled_cli_command(self, cli: str | None = None) -> str:
         return shlex.join(self.compiled_cli_argv(cli))
 
     def to_dict(self) -> dict[str, Any]:
+        legacy_error = self._legacy_command_error()
+        if legacy_error:
+            argv: list[str] = []
+            command = ""
+            if str(self.kernel_backend or "").strip().lower() == "tile-cuda":
+                launcher_argv = self.launcher_argv()
+                launcher_command = shlex.join(launcher_argv)
+            else:
+                launcher_argv = []
+                launcher_command = ""
+        else:
+            argv = self.argv()
+            command = shlex.join(argv)
+            launcher_argv = self.launcher_argv()
+            launcher_command = shlex.join(launcher_argv)
         return {
             **asdict(self),
-            "argv": self.argv(),
-            "command": self.command(),
-            "launcher_argv": self.launcher_argv(),
-            "launcher_command": self.launcher_command(),
+            "argv": argv,
+            "command": command,
+            "launcher_argv": launcher_argv,
+            "launcher_command": launcher_command,
+            "legacy_command_error": legacy_error,
+            "prefer_compiled_cli": (
+                (
+                    str(self.kernel_backend or "").strip().lower() == "tile-cuda"
+                    and self.dataset_alias is not None
+                )
+                or bool(legacy_error)
+            ),
             "compiled_cli_argv": self.compiled_cli_argv(),
             "compiled_cli_command": self.compiled_cli_command(),
         }
@@ -989,6 +1135,19 @@ def native_gpt2_activation(value: str | None) -> str:
     return aliases[normalized]
 
 
+def normalize_native_gpt2_lr_schedule(value: str | None) -> str:
+    normalized = str(value or "cosine").strip().lower().replace("_", "-")
+    aliases = {
+        "constant": "constant",
+        "fixed": "constant",
+        "cosine": "cosine",
+        "cosine-decay": "cosine",
+    }
+    if normalized not in aliases:
+        raise ValueError("native GPT lr_schedule must be cosine or constant")
+    return aliases[normalized]
+
+
 def _normalize_native_gpt2_template_name(value: str | None) -> str:
     normalized = str(value or "gpt").strip().lower().replace("-", "_")
     return normalized or "gpt"
@@ -1057,6 +1216,18 @@ def resolve_native_gpt2_token_shards(
     return meta, train_files[0], val_files[0]
 
 
+def _native_gpt2_final_lr_fraction(
+    learning_rate: float,
+    min_lr: float | None,
+    explicit_fraction: float | None,
+) -> float:
+    if explicit_fraction is not None:
+        return max(0.0, min(float(explicit_fraction), 1.0))
+    if min_lr is None or learning_rate <= 0.0:
+        return 0.0
+    return max(0.0, min(float(min_lr) / learning_rate, 1.0))
+
+
 def build_native_gpt2_run_config(
     *,
     dataset_name: str,
@@ -1083,6 +1254,12 @@ def build_native_gpt2_run_config(
     beta2: float = 0.95,
     adam_eps: float = 1e-8,
     grad_clip_norm: float = 1.0,
+    lr_schedule: str = "cosine",
+    lr_schedule_total_steps: int | None = None,
+    train_seed: int | None = None,
+    resume_from_checkpoint: str = "",
+    graph_fingerprint: str = "",
+    graph_preflight_proof: str = "",
     eval_batches: int = 1,
     eval_batch_size: int = 0,
     train_loss_every_steps: int = 250,
@@ -1115,6 +1292,7 @@ def build_native_gpt2_run_config(
     seq_len_explicit: bool = True,
     num_layers_explicit: bool = True,
     strict_native_command: bool = True,
+    final_lr_fraction: float | None = None,
 ) -> tuple[NativeGpt2RunConfig, dict[str, Any]]:
     meta, train_data, val_data = resolve_native_gpt2_token_shards(
         dataset_name,
@@ -1124,7 +1302,11 @@ def build_native_gpt2_run_config(
         allow_train_as_val=allow_train_as_val,
     )
     lr = float(learning_rate)
-    final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
+    resolved_final_lr_fraction = _native_gpt2_final_lr_fraction(
+        lr,
+        min_lr,
+        final_lr_fraction,
+    )
     resolved_template_name = _native_gpt2_template_for_model_family(
         model_family=model_family,
         template_name=template_name,
@@ -1149,7 +1331,7 @@ def build_native_gpt2_run_config(
         seq_len=int(seq_len),
         train_batch_tokens=int(train_batch_tokens),
         learning_rate=lr,
-        final_lr_fraction=final_lr_fraction,
+        final_lr_fraction=resolved_final_lr_fraction,
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
@@ -1157,6 +1339,16 @@ def build_native_gpt2_run_config(
         beta2=float(beta2),
         adam_eps=float(adam_eps),
         grad_clip_norm=float(grad_clip_norm),
+        lr_schedule=normalize_native_gpt2_lr_schedule(lr_schedule),
+        lr_schedule_total_steps=(
+            None
+            if lr_schedule_total_steps is None
+            else int(lr_schedule_total_steps)
+        ),
+        train_seed=None if train_seed is None else int(train_seed),
+        resume_from_checkpoint=str(resume_from_checkpoint or ""),
+        graph_fingerprint=str(graph_fingerprint or ""),
+        graph_preflight_proof=str(graph_preflight_proof or ""),
         activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=native_gpt2_kernel_backend(kernel_backend),
@@ -1212,6 +1404,12 @@ def build_native_gpt2_compiled_cli_run_config(
     beta2: float = 0.95,
     adam_eps: float = 1e-8,
     grad_clip_norm: float = 1.0,
+    lr_schedule: str = "cosine",
+    lr_schedule_total_steps: int | None = None,
+    train_seed: int | None = None,
+    resume_from_checkpoint: str = "",
+    graph_fingerprint: str = "",
+    graph_preflight_proof: str = "",
     eval_batches: int = 1,
     eval_batch_size: int = 0,
     train_loss_every_steps: int = 250,
@@ -1243,11 +1441,16 @@ def build_native_gpt2_compiled_cli_run_config(
     seq_len_explicit: bool = True,
     num_layers_explicit: bool = True,
     strict_native_command: bool = True,
+    final_lr_fraction: float | None = None,
 ) -> NativeGpt2RunConfig:
     """Build a compiled-CLI handoff without Python-side token shard inspection."""
 
     lr = float(learning_rate)
-    final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
+    resolved_final_lr_fraction = _native_gpt2_final_lr_fraction(
+        lr,
+        min_lr,
+        final_lr_fraction,
+    )
     resolved_kernel_backend = native_gpt2_kernel_backend(kernel_backend)
     resolved_template_name = _native_gpt2_template_for_model_family(
         model_family=model_family,
@@ -1273,7 +1476,7 @@ def build_native_gpt2_compiled_cli_run_config(
         seq_len=int(seq_len),
         train_batch_tokens=int(train_batch_tokens),
         learning_rate=lr,
-        final_lr_fraction=final_lr_fraction,
+        final_lr_fraction=resolved_final_lr_fraction,
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
@@ -1281,6 +1484,16 @@ def build_native_gpt2_compiled_cli_run_config(
         beta2=float(beta2),
         adam_eps=float(adam_eps),
         grad_clip_norm=float(grad_clip_norm),
+        lr_schedule=normalize_native_gpt2_lr_schedule(lr_schedule),
+        lr_schedule_total_steps=(
+            None
+            if lr_schedule_total_steps is None
+            else int(lr_schedule_total_steps)
+        ),
+        train_seed=None if train_seed is None else int(train_seed),
+        resume_from_checkpoint=str(resume_from_checkpoint or ""),
+        graph_fingerprint=str(graph_fingerprint or ""),
+        graph_preflight_proof=str(graph_preflight_proof or ""),
         activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=resolved_kernel_backend,

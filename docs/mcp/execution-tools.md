@@ -100,11 +100,54 @@ Starts a training run on the current graph.
 | `method` | string | no | `"surrogate"` | Training method. |
 | `epochs` | int | no | `10` | Number of training epochs. |
 | `learning_rate` | float | no | `0.001` | Learning rate. |
-| `train_inputs` | dict | no | | Explicit training input data. |
-| `train_targets` | dict | no | | Explicit training target data. |
+| `train_inputs` | list[list[number]] | no | | Explicit training input data. |
+| `train_targets` | list[list[number]] | no | | Explicit training target data. |
 | `dataset_names` | list[string] | no | | Names of datasets to train on (alternative to explicit inputs/targets). |
+| `runtime` | string | no | graph runtime | `scalar`, `torch`, or `native-cuda`; appended to preserve existing positional callers. |
 
-**Returns:** starts the training run and returns an initial status message. Use `poll_training_status` to monitor progress.
+**Returns:** a synchronous server acknowledgement. A successful launch keeps
+the established `status="started"` value, exposes the initial REST state as
+`run_status` (normally `running`), and includes `run_id`, `runtime`,
+`compatibility_report`, `artifact_metadata`, and `checkpoint_path` when
+available. Use `poll_training_status` to monitor progress.
+
+For `runtime="native-cuda"`, `train_start` first calls the same Native IR
+preflight used by the editor. An incompatible graph returns
+`status="incompatible"`, `issues[]` with exact node paths, and no run ID; no
+trainer is launched. A compatible run materializes Native IR under the server
+artifact root and dispatches through the canonical native trainer registry.
+There is no Torch fallback.
+
+The current execution-ready graph-file adapters are the exact reviewed GPT-2
+profiles `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
+`gpt2_softcap`, `gpt2_stable`, and `gpt2_zloss`, plus canonical `llama`,
+`llama_fast`, exact standard-MoE `moe`, `mixllama`, and `mixllama_fast`, and
+trusted-planner proof-bound `gpt2_diff` training. `gpt2_diff` migration and
+resident inference remain unavailable because they do not consume its
+graph-bound learned-lambda bundle and its exact low-level native path is
+packed-QKV-only. MCP materialization requires the exact
+graph/fingerprint/proof triplet; its unkeyed proof digest is local-handoff
+integrity, not caller authenticity. The low-level
+bundle's version-2 metadata is continuation-only and binds all five binaries,
+the source graph, training-only shard identity, counters/sampler, seed,
+accumulation, optimizer/LR horizon, BF16 routes, and a canonical profile of
+supported effective numerics before Tile/CUDA/H2D. Completion returns the
+strict `.diff.json` only after full bundle validation. The graph-training total
+is 13 ready and 54 blocked; migration/resident stay 12 ready and 55 blocked.
+LLaMA preflight derives and binds its complete trainer geometry and source SHA;
+the server accepts its final checkpoint only when validated v2 metadata carries
+the same source digest. A completed graph-bound `gpt2_moa` run similarly returns the
+validated `model_XXXXXXXX.moa.json` path only after its named dense-v5 model,
+empty DONE marker, source hash, canonical candidates, selected activation, and
+positive interval pass inspection. Resuming a MoA run requires that same
+sidecar, restores its activation without a fresh probe, and rejects missing or
+changed metadata. This is graph-bound behavior; direct selector-only first-leg
+training may still write ordinary dense-v5, but its unbound output cannot
+resume exactly. Native runs require exactly
+one cached project dataset alias passed in `dataset_names` and support
+pretraining only. The compiled training ABI currently has no cooperative
+cancellation, so `train_stop` returns `status="unsupported"` for an active
+native run.
 
 ---
 
@@ -152,7 +195,8 @@ Stops the currently active training run.
 | `project_id` | string | yes | Project ID. |
 | `session_id` | string | yes | Session ID. |
 
-**Returns:** confirmation that the run was stopped.
+**Returns:** confirmation that the run was stopped, or `status="unsupported"`
+for a native run whose compiled trainer ABI cannot be cancelled cooperatively.
 
 ---
 

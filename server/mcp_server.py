@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -618,32 +617,51 @@ def train_start(
     train_inputs: list[list[float]] | None = None,
     train_targets: list[list[float]] | None = None,
     dataset_names: list[str] | None = None,
+    runtime: str | None = None,
 ) -> dict:
-    """Start training for one project/session in the background."""
+    """Preflight and start a background run, including native artifact metadata."""
+    if runtime not in {None, "scalar", "torch", "native-cuda"}:
+        raise ValueError("runtime must be one of: scalar, torch, native-cuda")
     payload = {
         "method": method,
+        "runtime": runtime,
         "epochs": epochs,
         "learning_rate": learning_rate,
         "train_inputs": train_inputs or [],
         "train_targets": train_targets or [],
         "dataset_names": dataset_names,
     }
-
-    def fire_and_forget() -> None:
-        req = urllib.request.Request(f"{BASE_URL}/{_session_prefix(project_id, session_id)}/runs", method="POST")
-        req.add_header("Content-Type", "application/json")
-        req.data = json.dumps(payload).encode("utf-8")
-        try:
-            _ensure_authenticated()
-            OPENER.open(req, timeout=1)
-        except Exception:
-            pass
-
-    threading.Thread(target=fire_and_forget, daemon=True).start()
+    with AgentSession(project_id, session_id):
+        preflight = _request(
+            "POST",
+            f"{_session_prefix(project_id, session_id)}/runs/preflight",
+            payload,
+        )
+        if preflight.get("runtime") == "native-cuda" and not preflight.get("execution_ready"):
+            return {
+                "status": "incompatible",
+                "requested_method": method,
+                **preflight,
+            }
+        started = _request(
+            "POST",
+            f"{_session_prefix(project_id, session_id)}/runs/start",
+            payload,
+        )
     return {
+        **started,
+        # Preserve the established MCP acknowledgement contract while exposing
+        # the REST run's live state separately.
         "status": "started",
+        "run_status": started.get("status", "running"),
         "requested_method": method,
-        "message": "Training request fired in the background.",
+        "runtime": started.get("runtime", runtime),
+        "compatibility_report": started.get(
+            "compatibility_report", preflight.get("compatibility_report", {})
+        ),
+        "artifact_metadata": started.get(
+            "artifact_metadata", preflight.get("artifact_metadata", {})
+        ),
         "poll_hint": "Use get_training_status() or poll_training_status() with the same project/session ids.",
     }
 
