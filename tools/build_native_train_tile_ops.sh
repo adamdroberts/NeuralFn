@@ -12,8 +12,28 @@ STRICT_OUT="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT:-${DEFAULT_STRICT_OUT}}"
 NVCC_BIN="${NVCC:-nvcc}"
 KERNELS_SRC="${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"
 ABI_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"
+GLIMMER_K_MMQ_SRC="${ROOT_DIR}/neuralfn/csrc/tile_cuda/glimmer_k_mmq.cu"
+GLIMMER_K_MMQ_VENDOR="${ROOT_DIR}/neuralfn/csrc/tile_cuda/vendor/llama_mmq_62bf73d"
 EXTRA_NVCC_FLAGS=()
 EXTRA_LDLIBS=()
+EXTRA_SOURCES=()
+USE_GLIMMER_K_MMQ="${NFN_TILE_CUDA_USE_GLIMMER_K_MMQ:-1}"
+case "${USE_GLIMMER_K_MMQ}" in
+  1|true|TRUE|yes|YES|on|ON)
+    EXTRA_NVCC_FLAGS+=(
+      "-I${GLIMMER_K_MMQ_VENDOR}/ggml/src/ggml-cuda"
+      "-I${GLIMMER_K_MMQ_VENDOR}/ggml/src"
+      "-I${GLIMMER_K_MMQ_VENDOR}/ggml/include"
+    )
+    EXTRA_SOURCES+=("${GLIMMER_K_MMQ_SRC}")
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_TILE_CUDA_USE_GLIMMER_K_MMQ value: ${USE_GLIMMER_K_MMQ}" >&2
+    exit 2
+    ;;
+esac
 USE_TK_ATTENTION="${NFN_TILE_CUDA_USE_TK_ATTENTION:-1}"
 CUDA_ARCH="${NFN_TILE_CUDA_ARCH:-$([[ "${USE_TK_ATTENTION}" == "1" ]] && printf 'sm_120a' || printf 'sm_120')}"
 if [[ "${USE_TK_ATTENTION}" == "1" ]]; then
@@ -67,7 +87,7 @@ mkdir -p "$(dirname "${OUT}")"
   -DNFN_TILE_CUDA_USE_CUBLAS_LINEAR=1 \
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
   "${EXTRA_NVCC_FLAGS[@]}" \
-  "${KERNELS_SRC}" "${ABI_SRC}" \
+  "${KERNELS_SRC}" "${ABI_SRC}" "${EXTRA_SOURCES[@]}" \
   -Xlinker -Bsymbolic \
   -lcublas -lcublasLt "${EXTRA_LDLIBS[@]}" \
   -o "${OUT}"
@@ -87,15 +107,22 @@ case "${NFN_NATIVE_BUILD_STRICT_TILE_OPS:-0}" in
     # sm_90 as well as sm_120.
     STRICT_CUDA_ARCH="${NFN_TILE_CUDA_STRICT_ARCH:-${CUDA_ARCH%a}}"
     mkdir -p "$(dirname "${STRICT_OUT}")"
+    # Glimmer decode streams packed weights once per projection. Bypassing L1
+    # for global loads preserves that cache for activation/cache traffic and
+    # is part of the accepted same-output RTX 5090 qualification profile.
     "${NVCC_BIN}" -std=c++20 -O3 --shared -Xcompiler -fPIC \
       -enable-tile \
       -arch="${STRICT_CUDA_ARCH}" \
       --ftz=false \
       --prec-div=true \
       --prec-sqrt=true \
+      -Xptxas=-dlcm=cg \
       -DNFN_TILE_CUDA_STRICT_MATH_BUILD=1 \
       -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
-      "${KERNELS_SRC}" "${ABI_SRC}" \
+      -I"${GLIMMER_K_MMQ_VENDOR}/ggml/src/ggml-cuda" \
+      -I"${GLIMMER_K_MMQ_VENDOR}/ggml/src" \
+      -I"${GLIMMER_K_MMQ_VENDOR}/ggml/include" \
+      "${KERNELS_SRC}" "${ABI_SRC}" "${EXTRA_SOURCES[@]}" \
       -Xlinker -Bsymbolic \
       -o "${STRICT_OUT}"
     printf '%s\n' "${STRICT_OUT}"

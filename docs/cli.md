@@ -121,10 +121,26 @@ nfn infer \
 `--weight-precision` accepts `auto`, `bf16`, `k-quant-dynamic`, or
 `k-quant-17gb`. CUDA `auto` chooses quality-first only after current free-VRAM,
 context/session cache, companion, staging, workspace, and reserve accounting.
-An explicit value never downgrades. `--speculative-decoding` accepts `off`,
+An explicit value never downgrades and is not rejected merely because a
+higher-quality profile could fit: `--weight-precision k-quant-17gb` remains a
+valid pin on a 32-GB card when its measured budget fits. `--speculative-decoding` accepts `off`,
 `auto`, or `required`; `required` fails rather than using target-only decode.
 The precision/speculation choices are server startup policy and cannot be
 overridden in a request body.
+
+For whole-model CUDA, `--strict-tile-ops-lib PATH` is an alias of
+`--tile-ops-lib PATH`. Both feed `NativeModelLoadConfig.tile_ops_lib`; the
+former makes the strict-sidecar purpose explicit and now works on the exact
+Native Execution artifact dispatch path as advertised by top-level help.
+The accepted strict sidecar uses measured packed-projection/RMS→MMVQ
+megakernels, DFlash packed-weight hoisting, verifier projection overlap,
+direct transactional K/V staging, short-context attention splitting, and an
+exact cooperative multirow dual-RMS megakernel. The final current-source run
+measured 271.244 DFlash tok/s median; disabling only the cooperative RMS in the
+same binary measured 264.724 tok/s with identical output and acceptance.
+Their exact controls, hashes, memory, and RTX 5090 distributions are recorded in
+[Resident Native Artifact CLI Inference](native-cli-inference.md); launch
+reduction alone is not used as an acceptance criterion.
 
 Attach a native LoRA or QLoRA result only after its base/tokenizer/template
 lineage has been authenticated:
@@ -261,23 +277,40 @@ native checkpoint is still required before serving or TurboQuant can be used.
 
 ## Interactive inference transcripts
 
-Interactive TTY graph inference defaults to `--chat-mode transcript`. Use
-`--chat-mode stateless` or `/mode stateless` for independent turns. An initial
-`--prompt` is the first transcript turn; `--system-prompt TEXT` adds a retained
-leading instruction that remains active in stateless mode and after `/reset`.
-`--chat-template auto|plain_roles|PATH` prefers a usable
-artifact/tokenizer template, accepts a data-only marker template from a file,
-and warns before falling back to `plain_roles` in CLI sessions.
+Interactive TTY graph inference defaults to `--chat-mode transcript` and opens
+the installed Rich native-chat TUI. Its banner shows the selected runtime,
+weight precision, cache, speculation mode, renderer, context, and sampling;
+assistant panels show new/reused prefill tokens, decode tok/s, and DFlash
+acceptance. Use `--chat-mode stateless` or `/mode stateless` for independent
+turns. An initial `--prompt` is the first transcript turn;
+`--system-prompt TEXT` adds a retained leading instruction that remains active
+in stateless mode and after `/reset`. `--chat-template
+auto|plain_roles|PATH` prefers a usable artifact/tokenizer template, accepts a
+data-only marker template from a file, and warns before falling back to
+`plain_roles` in CLI sessions.
+
+The interactive commands are `/mode stateless|transcript`, `/show` (alias
+`/stats`), `/reset`, `/clear`, `/help`, and `/exit`. `/show` reads live
+resident statistics without recreating the model. For packed Glimmer CUDA,
+its `cuda_device_argmax_calls` and `cuda_device_argmax_rows` values prove that
+ordinary greedy target selection or greedy DFlash proposal/verification
+selection stayed on device. `/reset` clears transcript turns and resident
+cache state but retains the configured system prompt. The default CLI
+completion allowance is 512 tokens; pass `--max-new-tokens N` to change it.
 
 Before encoding, the CLI reserves the requested output-token capacity. It
 trims oldest complete conversation groups while retaining leading
 developer/system messages and the newest user/tool request, and fails when
 that mandatory remainder cannot fit. Configured role/EOS delimiters are
-stripped from assistant text before it enters process-local history. `/reset`
-keeps the configured system prompt. Non-TTY inference remains one-shot, and
-the legacy raw native-checkpoint sampler remains one-shot. Native Execution
-manifest artifacts instead load one resident model/session and use the same
-transcript controls with exact-prefix cache reuse. See
+stripped from ordinary assistant text before it enters process-local history.
+Muse Glimmer additionally uses an ATEM-aware response parser: private
+`to=self` content is hidden and never retained, while only `to=user` content
+is displayed and added to the next turn. A truncated private-only completion
+fails closed with a suggestion to increase the token allowance. Non-TTY
+inference remains one-shot, and the legacy raw native-checkpoint sampler
+remains one-shot. Native Execution manifest artifacts instead load one
+resident model/session and use the same transcript controls with exact-prefix
+cache reuse. See
 [Resident Native Artifact CLI Inference](native-cli-inference.md).
 
 For canonical LLaMA, artifact-directory, manifest, and exact contained

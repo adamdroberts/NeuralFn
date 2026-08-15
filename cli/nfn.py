@@ -474,7 +474,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2-native --serve
 
-        Interactive graph inference defaults to transcript mode. Use
+        Interactive inference defaults to transcript mode. Use
         --chat-mode stateless (or /mode stateless) for independent turns.
         """,
     "embed": """\
@@ -1217,10 +1217,28 @@ def _native_ir_infer_main(
         choices=("cpu", "tile-cuda"),
         default="cpu",
     )
-    parser.add_argument("--tile-ops-lib", default=None, metavar="PATH")
+    parser.add_argument(
+        "--tile-ops-lib",
+        "--strict-tile-ops-lib",
+        dest="tile_ops_lib",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Strict whole-model CUDA sidecar. The --strict-tile-ops-lib spelling "
+            "is an explicit alias; Tile-CUDA TurboQuant uses the same path when selected."
+        ),
+    )
     parser.add_argument("--cuda-runtime-lib", default=None, metavar="PATH_OR_SONAME")
     parser.add_argument("--cuda-device", type=int, default=0, metavar="INDEX")
-    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help=(
+            "Maximum completion tokens (default: 512 so reasoning-capable ATEM models "
+            "can reach their user-directed answer)."
+        ),
+    )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument("--top-p", type=float, default=1.0)
@@ -1294,7 +1312,27 @@ def _native_ir_infer_main(
             ),
             native_info=bool(args.native_info),
         )
-        return int(run_native_artifact_cli(config, interactive=interactive))
+        interactive_ui = None
+        if interactive:
+            try:
+                from neuralfn.native_infer_tui import RichNativeInferenceUI
+            except ModuleNotFoundError as exc:
+                if exc.name not in {"neuralfn.native_infer_tui", "rich"}:
+                    raise
+                raise RuntimeError(
+                    "The colorful native inference TUI requires the CLI 'rich' "
+                    "dependency. Reinstall the NeuralFn CLI package instead of "
+                    "falling back to the plain prompt."
+                ) from exc
+
+            interactive_ui = RichNativeInferenceUI()
+        return int(
+            run_native_artifact_cli(
+                config,
+                interactive=interactive,
+                interactive_ui=interactive_ui,
+            )
+        )
     except KeyboardInterrupt:
         return 130
     except (

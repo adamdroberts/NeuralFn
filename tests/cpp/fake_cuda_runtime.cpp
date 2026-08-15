@@ -42,6 +42,14 @@ int cudaStreamCreate(void** stream) {
 }
 int cudaStreamDestroy(void* stream) { std::free(stream); return 0; }
 int cudaStreamSynchronize(void*) { return 0; }
+int cudaStreamWaitEvent(void*, void*, unsigned int) { return 0; }
+int cudaEventCreateWithFlags(void** event, unsigned int) {
+    if (event == nullptr) return 1;
+    *event = std::malloc(1);
+    return *event == nullptr ? 2 : 0;
+}
+int cudaEventDestroy(void* event) { std::free(event); return 0; }
+int cudaEventRecord(void*, void*) { return 0; }
 const char* cudaGetErrorString(int status) {
     return status == 0 ? "success" : "fake CUDA failure";
 }

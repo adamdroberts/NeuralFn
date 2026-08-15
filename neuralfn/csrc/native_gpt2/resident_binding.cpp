@@ -4111,6 +4111,16 @@ PyObject* model_stats(PyObject*, PyObject* args) {
             handle->glimmer->cuda_workspace_bytes())));
         OwnedPyObject cuda_launches(PyLong_FromLongLong(static_cast<long long>(
             handle->glimmer->cuda_kernel_launches())));
+        OwnedPyObject cuda_k_quant_mmq_linears(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_k_quant_mmq_linears())));
+        OwnedPyObject cuda_q8_quantizations(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_q8_activation_quantizations())));
+        OwnedPyObject cuda_q8_linears(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_q8_packed_linears())));
+        OwnedPyObject cuda_argmax_calls(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_device_argmax_calls())));
+        OwnedPyObject cuda_argmax_rows(PyLong_FromLongLong(static_cast<long long>(
+            handle->glimmer->cuda_device_argmax_rows())));
         OwnedPyObject cuda_device_value(
             whole_model_cuda
                 ? PyLong_FromLong(handle->glimmer->cuda_device())
@@ -4136,12 +4146,20 @@ PyObject* model_stats(PyObject*, PyObject* args) {
         OwnedPyObject assistant_cuda_launches(PyLong_FromLongLong(static_cast<long long>(
             handle->glimmer_assistant
                 ? handle->glimmer_assistant->cuda_kernel_launches() : 0)));
+        OwnedPyObject assistant_cuda_k_quant_mmq_linears(PyLong_FromLongLong(
+            static_cast<long long>(
+                handle->glimmer_assistant
+                    ? handle->glimmer_assistant->cuda_k_quant_mmq_linears() : 0)));
         OwnedPyObject vision_weight_bytes(PyLong_FromLongLong(static_cast<long long>(
             handle->glimmer->vision_weight_bytes())));
         if (!cuda_weight_bytes || !cuda_workspace_bytes || !cuda_launches ||
+            !cuda_k_quant_mmq_linears ||
+            !cuda_q8_quantizations || !cuda_q8_linears ||
+            !cuda_argmax_calls || !cuda_argmax_rows ||
             !cuda_device_value || !cuda_tile_library || !cuda_runtime_library ||
             !cpu_compute_rows || !assistant_weight_bytes || !assistant_cuda_weight_bytes ||
             !assistant_cuda_workspace_bytes || !assistant_cuda_launches ||
+            !assistant_cuda_k_quant_mmq_linears ||
             !vision_weight_bytes ||
             PyDict_SetItemString(
                 result, "whole_model_cuda", whole_model_cuda ? Py_True : Py_False) < 0 ||
@@ -4150,6 +4168,18 @@ PyObject* model_stats(PyObject*, PyObject* args) {
             PyDict_SetItemString(result, "cuda_resident_weight_bytes", cuda_weight_bytes.get()) < 0 ||
             PyDict_SetItemString(result, "cuda_workspace_bytes", cuda_workspace_bytes.get()) < 0 ||
             PyDict_SetItemString(result, "cuda_kernel_launches", cuda_launches.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_k_quant_mmq_linears",
+                cuda_k_quant_mmq_linears.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_q8_activation_quantizations",
+                cuda_q8_quantizations.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_q8_packed_linears", cuda_q8_linears.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_device_argmax_calls", cuda_argmax_calls.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "cuda_device_argmax_rows", cuda_argmax_rows.get()) < 0 ||
             PyDict_SetItemString(result, "cuda_device", cuda_device_value.get()) < 0 ||
             PyDict_SetItemString(result, "cuda_tile_ops_lib", cuda_tile_library.get()) < 0 ||
             PyDict_SetItemString(result, "cuda_runtime_lib", cuda_runtime_library.get()) < 0 ||
@@ -4166,6 +4196,9 @@ PyObject* model_stats(PyObject*, PyObject* args) {
                 assistant_cuda_workspace_bytes.get()) < 0 ||
             PyDict_SetItemString(
                 result, "dflash_cuda_kernel_launches", assistant_cuda_launches.get()) < 0 ||
+            PyDict_SetItemString(
+                result, "dflash_cuda_k_quant_mmq_linears",
+                assistant_cuda_k_quant_mmq_linears.get()) < 0 ||
             PyDict_SetItemString(result, "dflash_cuda", dflash_cuda ? Py_True : Py_False) < 0 ||
             PyDict_SetItemString(
                 result, "vision_loaded", handle->glimmer->has_vision() ? Py_True : Py_False) < 0 ||

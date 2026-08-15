@@ -136,6 +136,11 @@ class Cache;
 class DFlashCache;
 class Verification;
 
+struct ArgmaxRows {
+    std::vector<std::int64_t> indices;
+    std::vector<float> values;
+};
+
 class Model final : public std::enable_shared_from_this<Model> {
 public:
     static std::shared_ptr<Model> load(const Config& config, const HostWeightPlan& weights);
@@ -161,32 +166,77 @@ public:
         const std::shared_ptr<Cache>& cache,
         const std::atomic<bool>& cancelled,
         const std::vector<std::int64_t>* tap_layers = nullptr,
-        std::vector<float>* target_taps = nullptr);
+        std::vector<float>* target_taps = nullptr,
+        bool fast_k_quant = false);
     void append_embedding(
         const std::vector<float>& embedding,
         std::int64_t position,
         const std::shared_ptr<Cache>& cache,
         const std::atomic<bool>& cancelled,
         const std::vector<std::int64_t>* tap_layers = nullptr,
-        std::vector<float>* target_taps = nullptr);
+        std::vector<float>* target_taps = nullptr,
+        bool fast_k_quant = false);
     std::vector<float> logits(const std::shared_ptr<Cache>& cache);
+    ArgmaxRows argmax_logits(const std::shared_ptr<Cache>& cache);
+    // Greedy target decode fast path. The first call captures LM-head argmax,
+    // device-token embedding, all 52 decoder layers, and cache/final-hidden
+    // commit as one CUDA graph; later calls replay it once per token.
+    ArgmaxRows decode_argmax_and_append(
+        const std::shared_ptr<Cache>& cache,
+        const std::atomic<bool>& cancelled);
     std::vector<float> raw_logits(const float* hidden);
+    std::vector<float> raw_logits_rows(
+        const float* hidden,
+        std::int64_t rows,
+        bool fast_k_quant = false);
+    ArgmaxRows raw_argmax_rows(
+        const float* hidden,
+        std::int64_t rows,
+        bool fast_k_quant = false);
+    // Internal same-device handoff used by the paired DFlash resident. The
+    // source must remain valid until this call returns; rows are copied into
+    // target-owned workspace before the shared LM head runs.
+    ArgmaxRows raw_argmax_rows_device(
+        const float* device_hidden,
+        int source_cuda_device,
+        std::int64_t rows,
+        bool fast_k_quant = false);
     std::vector<float> raw_embedding(std::int64_t token_id);
+    std::vector<float> raw_embeddings(
+        const std::vector<std::int64_t>& token_ids);
+    // Returns target-owned device workspace, valid until the next operation
+    // that uses the target's raw batched hidden workspace.
+    const float* raw_embeddings_device(
+        const std::vector<std::int64_t>& token_ids);
     std::shared_ptr<Verification> verify_tokens(
         const std::vector<std::int64_t>& token_ids,
         std::int64_t position,
         const std::shared_ptr<Cache>& cache,
         const std::atomic<bool>& cancelled,
-        const std::vector<std::int64_t>* tap_layers = nullptr);
+        const std::vector<std::int64_t>* tap_layers = nullptr,
+        bool compute_logits = true,
+        bool compute_argmax = false,
+        bool fast_k_quant = false,
+        bool copy_taps_to_host = true,
+        bool exact_verifier_rows = false);
     void commit_verification(
         const std::shared_ptr<Cache>& cache,
         const std::shared_ptr<Verification>& verification,
-        std::int64_t accepted_rows);
+        std::int64_t accepted_rows,
+        bool synchronize = true);
+    void synchronize() const;
     void close() noexcept;
 
     std::int64_t resident_weight_bytes() const noexcept;
     std::int64_t workspace_bytes() const noexcept;
     std::int64_t kernel_launches() const noexcept;
+    std::int64_t k_quant_mmq_linears() const noexcept;
+    std::int64_t q8_activation_quantizations() const noexcept;
+    std::int64_t q8_packed_linears() const noexcept;
+    std::int64_t device_argmax_calls() const noexcept;
+    std::int64_t device_argmax_rows() const noexcept;
+    bool has_device_argmax() const noexcept;
+    bool has_decode_graphs() const noexcept;
     int cuda_device() const noexcept;
     const std::string& tile_ops_library() const noexcept;
     const std::string& cuda_runtime_library() const noexcept;
@@ -194,14 +244,19 @@ public:
 private:
     class Impl;
     explicit Model(std::unique_ptr<Impl> impl);
-    void append_input(
+    void append_input_unlocked(
         std::int64_t token_id,
         const std::vector<float>* embedding,
         std::int64_t position,
         const std::shared_ptr<Cache>& cache,
         const std::atomic<bool>& cancelled,
         const std::vector<std::int64_t>* tap_layers,
-        std::vector<float>* target_taps);
+        std::vector<float>* target_taps,
+        bool fast_k_quant,
+        const std::int64_t* device_token_id,
+        const std::int64_t* device_position,
+        bool synchronize,
+        bool commit_logical_length);
     std::unique_ptr<Impl> impl_;
 };
 
@@ -230,7 +285,11 @@ public:
     std::int64_t rows() const noexcept;
     std::int64_t position() const noexcept;
     const std::vector<float>& logits() const noexcept;
+    const std::vector<std::int64_t>& argmax_indices() const noexcept;
+    const std::vector<float>& argmax_values() const noexcept;
     const std::vector<float>& target_taps() const noexcept;
+    const float* device_target_taps() const noexcept;
+    int cuda_device() const noexcept;
 
 private:
     friend class Model;
@@ -295,6 +354,29 @@ public:
         std::int64_t position,
         const std::shared_ptr<DFlashCache>& cache,
         const std::atomic<bool>& cancelled);
+    void append_contexts(
+        const float* concatenated_target_taps,
+        std::int64_t rows,
+        std::int64_t start_position,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled);
+    std::vector<float> append_contexts_device_tap_major(
+        const float* tap_major_device,
+        int source_cuda_device,
+        std::int64_t source_rows,
+        std::int64_t rows,
+        std::int64_t start_position,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled);
+    void append_contexts_device_tap_major_all(
+        const float* tap_major_device,
+        int source_cuda_device,
+        std::int64_t source_rows,
+        std::int64_t rows,
+        std::int64_t start_position,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled);
+    bool has_device_tap_pack() const noexcept;
     // Returns final-normalized assistant rows on the host. All learned model
     // computation remains on the selected device; the host transfer is the
     // explicit seam to the target model's shared LM-head API.
@@ -303,15 +385,38 @@ public:
         std::int64_t rows,
         const std::shared_ptr<DFlashCache>& cache,
         const std::atomic<bool>& cancelled);
+    // Same-device greedy seam. The input is copied device-to-device and the
+    // returned assistant-owned normalized rows remain valid until the next
+    // proposal block on this model.
+    const float* forward_block_device(
+        const float* raw_target_embeddings_device,
+        int source_cuda_device,
+        std::int64_t rows,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled);
     void close() noexcept;
 
     std::int64_t resident_weight_bytes() const noexcept;
     std::int64_t workspace_bytes() const noexcept;
     std::int64_t kernel_launches() const noexcept;
+    std::int64_t k_quant_mmq_linears() const noexcept;
 
 private:
     class Impl;
     explicit DFlashModel(std::unique_ptr<Impl> impl);
+    void append_context_rows_locked(
+        std::int64_t rows,
+        std::int64_t start_position,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled);
+    const float* forward_block_input(
+        const float* raw_target_embeddings,
+        bool input_is_device,
+        int source_cuda_device,
+        std::int64_t rows,
+        const std::shared_ptr<DFlashCache>& cache,
+        const std::atomic<bool>& cancelled,
+        std::vector<float>* host_result);
     std::unique_ptr<Impl> impl_;
 };
 

@@ -2670,6 +2670,10 @@ class NativeInferenceSession:
                 generation.stop_token_ids
                 or _normalize_manifest_stop_tokens(self._model._manifest)
             )
+            # The native decoder consumes an immutable request contract. Build
+            # it once instead of allocating and validating an identical Python
+            # mapping at every generated token.
+            binding_payload = generation.to_binding_payload()
 
             for index in range(generation.max_new_tokens):
                 with self._lock:
@@ -2682,7 +2686,7 @@ class NativeInferenceSession:
                         raw = self._model._binding.decode_one(
                             self._model._handle,
                             self._handle,
-                            generation.to_binding_payload(),
+                            binding_payload,
                         )
                 except InterruptedError:
                     with self._lock:

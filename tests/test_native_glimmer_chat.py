@@ -17,6 +17,7 @@ from neuralfn.native_chat import (
     NativeChatMessage,
     load_native_text_codec,
     native_stop_token_ids,
+    parse_native_assistant_response,
     resolve_native_chat_renderer,
 )
 
@@ -123,6 +124,73 @@ def test_glimmer_stop_contract_excludes_eom() -> None:
     manifest["stop_tokens"] = [200_001, 200_007, 200_008]
     with pytest.raises(NativeChatConfigurationError, match="message boundary"):
         native_stop_token_ids(manifest)
+
+
+def test_glimmer_atem_response_exposes_only_user_channel() -> None:
+    renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
+    decoded = parse_native_assistant_response(
+        "junk before protocol\n"
+        " to=self<|message|>private chain of thought<|eom|>"
+        "<|start|>assistant to=user<|message|>Hello!<|eot|>",
+        renderer,
+    )
+
+    assert decoded.visible_text == "Hello!"
+    assert decoded.reasoning_text == "private chain of thought"
+    assert decoded.used_channel_protocol is True
+    assert decoded.final_channel_complete is True
+    assert "junk before protocol" not in decoded.visible_text
+
+
+def test_glimmer_atem_direct_user_continuation_is_supported() -> None:
+    renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
+    decoded = parse_native_assistant_response(
+        " to=user<|message|>Direct answer.<|end_of_text|>",
+        renderer,
+    )
+
+    assert decoded.visible_text == "Direct answer."
+    assert decoded.reasoning_text == ""
+    assert decoded.final_channel_complete is True
+
+
+def test_glimmer_atem_truncated_reasoning_fails_closed() -> None:
+    renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
+    decoded = parse_native_assistant_response(
+        "lkk\n\n to=self<|message|>private reasoning cut off by max tokens",
+        renderer,
+    )
+
+    assert decoded.visible_text == ""
+    assert decoded.reasoning_text == "private reasoning cut off by max tokens"
+    assert decoded.used_channel_protocol is True
+    assert decoded.final_channel_complete is False
+
+
+def test_glimmer_atem_malformed_control_fragment_never_leaks() -> None:
+    renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
+    decoded = parse_native_assistant_response(
+        "preamble <|start|>assistant to=self but malformed",
+        renderer,
+    )
+
+    assert decoded.visible_text == ""
+    assert decoded.reasoning_text == ""
+    assert decoded.used_channel_protocol is True
+    assert decoded.final_channel_complete is False
+
+
+def test_glimmer_atem_plain_text_fallback_remains_displayable() -> None:
+    renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
+    decoded = parse_native_assistant_response(
+        "A plain fallback answer.<STOP>ignored",
+        renderer,
+        delimiters=("<STOP>",),
+    )
+
+    assert decoded.visible_text == "A plain fallback answer."
+    assert decoded.used_channel_protocol is False
+    assert decoded.final_channel_complete is True
 
 
 def _write_tiny_bytelevel_tokenizer(path: Path) -> int:

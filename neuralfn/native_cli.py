@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import sys
-from typing import Any, Callable, Sequence, TextIO
+import time
+from typing import Any, Callable, ContextManager, Protocol, Sequence, TextIO
 
 from .native_chat import (
     NativeChatConfigurationError,
@@ -18,10 +20,10 @@ from .native_chat import (
     native_output_limit,
     native_stop_token_ids,
     native_text_stop_delimiters,
+    parse_native_assistant_response,
     read_native_execution_manifest,
     resolve_native_chat_prompt,
     resolve_native_chat_renderer,
-    strip_native_text_delimiters,
 )
 from .native_inference import (
     GenerationConfig,
@@ -29,6 +31,16 @@ from .native_inference import (
     NativeInferenceModel,
     NativeModelLoadConfig,
 )
+
+
+class NativeArtifactCLIUI(Protocol):
+    """Optional interactive presentation adapter for the lean native driver."""
+
+    def handle(self, event: str, **payload: Any) -> None: ...
+
+    def read_line(self, prompt: str) -> str: ...
+
+    def progress(self, label: str) -> ContextManager[Any]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,12 +124,28 @@ def run_native_artifact_cli(
     input_fn: Callable[[str], str] | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
+    interactive_ui: NativeArtifactCLIUI | None = None,
 ) -> int:
     """Run one resident model/session for a one-shot or interactive process."""
 
     output = stdout or sys.stdout
     errors = stderr or sys.stderr
-    read_line = input_fn or input
+    if interactive_ui is not None and not interactive:
+        raise ValueError("interactive_ui requires interactive=True")
+    read_line = input_fn or (
+        interactive_ui.read_line if interactive_ui is not None else input
+    )
+
+    def emit(event: str, **payload: Any) -> None:
+        if interactive_ui is not None:
+            interactive_ui.handle(event, **payload)
+
+    def warn(message: str) -> None:
+        if interactive_ui is not None:
+            emit("warning", message=message)
+        else:
+            print(f"warning: {message}", file=errors)
+
     artifact_root, _manifest_path, manifest = read_native_execution_manifest(config.artifact)
     if codec is not None:
         text_codec = codec
@@ -126,10 +154,9 @@ def run_native_artifact_cli(
             text_codec = load_native_text_codec(manifest, artifact_root=artifact_root)
         except NativeChatConfigurationError:
             text_codec = TokenIdTextCodec()
-            print(
-                "warning: artifact text tokenizer is unavailable; rendering generated "
-                "token IDs because --prompt-tokens was used",
-                file=errors,
+            warn(
+                "artifact text tokenizer is unavailable; rendering generated "
+                "token IDs because --prompt-tokens was used"
             )
     else:
         text_codec = load_native_text_codec(manifest, artifact_root=artifact_root)
@@ -141,7 +168,7 @@ def run_native_artifact_cli(
     )
     renderer = renderer_resolution.renderer
     if renderer_resolution.warning:
-        print(f"warning: {renderer_resolution.warning}", file=errors)
+        warn(renderer_resolution.warning)
     context_limit = native_context_limit(manifest)
     output_limit = native_output_limit(manifest)
     if output_limit is not None and config.max_new_tokens > output_limit:
@@ -186,28 +213,65 @@ def run_native_artifact_cli(
 
             if interactive:
                 stats = model.stats()
-                print(
-                    "Native resident inference ready: "
-                    f"{_model_name(manifest, config.artifact)} "
-                    f"(mode={mode}, cache={stats.get('effective_cache', 'unknown')}).",
-                    file=output,
-                )
-                print("Commands: /mode stateless|transcript, /reset, /help, /exit", file=output)
+                ready_payload = {
+                    "model_name": _model_name(manifest, config.artifact),
+                    "artifact": config.artifact,
+                    "mode": mode,
+                    "stats": stats,
+                    "context_limit": context_limit,
+                    "renderer_name": renderer.name,
+                    "config": config,
+                }
+                if interactive_ui is not None:
+                    emit("ready", **ready_payload)
+                else:
+                    print(
+                        "Native resident inference ready: "
+                        f"{ready_payload['model_name']} "
+                        f"(mode={mode}, cache={stats.get('effective_cache', 'unknown')}).",
+                        file=output,
+                    )
+                    print(
+                        "Commands: /mode stateless|transcript, /show, /reset, "
+                        "/clear, /help, /exit",
+                        file=output,
+                    )
 
-            def decode_prefilled(prompt_token_ids: Sequence[int]) -> str:
+            def decode_prefilled(prompt_token_ids: Sequence[int]):
                 if len(prompt_token_ids) + config.max_new_tokens > context_limit:
                     raise NativeChatConfigurationError(
                         f"Prompt uses {len(prompt_token_ids)} tokens plus "
                         f"{config.max_new_tokens} reserved output tokens, exceeding the "
                         f"{context_limit}-token context window."
                     )
-                session.prefill(prompt_token_ids)
-                result = session.decode(generation)
+                progress = (
+                    interactive_ui.progress("thinking")
+                    if interactive_ui is not None
+                    else nullcontext()
+                )
+                with progress:
+                    prefill_started = time.perf_counter()
+                    prefill_stats = session.prefill(prompt_token_ids)
+                    decode_started = time.perf_counter()
+                    result = session.decode(generation)
+                    finished = time.perf_counter()
                 decoded = text_codec.decode(result.token_ids)
-                return strip_native_text_delimiters(decoded, delimiters)
+                response = parse_native_assistant_response(
+                    decoded,
+                    renderer,
+                    delimiters=delimiters,
+                )
+                return (
+                    response,
+                    result,
+                    dict(prefill_stats) if isinstance(prefill_stats, dict) else {},
+                    decode_started - prefill_started,
+                    finished - decode_started,
+                )
 
+            turn_index = 0
             def respond(user_text: str) -> None:
-                nonlocal history
+                nonlocal history, turn_index
                 prepared = resolve_native_chat_prompt(
                     codec=text_codec,
                     renderer=renderer,
@@ -217,20 +281,65 @@ def run_native_artifact_cli(
                     context_limit=context_limit,
                     reserved_output_tokens=config.max_new_tokens,
                 )
-                response = decode_prefilled(prepared.token_ids)
+                response, result, prefill_stats, prefill_seconds, decode_seconds = (
+                    decode_prefilled(prepared.token_ids)
+                )
+                turn_index += 1
                 if prepared.dropped_groups:
-                    print(
-                        f"warning: trimmed {prepared.dropped_groups} oldest conversation "
-                        f"group{'s' if prepared.dropped_groups != 1 else ''} to fit context",
-                        file=errors,
+                    warn(
+                        f"trimmed {prepared.dropped_groups} oldest conversation "
+                        f"group{'s' if prepared.dropped_groups != 1 else ''} to fit context"
                     )
-                print(response, file=output)
-                if mode == "transcript":
+                if interactive_ui is not None:
+                    emit(
+                        "turn",
+                        index=turn_index,
+                        user_text=user_text,
+                        response=response,
+                        result=result,
+                        prefill_stats=prefill_stats,
+                        prefill_seconds=prefill_seconds,
+                        decode_seconds=decode_seconds,
+                    )
+                else:
+                    print(response.visible_text, file=output)
+                if response.used_channel_protocol and not response.visible_text:
+                    warn(
+                        "Muse Glimmer did not finish a to=user answer; private to=self "
+                        "content was hidden and was not added to transcript history. "
+                        "Increase --max-new-tokens if generation ended at the token limit."
+                    )
+                elif (
+                    response.used_channel_protocol
+                    and not response.final_channel_complete
+                ):
+                    warn(
+                        "Muse Glimmer's to=user answer ended before the ATEM end-of-turn marker"
+                    )
+                if mode == "transcript" and response.visible_text:
                     history.append(NativeChatMessage("user", user_text))
-                    history.append(NativeChatMessage("assistant", response))
+                    history.append(
+                        NativeChatMessage("assistant", response.visible_text)
+                    )
 
             if config.prompt_token_ids:
-                print(decode_prefilled(config.prompt_token_ids), file=output)
+                response, result, prefill_stats, prefill_seconds, decode_seconds = (
+                    decode_prefilled(config.prompt_token_ids)
+                )
+                if interactive_ui is not None:
+                    turn_index += 1
+                    emit(
+                        "turn",
+                        index=turn_index,
+                        user_text=f"[tokens] {','.join(map(str, config.prompt_token_ids))}",
+                        response=response,
+                        result=result,
+                        prefill_stats=prefill_stats,
+                        prefill_seconds=prefill_seconds,
+                        decode_seconds=decode_seconds,
+                    )
+                else:
+                    print(response.visible_text, file=output)
             elif config.prompt:
                 respond(config.prompt)
             elif not interactive and not config.native_info:
@@ -250,36 +359,67 @@ def run_native_artifact_cli(
                 if not message:
                     continue
                 if message in {"/exit", "/quit"}:
+                    emit("goodbye")
                     return 0
                 if message == "/help":
-                    print(
-                        "/mode stateless|transcript  /reset  /help  /exit",
-                        file=output,
-                    )
+                    if interactive_ui is not None:
+                        emit("help")
+                    else:
+                        print(
+                            "/mode stateless|transcript  /show  /reset  /clear  "
+                            "/help  /exit",
+                            file=output,
+                        )
                     continue
                 if message.startswith("/mode "):
                     requested = message.split(None, 1)[1].strip().lower()
                     if requested not in {"stateless", "transcript"}:
-                        print("warning: usage: /mode stateless|transcript", file=errors)
+                        warn("usage: /mode stateless|transcript")
                         continue
                     mode = requested
-                    print(f"Mode: {mode}", file=output)
+                    if interactive_ui is not None:
+                        emit("mode", mode=mode)
+                    else:
+                        print(f"Mode: {mode}", file=output)
+                    continue
+                if message in {"/show", "/stats"}:
+                    if interactive_ui is not None:
+                        emit(
+                            "show",
+                            mode=mode,
+                            stats=model.stats(),
+                            history_messages=len(history),
+                            config=config,
+                        )
+                    else:
+                        print(json.dumps(model.stats(), sort_keys=True), file=output)
                     continue
                 if message == "/reset":
                     history.clear()
                     if config.system_prompt:
                         history.append(NativeChatMessage("system", config.system_prompt))
                     session.reset()
-                    print("Transcript and resident session reset.", file=output)
+                    turn_index = 0
+                    if interactive_ui is not None:
+                        emit("reset")
+                    else:
+                        print("Transcript and resident session reset.", file=output)
+                    continue
+                if message == "/clear":
+                    if interactive_ui is not None:
+                        emit("clear")
+                    else:
+                        print("\033[2J\033[H", end="", file=output)
                     continue
                 if message.startswith("/"):
-                    print(f"warning: unknown command {message.split()[0]!r}", file=errors)
+                    warn(f"unknown command {message.split()[0]!r}; try /help")
                     continue
                 respond(message)
 
 
 __all__ = [
     "NativeArtifactCLIConfig",
+    "NativeArtifactCLIUI",
     "parse_native_prompt_token_ids",
     "run_native_artifact_cli",
 ]

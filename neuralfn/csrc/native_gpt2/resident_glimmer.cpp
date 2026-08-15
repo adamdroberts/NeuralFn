@@ -8,6 +8,7 @@
 #include <bit>
 #include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -1364,6 +1365,26 @@ std::int64_t GlimmerModel::cuda_kernel_launches() const noexcept {
     return cuda_model_ ? cuda_model_->kernel_launches() : 0;
 }
 
+std::int64_t GlimmerModel::cuda_k_quant_mmq_linears() const noexcept {
+    return cuda_model_ ? cuda_model_->k_quant_mmq_linears() : 0;
+}
+
+std::int64_t GlimmerModel::cuda_q8_activation_quantizations() const noexcept {
+    return cuda_model_ ? cuda_model_->q8_activation_quantizations() : 0;
+}
+
+std::int64_t GlimmerModel::cuda_q8_packed_linears() const noexcept {
+    return cuda_model_ ? cuda_model_->q8_packed_linears() : 0;
+}
+
+std::int64_t GlimmerModel::cuda_device_argmax_calls() const noexcept {
+    return cuda_model_ ? cuda_model_->device_argmax_calls() : 0;
+}
+
+std::int64_t GlimmerModel::cuda_device_argmax_rows() const noexcept {
+    return cuda_model_ ? cuda_model_->device_argmax_rows() : 0;
+}
+
 int GlimmerModel::cuda_device() const noexcept {
     return cuda_model_ ? cuda_model_->cuda_device() : -1;
 }
@@ -1581,9 +1602,11 @@ void GlimmerModel::forward_append_token(
     GlimmerCacheStorage* cache,
     const std::atomic<bool>& cancelled,
     const std::vector<std::int64_t>* tap_layers,
-    std::vector<float>* target_taps) const {
+    std::vector<float>* target_taps,
+    bool fast_k_quant) const {
     forward_append_input(
-        token, nullptr, position, cache, cancelled, tap_layers, target_taps);
+        token, nullptr, position, cache, cancelled, tap_layers, target_taps,
+        fast_k_quant);
 }
 
 void GlimmerModel::forward_append_embedding(
@@ -1594,7 +1617,8 @@ void GlimmerModel::forward_append_embedding(
     const std::vector<std::int64_t>* tap_layers,
     std::vector<float>* target_taps) const {
     forward_append_input(
-        -1, &embedding, position, cache, cancelled, tap_layers, target_taps);
+        -1, &embedding, position, cache, cancelled, tap_layers, target_taps,
+        false);
 }
 
 void GlimmerModel::forward_append_input(
@@ -1604,7 +1628,8 @@ void GlimmerModel::forward_append_input(
     GlimmerCacheStorage* cache,
     const std::atomic<bool>& cancelled,
     const std::vector<std::int64_t>* tap_layers,
-    std::vector<float>* target_taps) const {
+    std::vector<float>* target_taps,
+    bool fast_k_quant) const {
     require_open();
     if (embedding == nullptr && (token < 0 || token >= config_.vocab_size)) {
         throw std::runtime_error("resident Glimmer token id is outside the checkpoint vocabulary");
@@ -1622,10 +1647,12 @@ void GlimmerModel::forward_append_input(
         forward_calls_.fetch_add(1);
         if (embedding == nullptr) {
             cuda_model_->append_token(
-                token, position, cache->cuda, cancelled, tap_layers, target_taps);
+                token, position, cache->cuda, cancelled, tap_layers, target_taps,
+                fast_k_quant);
         } else {
             cuda_model_->append_embedding(
-                *embedding, position, cache->cuda, cancelled, tap_layers, target_taps);
+                *embedding, position, cache->cuda, cancelled, tap_layers, target_taps,
+                false);
         }
         return;
     }
@@ -1892,6 +1919,72 @@ std::vector<float> GlimmerModel::raw_logits_from_hidden(const float* hidden) con
     return logits;
 }
 
+std::vector<float> GlimmerModel::raw_logits_rows_from_hidden(
+    const float* hidden,
+    std::int64_t rows,
+    bool fast_k_quant) const {
+    require_open();
+    if (hidden == nullptr || rows <= 0 || rows > 16) {
+        throw std::runtime_error(
+            "resident Glimmer raw batched logits require 1..16 hidden rows");
+    }
+    if (cuda_model_) {
+        return cuda_model_->raw_logits_rows(hidden, rows, fast_k_quant);
+    }
+    std::vector<float> result;
+    result.reserve(checked_size(checked_mul(
+        rows, config_.vocab_size, "raw batched logits"), "raw batched logits"));
+    for (std::int64_t row = 0; row < rows; ++row) {
+        std::vector<float> logits = raw_logits_from_hidden(
+            hidden + row * config_.model_dim);
+        result.insert(result.end(), logits.begin(), logits.end());
+    }
+    return result;
+}
+
+std::vector<std::int64_t> GlimmerModel::raw_argmax_rows_from_hidden(
+    const float* hidden,
+    std::int64_t rows,
+    bool fast_k_quant) const {
+    require_open();
+    if (hidden == nullptr || rows <= 0 || rows > 16) {
+        throw std::runtime_error(
+            "resident Glimmer raw batched argmax requires 1..16 hidden rows");
+    }
+    if (cuda_model_ && cuda_model_->has_device_argmax()) {
+        return cuda_model_->raw_argmax_rows(hidden, rows, fast_k_quant).indices;
+    }
+    const std::vector<float> logits = raw_logits_rows_from_hidden(
+        hidden, rows, fast_k_quant);
+    std::vector<std::int64_t> result;
+    result.reserve(checked_size(rows, "raw argmax rows"));
+    for (std::int64_t row = 0; row < rows; ++row) {
+        const float* first = logits.data() + row * config_.vocab_size;
+        result.push_back(static_cast<std::int64_t>(
+            std::distance(first, std::max_element(first, first + config_.vocab_size))));
+    }
+    return result;
+}
+
+std::vector<std::int64_t> GlimmerModel::raw_argmax_rows_from_device_hidden(
+    const float* device_hidden,
+    int source_cuda_device,
+    std::int64_t rows,
+    bool fast_k_quant) const {
+    require_open();
+    if (!cuda_model_ || device_hidden == nullptr || rows <= 0 || rows > 16 ||
+        !cuda_model_->has_device_argmax()) {
+        throw std::runtime_error(
+            "resident Glimmer device-hidden argmax requires CUDA and 1..16 rows");
+    }
+    return cuda_model_->raw_argmax_rows_device(
+        device_hidden, source_cuda_device, rows, fast_k_quant).indices;
+}
+
+bool GlimmerModel::has_cuda_device_argmax() const noexcept {
+    return cuda_model_ && cuda_model_->has_device_argmax();
+}
+
 std::vector<float> GlimmerModel::raw_token_embedding(std::int64_t token) const {
     require_open();
     if (token < 0 || token >= config_.vocab_size) {
@@ -1905,6 +1998,40 @@ std::vector<float> GlimmerModel::raw_token_embedding(std::int64_t token) const {
         result[static_cast<std::size_t>(dim)] = token_embedding_->value(token, dim);
     }
     return result;
+}
+
+std::vector<float> GlimmerModel::raw_token_embeddings(
+    const std::vector<std::int64_t>& tokens) const {
+    require_open();
+    if (tokens.empty() || tokens.size() > 16 ||
+        std::any_of(tokens.begin(), tokens.end(), [&](std::int64_t token) {
+            return token < 0 || token >= config_.vocab_size;
+        })) {
+        throw std::runtime_error(
+            "resident Glimmer raw batched embeddings require 1..16 valid tokens");
+    }
+    if (cuda_model_) {
+        return cuda_model_->raw_embeddings(tokens);
+    }
+    std::vector<float> result;
+    result.reserve(checked_size(checked_mul(
+        static_cast<std::int64_t>(tokens.size()), config_.model_dim,
+        "raw batched embeddings"), "raw batched embeddings"));
+    for (std::int64_t token : tokens) {
+        std::vector<float> row = raw_token_embedding(token);
+        result.insert(result.end(), row.begin(), row.end());
+    }
+    return result;
+}
+
+const float* GlimmerModel::raw_token_embeddings_device(
+    const std::vector<std::int64_t>& tokens) const {
+    require_open();
+    if (!cuda_model_) {
+        throw std::runtime_error(
+            "resident Glimmer device embeddings require a CUDA resident");
+    }
+    return cuda_model_->raw_embeddings_device(tokens);
 }
 
 DecodeResult GlimmerModel::select_token(
@@ -2036,14 +2163,19 @@ void GlimmerSession::rebuild_cache() {
     cache_ = std::move(rebuilt);
     assistant_session_ = std::move(rebuilt_assistant);
     cache_length_ = static_cast<std::int64_t>(tokens_.size());
+    speculative_pending_token_ = false;
 }
 
-void GlimmerSession::append_cached_token(std::int64_t token, std::int64_t position) {
+void GlimmerSession::append_cached_token(
+    std::int64_t token,
+    std::int64_t position,
+    bool fast_k_quant) {
     std::vector<float> taps;
     model_->forward_append_token(
         token, position, cache_.get(), cancelled_,
         assistant_session_ ? &assistant_model_->target_layer_ids() : nullptr,
-        assistant_session_ ? &taps : nullptr);
+        assistant_session_ ? &taps : nullptr,
+        fast_k_quant);
     if (assistant_session_) {
         assistant_session_->record_target_taps(position, taps, cancelled_);
     }
@@ -2064,6 +2196,17 @@ void GlimmerSession::append_cached_embedding(
     if (assistant_session_) {
         assistant_session_->record_target_taps(position, taps, cancelled_);
     }
+}
+
+void GlimmerSession::materialize_speculative_pending_token(bool fast_k_quant) {
+    if (!speculative_pending_token_) return;
+    if (cache_mode_ != KVCacheMode::Full || !cache_ || !assistant_session_ ||
+        tokens_.empty() || cache_length_ + 1 != static_cast<std::int64_t>(tokens_.size())) {
+        throw std::runtime_error("Glimmer lagged speculative cache state is inconsistent");
+    }
+    append_cached_token(tokens_.back(), cache_length_, fast_k_quant);
+    ++cache_length_;
+    speculative_pending_token_ = false;
 }
 
 std::int64_t GlimmerSession::cache_bytes() const {
@@ -2164,20 +2307,77 @@ void GlimmerSession::prefill_with_embeddings(
     }
     const std::int64_t initial_length = static_cast<std::int64_t>(tokens_.size());
     try {
-        for (std::int64_t token : token_ids) {
-            const std::int64_t position = static_cast<std::int64_t>(tokens_.size());
-            const auto replacement = replacements.find(position);
-            if (cache_mode_ == KVCacheMode::Full) {
-                if (replacement == replacements.end()) {
-                    append_cached_token(token, cache_length_);
-                } else {
-                    append_cached_embedding(token, cache_length_, replacement->second);
+        materialize_speculative_pending_token();
+        const bool batched_cuda_text_prefill = cache_mode_ == KVCacheMode::Full &&
+            cache_ && cache_->cuda && replacements.empty();
+        if (batched_cuda_text_prefill) {
+            std::size_t offset = 0;
+            while (offset < token_ids.size()) {
+                const std::int64_t rows = std::min<std::int64_t>(
+                    16, static_cast<std::int64_t>(token_ids.size() - offset));
+                if (rows == 1) {
+                    append_cached_token(token_ids[offset], cache_length_);
+                    ++cache_length_;
+                    tokens_.push_back(token_ids[offset]);
+                    ++offset;
+                    continue;
                 }
-                ++cache_length_;
+                const std::vector<std::int64_t> chunk(
+                    token_ids.begin() + static_cast<std::ptrdiff_t>(offset),
+                    token_ids.begin() + static_cast<std::ptrdiff_t>(offset + rows));
+                const std::int64_t chunk_start = cache_length_;
+                const bool device_target_taps = assistant_session_ &&
+                    assistant_model_->cuda_device_tap_pack();
+                auto verification = model_->cuda_model_->verify_tokens(
+                    chunk, chunk_start, cache_->cuda, cancelled_,
+                    assistant_session_ ? &assistant_model_->target_layer_ids() : nullptr,
+                    false, false, false, !device_target_taps);
+                model_->cuda_model_->commit_verification(
+                    cache_->cuda, verification, rows);
+                if (assistant_session_) {
+                    if (device_target_taps) {
+                        if (verification->device_target_taps() == nullptr) {
+                            throw std::runtime_error(
+                                "Glimmer CUDA batched prefill returned no device target taps");
+                        }
+                        assistant_session_->record_target_taps_batch_device(
+                            chunk_start, verification->device_target_taps(),
+                            verification->cuda_device(), verification->rows(), rows,
+                            cancelled_);
+                    } else {
+                        const std::vector<float>& taps = verification->target_taps();
+                        const std::int64_t expected = checked_mul(
+                            rows, assistant_model_->target_tap_width(),
+                            "batched prefill target taps");
+                        if (static_cast<std::int64_t>(taps.size()) != expected) {
+                            throw std::runtime_error(
+                                "Glimmer CUDA batched prefill returned malformed target taps");
+                        }
+                        assistant_session_->record_target_taps_batch(
+                            chunk_start, taps.data(), rows, cancelled_);
+                    }
+                }
+                tokens_.insert(tokens_.end(), chunk.begin(), chunk.end());
+                cache_length_ += rows;
+                model_->forward_calls_.fetch_add(rows);
+                offset += static_cast<std::size_t>(rows);
             }
-            tokens_.push_back(token);
-            if (replacement != replacements.end()) {
-                embedding_overrides_.emplace(position, replacement->second);
+        } else {
+            for (std::int64_t token : token_ids) {
+                const std::int64_t position = static_cast<std::int64_t>(tokens_.size());
+                const auto replacement = replacements.find(position);
+                if (cache_mode_ == KVCacheMode::Full) {
+                    if (replacement == replacements.end()) {
+                        append_cached_token(token, cache_length_);
+                    } else {
+                        append_cached_embedding(token, cache_length_, replacement->second);
+                    }
+                    ++cache_length_;
+                }
+                tokens_.push_back(token);
+                if (replacement != replacements.end()) {
+                    embedding_overrides_.emplace(position, replacement->second);
+                }
             }
         }
     } catch (...) {
@@ -2209,6 +2409,7 @@ std::vector<float> GlimmerSession::current_logits() {
     if (tokens_.empty()) {
         throw std::runtime_error("current_logits requires a non-empty prefilled token history");
     }
+    materialize_speculative_pending_token();
     if (cache_mode_ == KVCacheMode::Full) {
         if (!cache_ || cache_length_ != static_cast<std::int64_t>(tokens_.size())) {
             throw std::runtime_error("resident Glimmer cache length does not match session history");
@@ -2234,20 +2435,54 @@ DecodeResult GlimmerSession::decode_one(const GenerationConfig& config) {
             throw std::runtime_error("stop_token_ids contains a token outside the checkpoint vocabulary");
         }
     }
+    if (!std::isfinite(config.temperature) || config.temperature < 0.0 ||
+        config.top_k < 0 || !std::isfinite(config.top_p) ||
+        !(config.top_p > 0.0) || config.top_p > 1.0) {
+        throw std::runtime_error("resident Glimmer sampling configuration is invalid");
+    }
     const std::mt19937_64 rng_before = rng_;
     const std::optional<std::int64_t> generation_seed_before = active_generation_seed_;
+    const bool fast_k_quant = config.temperature > 0.0;
     try {
         if (config.seed.has_value() && config.seed != active_generation_seed_) {
             rng_.seed(static_cast<std::mt19937_64::result_type>(*config.seed));
             active_generation_seed_ = config.seed;
         }
-        std::vector<float> logits = cache_mode_ == KVCacheMode::Full
-            ? model_->logits_from_cache(*cache_)
-            : model_->forward_last_logits(tokens_, cancelled_);
-        DecodeResult result = model_->select_token(logits, config, rng_);
-        throw_if_cancelled(cancelled_);
+        materialize_speculative_pending_token(fast_k_quant);
+        DecodeResult result;
+        const bool cuda_greedy = cache_mode_ == KVCacheMode::Full &&
+            model_->cuda_model_ && model_->cuda_model_->has_device_argmax() &&
+            (config.temperature == 0.0 || config.top_k == 1);
+        const bool cuda_graph_greedy = cuda_greedy && !assistant_session_ &&
+            model_->cuda_model_->has_decode_graphs();
+        if (cuda_greedy) {
+            auto selected = cuda_graph_greedy
+                ? model_->cuda_model_->decode_argmax_and_append(
+                      cache_->cuda, cancelled_)
+                : model_->cuda_model_->argmax_logits(cache_->cuda);
+            if (selected.indices.size() != 1 || selected.values.size() != 1) {
+                throw std::runtime_error("Glimmer CUDA current argmax is malformed");
+            }
+            result.token_id = selected.indices.front();
+            result.selected_logit = selected.values.front();
+            if (contains_token(config.stop_token_ids, result.token_id)) {
+                result.finish_reason = "stop";
+            }
+        } else {
+            std::vector<float> logits = cache_mode_ == KVCacheMode::Full
+                ? model_->logits_from_cache(*cache_)
+                : model_->forward_last_logits(tokens_, cancelled_);
+            result = model_->select_token(logits, config, rng_);
+        }
+        // A captured graph commits one token atomically. Cancellation is
+        // observed before its launch and again at the next token boundary;
+        // throwing here would leave the already-advanced device cache ahead
+        // of the session transcript.
+        if (!cuda_graph_greedy) throw_if_cancelled(cancelled_);
         if (cache_mode_ == KVCacheMode::Full) {
-            append_cached_token(result.token_id, cache_length_);
+            if (!cuda_graph_greedy) {
+                append_cached_token(result.token_id, cache_length_, fast_k_quant);
+            }
             ++cache_length_;
             ++decode_rows_processed_;
         } else {
@@ -2289,6 +2524,7 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
         }
     }
     const bool greedy = config.temperature == 0.0 || config.top_k == 1;
+    const bool fast_k_quant = config.temperature > 0.0;
     if (!greedy && (!std::isfinite(config.temperature) || !(config.temperature > 0.0) ||
                     config.top_k < 0 || !std::isfinite(config.top_p) ||
                     !(config.top_p > 0.0) || config.top_p > 1.0)) {
@@ -2298,28 +2534,74 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
     const std::mt19937_64 rng_before = rng_;
     const std::optional<std::int64_t> generation_seed_before = active_generation_seed_;
     const std::int64_t original_length = static_cast<std::int64_t>(tokens_.size());
+    const bool original_speculative_ready = speculative_ready_;
     try {
         if (config.seed.has_value() && config.seed != active_generation_seed_) {
             rng_.seed(static_cast<std::mt19937_64::result_type>(*config.seed));
             active_generation_seed_ = config.seed;
         }
         SpeculativeStepResult result;
-
         // Match the pinned candidate generator: its first assisted iteration
         // has no target hidden outputs yet, so the target emits one anchor.
         if (!speculative_ready_) {
             const std::vector<float> logits = model_->logits_from_cache(*cache_);
             DecodeResult decoded = model_->select_token(logits, config, rng_);
-            append_cached_token(decoded.token_id, cache_length_);
-            ++cache_length_;
             tokens_.push_back(decoded.token_id);
+            if (model_->cuda_model_) {
+                assistant_session_->prepare_lagged_anchor(cache_length_, cancelled_);
+                speculative_pending_token_ = true;
+            } else {
+                append_cached_token(decoded.token_id, cache_length_, fast_k_quant);
+                ++cache_length_;
+            }
             result.tokens.push_back(std::move(decoded));
-            result.target_rows = 1;
+            result.target_rows = model_->cuda_model_ ? 0 : 1;
             result.target_only_warmup = true;
             speculative_ready_ = true;
+            if (!model_->cuda_model_) ++decode_rows_processed_;
+            ++decode_calls_;
+            strict_model_compute_ = config.temperature == 0.0;
+            return result;
+        }
+
+        const bool lagged_cuda = model_->cuda_model_ && speculative_pending_token_;
+        if (lagged_cuda &&
+            cache_length_ + 1 != static_cast<std::int64_t>(tokens_.size())) {
+            throw std::runtime_error("Glimmer lagged CUDA verification history is inconsistent");
+        }
+
+        // A one-token request tail does not benefit from constructing a full
+        // 16-row diffusion window and verifying two rows.  Advance the single
+        // lagged target row, sample directly from its logits, and leave the
+        // selected token as the next lagged anchor.  This preserves the same
+        // cache invariant as a normal speculative correction while avoiding
+        // an otherwise mandatory assistant block at every generation limit.
+        if (lagged_cuda && max_tokens_remaining == 1) {
+            materialize_speculative_pending_token(fast_k_quant);
+            DecodeResult decoded;
+            const bool cuda_greedy = model_->cuda_model_->has_device_argmax() && greedy;
+            if (cuda_greedy) {
+                auto selected = model_->cuda_model_->argmax_logits(cache_->cuda);
+                if (selected.indices.size() != 1 || selected.values.size() != 1) {
+                    throw std::runtime_error("Glimmer CUDA tail argmax is malformed");
+                }
+                decoded.token_id = selected.indices.front();
+                decoded.selected_logit = selected.values.front();
+                if (contains_token(config.stop_token_ids, decoded.token_id)) {
+                    decoded.finish_reason = "stop";
+                }
+            } else {
+                decoded = model_->select_token(
+                    model_->logits_from_cache(*cache_), config, rng_);
+            }
+            tokens_.push_back(decoded.token_id);
+            assistant_session_->prepare_lagged_anchor(cache_length_, cancelled_);
+            speculative_pending_token_ = true;
+            result.tokens.push_back(std::move(decoded));
+            result.target_rows = 1;
             ++decode_rows_processed_;
             ++decode_calls_;
-            strict_model_compute_ = greedy;
+            strict_model_compute_ = config.temperature == 0.0;
             return result;
         }
 
@@ -2327,10 +2609,10 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             {assistant_model_->proposal_tokens(), max_tokens_remaining,
              model_->max_seq_len() - original_length});
         auto proposal = assistant_session_->propose(
-            tokens_.back(), proposal_count, cancelled_);
+            tokens_.back(), proposal_count, cancelled_, !greedy, fast_k_quant);
         if (static_cast<std::int64_t>(proposal.token_ids.size()) != proposal_count ||
             static_cast<std::int64_t>(proposal.logits.size()) !=
-                proposal_count * model_->vocab_size()) {
+                (greedy ? 0 : proposal_count * model_->vocab_size())) {
             throw std::runtime_error("DFlash assistant returned a malformed proposal block");
         }
         std::vector<std::vector<double>> q_probabilities;
@@ -2345,37 +2627,83 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             }
         }
 
+        const bool cuda_greedy_argmax = greedy && model_->cuda_model_ &&
+            model_->cuda_model_->has_device_argmax();
         std::vector<std::vector<float>> target_logits;
-        target_logits.reserve(static_cast<std::size_t>(proposal_count + 1));
-        target_logits.push_back(model_->logits_from_cache(*cache_));
+        std::vector<std::int64_t> target_argmax_indices;
+        std::vector<float> target_argmax_values;
+        if (cuda_greedy_argmax) {
+            target_argmax_indices.reserve(static_cast<std::size_t>(proposal_count + 1));
+            target_argmax_values.reserve(static_cast<std::size_t>(proposal_count + 1));
+            if (!lagged_cuda) {
+                auto current = model_->cuda_model_->argmax_logits(cache_->cuda);
+                if (current.indices.size() != 1 || current.values.size() != 1) {
+                    throw std::runtime_error("Glimmer CUDA current argmax is malformed");
+                }
+                target_argmax_indices = std::move(current.indices);
+                target_argmax_values = std::move(current.values);
+            }
+        } else {
+            target_logits.reserve(static_cast<std::size_t>(proposal_count + 1));
+            if (!lagged_cuda) target_logits.push_back(model_->logits_from_cache(*cache_));
+        }
         std::int64_t actual_target_rows = 0;
         std::shared_ptr<neuralfn::resident_glimmer_cuda::Verification> cuda_verification;
         if (model_->cuda_model_) {
+            const bool device_target_taps = assistant_model_->cuda_device_tap_pack();
+            std::vector<std::int64_t> verification_tokens;
+            verification_tokens.reserve(static_cast<std::size_t>(
+                proposal_count + (lagged_cuda ? 1 : 0)));
+            if (lagged_cuda) verification_tokens.push_back(tokens_.back());
+            verification_tokens.insert(
+                verification_tokens.end(), proposal.token_ids.begin(), proposal.token_ids.end());
+            const std::int64_t verification_rows =
+                static_cast<std::int64_t>(verification_tokens.size());
             cuda_verification = model_->cuda_model_->verify_tokens(
-                proposal.token_ids, cache_length_, cache_->cuda, cancelled_,
-                &assistant_model_->target_layer_ids());
-            const std::vector<float>& block_logits = cuda_verification->logits();
-            const std::int64_t vocab = model_->vocab_size();
-            if (cuda_verification->rows() != proposal_count ||
-                static_cast<std::int64_t>(block_logits.size()) != proposal_count * vocab) {
+                verification_tokens, cache_length_, cache_->cuda, cancelled_,
+                &assistant_model_->target_layer_ids(), !cuda_greedy_argmax,
+                cuda_greedy_argmax, fast_k_quant,
+                !device_target_taps, true);
+            if (cuda_verification->rows() != verification_rows) {
                 throw std::runtime_error("Glimmer CUDA verifier returned malformed rows");
             }
-            for (std::int64_t row = 0; row < proposal_count; ++row) {
-                const float* first = block_logits.data() + row * vocab;
-                target_logits.emplace_back(first, first + vocab);
+            if (cuda_greedy_argmax) {
+                const auto& block_indices = cuda_verification->argmax_indices();
+                const auto& block_values = cuda_verification->argmax_values();
+                if (static_cast<std::int64_t>(block_indices.size()) != verification_rows ||
+                    block_values.size() != block_indices.size()) {
+                    throw std::runtime_error(
+                        "Glimmer CUDA verifier returned malformed argmax rows");
+                }
+                target_argmax_indices.insert(
+                    target_argmax_indices.end(), block_indices.begin(), block_indices.end());
+                target_argmax_values.insert(
+                    target_argmax_values.end(), block_values.begin(), block_values.end());
+            } else {
+                const std::vector<float>& block_logits = cuda_verification->logits();
+                const std::int64_t vocab = model_->vocab_size();
+                if (static_cast<std::int64_t>(block_logits.size()) !=
+                    verification_rows * vocab) {
+                    throw std::runtime_error(
+                        "Glimmer CUDA verifier returned malformed logit rows");
+                }
+                for (std::int64_t row = 0; row < verification_rows; ++row) {
+                    const float* first = block_logits.data() + row * vocab;
+                    target_logits.emplace_back(first, first + vocab);
+                }
             }
-            actual_target_rows = proposal_count;
+            actual_target_rows = verification_rows;
         } else {
             for (std::int64_t row = 0; row < proposal_count; ++row) {
                 append_cached_token(
-                    proposal.token_ids[static_cast<std::size_t>(row)], cache_length_);
+                    proposal.token_ids[static_cast<std::size_t>(row)], cache_length_,
+                    fast_k_quant);
                 ++cache_length_;
                 ++actual_target_rows;
                 tokens_.push_back(proposal.token_ids[static_cast<std::size_t>(row)]);
                 target_logits.push_back(model_->logits_from_cache(*cache_));
             }
         }
-
         std::int64_t accepted = 0;
         bool accepted_stop = false;
         std::vector<std::vector<double>> p_probabilities;
@@ -2385,7 +2713,10 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             const std::int64_t candidate = proposal.token_ids[static_cast<std::size_t>(accepted)];
             bool keep = false;
             if (greedy) {
-                keep = argmax_token(target_logits[static_cast<std::size_t>(accepted)]) == candidate;
+                const std::int64_t target_token = cuda_greedy_argmax
+                    ? target_argmax_indices[static_cast<std::size_t>(accepted)]
+                    : argmax_token(target_logits[static_cast<std::size_t>(accepted)]);
+                keep = target_token == candidate;
             } else {
                 p_probabilities.push_back(processed_probabilities(
                     target_logits[static_cast<std::size_t>(accepted)], config));
@@ -2400,8 +2731,10 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             if (!keep) break;
             DecodeResult decoded;
             decoded.token_id = candidate;
-            decoded.selected_logit = target_logits[static_cast<std::size_t>(accepted)]
-                [static_cast<std::size_t>(candidate)];
+            decoded.selected_logit = cuda_greedy_argmax
+                ? target_argmax_values[static_cast<std::size_t>(accepted)]
+                : target_logits[static_cast<std::size_t>(accepted)]
+                    [static_cast<std::size_t>(candidate)];
             if (contains_token(config.stop_token_ids, candidate)) {
                 decoded.finish_reason = "stop";
                 accepted_stop = true;
@@ -2412,14 +2745,25 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
                 break;
             }
         }
-
         if (!accepted_stop && static_cast<std::int64_t>(result.tokens.size()) < max_tokens_remaining) {
             DecodeResult correction;
             if (accepted < proposal_count) {
-                const std::vector<float>& p_logits = target_logits[static_cast<std::size_t>(accepted)];
                 if (greedy) {
-                    correction.token_id = argmax_token(p_logits);
+                    if (cuda_greedy_argmax) {
+                        correction.token_id =
+                            target_argmax_indices[static_cast<std::size_t>(accepted)];
+                        correction.selected_logit =
+                            target_argmax_values[static_cast<std::size_t>(accepted)];
+                    } else {
+                        const std::vector<float>& p_logits =
+                            target_logits[static_cast<std::size_t>(accepted)];
+                        correction.token_id = argmax_token(p_logits);
+                        correction.selected_logit =
+                            p_logits[static_cast<std::size_t>(correction.token_id)];
+                    }
                 } else {
+                    const std::vector<float>& p_logits =
+                        target_logits[static_cast<std::size_t>(accepted)];
                     if (static_cast<std::int64_t>(p_probabilities.size()) <= accepted) {
                         p_probabilities.push_back(processed_probabilities(p_logits, config));
                     }
@@ -2440,45 +2784,91 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
                     }
                     for (double& value : residual) value /= total;
                     correction.token_id = sample_probabilities(residual, rng_);
+                    correction.selected_logit =
+                        p_logits[static_cast<std::size_t>(correction.token_id)];
                 }
-                correction.selected_logit = p_logits[static_cast<std::size_t>(correction.token_id)];
             } else {
-                const std::vector<float>& bonus_logits = target_logits.back();
-                correction.token_id = greedy
-                    ? argmax_token(bonus_logits)
-                    : sample_probabilities(processed_probabilities(bonus_logits, config), rng_);
-                correction.selected_logit = bonus_logits[static_cast<std::size_t>(correction.token_id)];
+                if (cuda_greedy_argmax) {
+                    correction.token_id = target_argmax_indices.back();
+                    correction.selected_logit = target_argmax_values.back();
+                } else {
+                    const std::vector<float>& bonus_logits = target_logits.back();
+                    correction.token_id = greedy
+                        ? argmax_token(bonus_logits)
+                        : sample_probabilities(
+                              processed_probabilities(bonus_logits, config), rng_);
+                    correction.selected_logit =
+                        bonus_logits[static_cast<std::size_t>(correction.token_id)];
+                }
             }
             if (contains_token(config.stop_token_ids, correction.token_id)) {
                 correction.finish_reason = "stop";
             }
             result.tokens.push_back(std::move(correction));
         }
-
         if (cuda_verification) {
+            const bool device_target_taps = assistant_model_->cuda_device_tap_pack();
+            const std::int64_t committed_anchor_rows = lagged_cuda ? 1 : 0;
+            const std::int64_t committed_rows = committed_anchor_rows + accepted;
+            const bool fused_lagged_context = device_target_taps && lagged_cuda &&
+                static_cast<std::int64_t>(result.tokens.size()) > accepted;
             model_->cuda_model_->commit_verification(
-                cache_->cuda, cuda_verification, accepted);
-            const std::vector<float>& taps = cuda_verification->target_taps();
-            const std::int64_t tap_width = assistant_model_->target_tap_width();
-            if (static_cast<std::int64_t>(taps.size()) != proposal_count * tap_width) {
-                throw std::runtime_error("Glimmer CUDA verifier returned malformed target taps");
-            }
+                cache_->cuda, cuda_verification, committed_rows, false);
+            const std::int64_t accepted_start = cache_length_;
             for (std::int64_t row = 0; row < accepted; ++row) {
                 const std::int64_t token = proposal.token_ids[static_cast<std::size_t>(row)];
                 tokens_.push_back(token);
-                std::vector<float> row_taps(
-                    taps.begin() + row * tap_width,
-                    taps.begin() + (row + 1) * tap_width);
-                assistant_session_->record_target_taps(
-                    cache_length_ + row, row_taps, cancelled_);
             }
-            cache_length_ += accepted;
+            if (committed_rows > 0) {
+                if (device_target_taps) {
+                    if (cuda_verification->device_target_taps() == nullptr) {
+                        throw std::runtime_error(
+                            "Glimmer CUDA verifier returned no device target taps");
+                    }
+                    if (fused_lagged_context) {
+                        assistant_session_->
+                            record_target_taps_batch_device_and_prepare_lagged_anchor(
+                                accepted_start,
+                                cuda_verification->device_target_taps(),
+                                cuda_verification->cuda_device(),
+                                cuda_verification->rows(), committed_rows,
+                                cancelled_);
+                    } else {
+                        assistant_session_->record_target_taps_batch_device(
+                            accepted_start, cuda_verification->device_target_taps(),
+                            cuda_verification->cuda_device(), cuda_verification->rows(),
+                            committed_rows, cancelled_);
+                    }
+                } else {
+                    const std::vector<float>& taps = cuda_verification->target_taps();
+                    const std::int64_t tap_width = assistant_model_->target_tap_width();
+                    if (static_cast<std::int64_t>(taps.size()) !=
+                        cuda_verification->rows() * tap_width) {
+                        throw std::runtime_error(
+                            "Glimmer CUDA verifier returned malformed target taps");
+                    }
+                    assistant_session_->record_target_taps_batch(
+                        accepted_start, taps.data(), committed_rows, cancelled_);
+                }
+            }
+            cache_length_ += committed_rows;
             if (static_cast<std::int64_t>(result.tokens.size()) > accepted) {
                 const DecodeResult& decoded = result.tokens.back();
-                append_cached_token(decoded.token_id, cache_length_);
-                ++cache_length_;
-                ++actual_target_rows;
-                tokens_.push_back(decoded.token_id);
+                if (lagged_cuda) {
+                    tokens_.push_back(decoded.token_id);
+                    if (!fused_lagged_context) {
+                        assistant_session_->prepare_lagged_anchor(
+                            cache_length_, cancelled_);
+                    }
+                    speculative_pending_token_ = true;
+                } else {
+                    append_cached_token(decoded.token_id, cache_length_, fast_k_quant);
+                    ++cache_length_;
+                    ++actual_target_rows;
+                    tokens_.push_back(decoded.token_id);
+                }
+            } else if (lagged_cuda) {
+                speculative_pending_token_ = false;
             }
         } else {
             const bool retained_full_proposal = accepted == proposal_count && !accepted_stop &&
@@ -2487,7 +2877,7 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             if (retained_full_proposal) {
                 if (static_cast<std::int64_t>(result.tokens.size()) == proposal_count + 1) {
                     const std::int64_t bonus = result.tokens.back().token_id;
-                    append_cached_token(bonus, cache_length_);
+                    append_cached_token(bonus, cache_length_, fast_k_quant);
                     ++cache_length_;
                     ++actual_target_rows;
                     tokens_.push_back(bonus);
@@ -2497,14 +2887,20 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
                 cache_length_ = original_length;
                 rebuild_cache();
                 for (const DecodeResult& decoded : result.tokens) {
-                    append_cached_token(decoded.token_id, cache_length_);
+                    append_cached_token(decoded.token_id, cache_length_, fast_k_quant);
                     ++cache_length_;
                     ++actual_target_rows;
                     tokens_.push_back(decoded.token_id);
                 }
             }
         }
-
+        if (cuda_verification) {
+            // Target and assistant use distinct CUDA streams.  The target
+            // cache commit was intentionally deferred so it could overlap the
+            // assistant context update above; complete it before exposing the
+            // atomic speculative block to the caller.
+            model_->cuda_model_->synchronize();
+        }
         result.proposed_tokens = proposal_count;
         result.accepted_tokens = accepted;
         result.rejected_tokens = proposal_count - accepted;
@@ -2516,7 +2912,7 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
         speculative_rejected_ += result.rejected_tokens;
         decode_rows_processed_ += actual_target_rows;
         decode_calls_ += static_cast<std::int64_t>(result.tokens.size());
-        strict_model_compute_ = greedy;
+        strict_model_compute_ = config.temperature == 0.0;
         return result;
     } catch (...) {
         rng_ = rng_before;
@@ -2525,6 +2921,7 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
         cache_length_ = original_length;
         try {
             rebuild_cache();
+            speculative_ready_ = original_speculative_ready;
         } catch (...) {
             closed_ = true;
             model_->session_closed();
@@ -2556,6 +2953,7 @@ void GlimmerSession::truncate(std::int64_t token_count) {
             rebuild_cache();
             throw;
         }
+        speculative_pending_token_ = false;
         speculative_ready_ = false;
     }
     ++truncate_calls_;
@@ -2576,6 +2974,7 @@ void GlimmerSession::reset() {
     rng_.seed(static_cast<std::mt19937_64::result_type>(seed_));
     cancelled_.store(false);
     strict_model_compute_ = false;
+    speculative_pending_token_ = false;
     speculative_ready_ = false;
     ++reset_calls_;
 }

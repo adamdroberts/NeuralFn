@@ -747,7 +747,7 @@ def _run(
     append: Sequence[int] = (),
     cuda_libraries: tuple[Path, Path] | None = None,
     lora: tuple[Path, str, int, float, int] | None = None,
-) -> tuple[list[float], list[str], list[str], str]:
+) -> tuple[list[float], list[str], list[str], str, list[str]]:
     arguments = [
         str(probe),
         str(checkpoint),
@@ -777,6 +777,7 @@ def _run(
         lines[1].split(","),
         lines[2].split(","),
         lines[3],
+        lines[4].split(","),
     )
 
 
@@ -916,6 +917,7 @@ def test_resident_glimmer_cuda_orchestration_matches_bf16_oracle(
     assert [int(value) for value in result[1]] == [5, 5, 144, 144]
     assert int(result[2][0]) == max(range(VOCAB), key=result[0].__getitem__)
     assert result[3] == "cancelled"
+    assert [int(value) for value in result[4]] == [1, 1]
 
 
 def test_resident_dflash_matches_independent_torch_block_oracle(
@@ -1067,3 +1069,18 @@ def test_resident_dflash_loads_exact_packed_gguf_without_dense_expansion(
     assert reported_bytes == resident_bytes
     assert reported_bytes < assistant.stat().st_size
     assert (first_layer, last_layer) == (1, 49)
+
+
+def test_resident_dflash_cuda_pins_neox_half_split_rope() -> None:
+    source = (
+        ROOT
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "resident_glimmer_assistant.cpp"
+    ).read_text(encoding="utf-8")
+    assert "cuda.gguf_interleaved = false;" in source
+    assert (
+        "cuda.gguf_interleaved = config_.container == WeightContainer::GgufKQuant;"
+        not in source
+    )

@@ -80,6 +80,47 @@ the target distribution. The load policy is `off`, `auto`, or `required`;
 `required` fails before mutation when the companion, cache mode, device
 backend, or digest binding is unavailable.
 
+When the sidecar exports deterministic row argmax, ordinary greedy target
+decoding selects the current 202,048-way row on device. Greedy DFlash likewise
+keeps assistant and target selection on device and transfers only token
+IDs/selected values. Equal maxima choose the lowest token ID. Sampled
+generation and sampled speculation continue to transfer/retain full rows;
+lossless speculative acceptance and positive-residual sampling require the
+complete p and q distributions.
+
+The accepted strict sidecar additionally groups one-row packed projections and
+uses an optional dual-RMS→Q8→MMVQ handoff. The paired symbols
+`nfn_native_tile_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1` and
+`nfn_native_tile_k_quant_mmvq_multi_linear_prequantized_float32_v1` must both
+be present or both be absent; an incomplete ABI fails during model load. The
+handoff still writes all ordinary FP32 norm/residual outputs and is used only
+for one-row target decode. Multirow DFlash MMVQ instead hoists decoded packed
+weights, reuses prequantized activations, and can resolve the optional
+`nfn_native_tile_glimmer_dual_rms_add_capture_cooperative_batch_float32_v1`
+and `nfn_native_tile_dflash_block_attention_short_split_float32_v1` symbols.
+The cooperative norm is selected only for supported F32 affine descriptors;
+BF16 norms retain the ordinary exact kernel. Set
+`NFN_GLIMMER_COOPERATIVE_BATCH_RMS=0`,
+`NFN_GLIMMER_SHORT_ATTENTION_SPLIT=0`, or
+`NFN_GLIMMER_VERIFIER_PROJECTION_OVERLAP=0` only for matched development
+bisections. These are execution details, not new checkpoint encodings.
+
+Presentation code must not treat a decoded Glimmer continuation as plain
+assistant text. `neuralfn.native_chat.parse_native_assistant_response()`
+returns a `NativeAssistantResponse` with `visible_text`, separately held
+`reasoning_text`, raw text, and channel-completion flags. For the ATEM renderer
+it exposes only `to=user` text as display/transcript-safe; malformed control
+fragments and private-only truncation fail closed. The process-local CLI uses
+that parser before appending history.
+
+`neuralfn.native_cli.run_native_artifact_cli()` accepts an optional
+`interactive_ui` implementing `NativeArtifactCLIUI` (`handle`, `read_line`,
+and `progress`). UI events carry ready/model state, completed turns with
+separate prefill/decode timing, warnings, commands, and live statistics. This
+keeps presentation optional: noninteractive callers and injected test UIs use
+the same resident lifecycle without importing Rich, while the installed
+`nfn` command supplies `RichNativeInferenceUI` for a TTY.
+
 Full-BF16 artifacts expose embedded CPU or whole-model CUDA vision for images
 and decoded videos. Official packed bundles can attach `mmproj` for CPU or CUDA
 still images. The packed temporal projection cannot represent two distinct
@@ -285,9 +326,34 @@ total VRAM before model allocation and budgets target/companion weights,
 staging, workspace, hybrid target/assistant caches, configured context and
 session count, and reserve. It chooses quality-first only among authenticated,
 available, binding-supported profiles that fit. An explicit value is a strict
-pin and never downgrades. CPU `auto` selects the authenticated primary and does
-not reuse the CUDA VRAM policy. Weight precision, activation storage, and
-`KVCacheConfig` are independent.
+pin and never downgrades; a 32-GB device may explicitly load
+`k-quant-17gb` when the measured byte budget fits. CPU `auto` selects the
+authenticated primary and does not reuse the CUDA VRAM policy. Weight
+precision, activation storage, and `KVCacheConfig` are independent.
+
+Packed Glimmer CUDA statistics additionally expose
+`cuda_q8_activation_quantizations`, `cuda_q8_packed_linears`,
+`cuda_device_argmax_calls`, and `cuda_device_argmax_rows`. The argmax counters
+are direct proof that ordinary greedy target rows or greedy DFlash proposal/
+verification rows stayed on device. Model activation state remains FP32.
+Positive temperature permits the separately counted generic Q8-activation
+packed path. Exact-zero MMVQ uses its pinned Q8_1 dot-product representation;
+the direct RMS handoff may produce those exact bytes without incrementing the
+generic Q8 counters. It was accepted only after bit-exact ABI checks and an
+identical full-artifact token hash. `NFN_GLIMMER_MMQ_MEGAKERNELS=0` disables
+the grouped/handoff runtime path for development A/Bs; it is not a supported
+production tuning flag.
+
+On the documented RTX 5090, the final current-source exact-zero run measured
+271.244 DFlash tok/s median over ten trials. The same final binary with only
+`NFN_GLIMMER_COOPERATIVE_BATCH_RMS=0` measured 264.724 tok/s (+2.46% enabled),
+with identical output, 28/34 acceptance, 37 target rows, sampled memory, and
+zero CPU model rows. Earlier retained controls measured 78.608 target tok/s
+with the target megakernels versus 72.871 without (+7.87%), and 235.657
+DFlash tok/s with packed-weight block hoisting versus 158.779 without
+(+48.42%). These numbers apply only to the pinned 41-token/32-token
+K-Quant-17GB workload; see `docs/native-cli-inference.md` for hashes,
+distributions, memory, sanitizer proof, and comparator caveats.
 
 Glimmer media helpers are model methods:
 

@@ -14,4 +14,10 @@ dependencies = ["rich>=13", "sentencepiece>=0.1.99"]
 nfn = "nfn:main"
 
 [tool.setuptools]
-py-modules = ["cli_utils", "nfn", "nfn_impl", "parameter_golf_runtime"]
+py-modules = [
+  "cli_utils",
+  "native_infer_tui",
+  "nfn",
+  "nfn_impl",
+  "parameter_golf_runtime",
+]

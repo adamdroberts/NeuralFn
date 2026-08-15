@@ -121,6 +121,30 @@ int nfn_native_tile_linear_packed_weight_float32_v1(
     }
     return 0;
 }
+int nfn_native_tile_argmax_rows_float32_v1(
+    const float* values,
+    std::int64_t* output_indices,
+    float* output_values,
+    std::int64_t rows,
+    std::int64_t width,
+    void*) {
+    if (values == nullptr || output_indices == nullptr || output_values == nullptr ||
+        rows <= 0 || width <= 0) return 1;
+    for (std::int64_t row = 0; row < rows; ++row) {
+        std::int64_t best_index = 0;
+        float best_value = values[row * width];
+        for (std::int64_t column = 1; column < width; ++column) {
+            const float candidate = values[row * width + column];
+            if (candidate > best_value) {
+                best_value = candidate;
+                best_index = column;
+            }
+        }
+        output_indices[row] = best_index;
+        output_values[row] = best_value;
+    }
+    return 0;
+}
 int nfn_native_tile_linear_backward_input_packed_weight_float32_v1(
     const NfnNativeTilePackedWeightDescriptorV1* weight,
     const float* grad_output,
@@ -194,6 +218,40 @@ int nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
     }
     return 0;
 }
+int nfn_native_tile_glimmer_rms_norm_affine_capture_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* stream) {
+    if (input == nullptr || residual_output == nullptr || rows <= 0 || width <= 0) return 1;
+    std::copy(input, input + rows * width, residual_output);
+    return nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
+        input, weight, output, rows, width, eps, centered, stream);
+}
+int nfn_native_tile_glimmer_rms_norm_affine_add_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    const float* residual_input,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* stream) {
+    if (residual_input == nullptr) return 1;
+    const int status = nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
+        input, weight, output, rows, width, eps, centered, stream);
+    if (status != 0) return status;
+    for (std::int64_t index = 0; index < rows * width; ++index) {
+        output[index] += residual_input[index];
+    }
+    return 0;
+}
 int nfn_native_tile_glimmer_positioned_rope_float32_v1(
     float* query, float* key, std::int64_t q_heads, std::int64_t kv_heads,
     std::int64_t head_dim, std::int64_t position, float theta,
@@ -263,6 +321,41 @@ int nfn_native_tile_glimmer_cache_commit_bf16_v1(
     for (std::int64_t index = 0; index < width; ++index) {
         d->key_cache_bf16[offset + index] = to_bf16(d->current_key[index]);
         d->value_cache_bf16[offset + index] = to_bf16(d->current_value[index]);
+    }
+    return 0;
+}
+int nfn_native_tile_glimmer_cache_commit_layers_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitLayersDescriptorV1* d) {
+    if (d == nullptr || d->version != 1 || d->staged_keys == nullptr ||
+        d->staged_values == nullptr || d->layers == nullptr ||
+        d->layer_count <= 0 || d->layer_count > 64 || d->source_rows <= 0 ||
+        d->rows <= 0 || d->rows > d->source_rows || d->kv_heads <= 0 ||
+        d->head_dim <= 0 || d->position < 0) {
+        return 1;
+    }
+    const std::int64_t width = d->kv_heads * d->head_dim;
+    if (d->source_layer_stride < d->source_rows * width) return 1;
+    for (std::int64_t layer_index = 0; layer_index < d->layer_count;
+         ++layer_index) {
+        const NfnNativeTileGlimmerCacheLayerV1& layer = d->layers[layer_index];
+        if (layer.key_cache_bf16 == nullptr ||
+            layer.value_cache_bf16 == nullptr || layer.cache_capacity <= 0 ||
+            layer.cache_row_stride < width) {
+            return 1;
+        }
+        for (std::int64_t row = 0; row < d->rows; ++row) {
+            const std::int64_t source =
+                layer_index * d->source_layer_stride + row * width;
+            const std::int64_t target =
+                ((d->position + row) % layer.cache_capacity) *
+                layer.cache_row_stride;
+            for (std::int64_t column = 0; column < width; ++column) {
+                layer.key_cache_bf16[target + column] =
+                    to_bf16(d->staged_keys[source + column]);
+                layer.value_cache_bf16[target + column] =
+                    to_bf16(d->staged_values[source + column]);
+            }
+        }
     }
     return 0;
 }

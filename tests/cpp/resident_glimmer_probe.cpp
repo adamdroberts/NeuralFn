@@ -121,6 +121,8 @@ int main(int argc, char** argv) {
             cancelled = true;
         }
         std::cout << (cancelled ? "cancelled" : "not-cancelled") << '\n';
+        std::cout << model->cuda_device_argmax_calls() << ','
+                  << model->cuda_device_argmax_rows() << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -1009,7 +1009,12 @@ void Model::initialize_cuda_backend() {
     cuda.sliding_window = config_.sliding_window;
     cuda.rope_theta = static_cast<float>(config_.rope_theta);
     cuda.norm_eps = static_cast<float>(config_.norm_eps);
-    cuda.gguf_interleaved = config_.container == WeightContainer::GgufKQuant;
+    // The official Muse-Glimmer target uses consecutive-pair RoPE, but its
+    // legacy DFlash backbone is explicitly NeoX/half-split.  Container layout
+    // does not change that architecture contract: treating the GGUF assistant
+    // like the target rotates every draft Q/K head incorrectly and destroys
+    // speculative acceptance.
+    cuda.gguf_interleaved = false;
     cuda.cuda_device = target_->cuda_device();
     cuda.tile_ops_lib = target_->cuda_tile_ops_library();
     cuda.cuda_runtime_lib = target_->cuda_runtime_library();
@@ -1038,6 +1043,14 @@ std::int64_t Model::cuda_kernel_launches() const noexcept {
     return cuda_model_ ? cuda_model_->kernel_launches() : 0;
 }
 
+std::int64_t Model::cuda_k_quant_mmq_linears() const noexcept {
+    return cuda_model_ ? cuda_model_->k_quant_mmq_linears() : 0;
+}
+
+bool Model::cuda_device_tap_pack() const noexcept {
+    return cuda_model_ && cuda_model_->has_device_tap_pack();
+}
+
 Session::Session(std::shared_ptr<Model> model) : model_(std::move(model)) {
     if (!model_) throw std::runtime_error("DFlash session requires a model");
     layers_.resize(static_cast<std::size_t>(model_->config_.num_layers));
@@ -1053,6 +1066,7 @@ void Session::reset() {
     }
     pending_taps_.clear();
     pending_position_ = -1;
+    lagged_anchor_position_ = -1;
     context_length_ = 0;
     if (model_->cuda_model_) cuda_cache_ = model_->cuda_model_->create_cache();
 }
@@ -1063,15 +1077,181 @@ void Session::record_target_taps(
     const std::atomic<bool>& cancelled) {
     model_->require_open();
     throw_if_cancelled(cancelled);
+    const bool lagged_anchor = lagged_anchor_position_ >= 0;
+    const bool contiguous = lagged_anchor
+        ? (pending_position_ < 0 && pending_taps_.empty() &&
+           context_length_ == lagged_anchor_position_ &&
+           position == lagged_anchor_position_)
+        : ((pending_position_ >= 0 && position == pending_position_ + 1) ||
+           (pending_position_ < 0 && context_length_ == 0 && position == 0));
     if (position < 0 || position >= model_->config_.max_seq_len ||
         static_cast<std::int64_t>(concatenated_taps.size()) != model_->target_tap_width() ||
-        (pending_position_ >= 0 && position != pending_position_ + 1) ||
-        (pending_position_ < 0 && position != 0)) {
+        !contiguous) {
         throw std::runtime_error("DFlash target tap stream is not contiguous/canonical");
     }
     if (pending_position_ >= 0) append_pending_context(cancelled);
     pending_taps_ = concatenated_taps;
     pending_position_ = position;
+    lagged_anchor_position_ = -1;
+}
+
+void Session::record_target_taps_batch(
+    std::int64_t start_position,
+    const float* concatenated_taps,
+    std::int64_t rows,
+    const std::atomic<bool>& cancelled) {
+    model_->require_open();
+    throw_if_cancelled(cancelled);
+    const std::int64_t tap_width = model_->target_tap_width();
+    const bool lagged_anchor = lagged_anchor_position_ >= 0;
+    const std::int64_t expected_start = lagged_anchor
+        ? lagged_anchor_position_
+        : (pending_position_ >= 0 ? pending_position_ + 1 : 0);
+    if (concatenated_taps == nullptr || rows <= 0 ||
+        rows > model_->config_.block_size || start_position < 0 ||
+        start_position + rows > model_->config_.max_seq_len ||
+        start_position != expected_start ||
+        (lagged_anchor && (pending_position_ >= 0 || !pending_taps_.empty() ||
+                           context_length_ != lagged_anchor_position_))) {
+        throw std::runtime_error(
+            "DFlash target tap batch is not contiguous/canonical");
+    }
+    if (!model_->cuda_model_) {
+        for (std::int64_t row = 0; row < rows; ++row) {
+            const float* first = concatenated_taps + row * tap_width;
+            record_target_taps(
+                start_position + row,
+                std::vector<float>(first, first + tap_width), cancelled);
+        }
+        return;
+    }
+    if (!cuda_cache_) {
+        throw std::runtime_error("DFlash CUDA cache is unavailable");
+    }
+    const bool had_pending = pending_position_ >= 0;
+    const std::int64_t append_rows = had_pending ? rows : rows - 1;
+    if (append_rows > 0) {
+        std::vector<float> contexts;
+        contexts.reserve(checked_size(checked_mul(
+            append_rows, tap_width, "DFlash context tap batch"),
+            "DFlash context tap batch"));
+        if (had_pending) {
+            contexts.insert(
+                contexts.end(), pending_taps_.begin(), pending_taps_.end());
+        }
+        const std::int64_t incoming_rows = append_rows - (had_pending ? 1 : 0);
+        contexts.insert(
+            contexts.end(), concatenated_taps,
+            concatenated_taps + incoming_rows * tap_width);
+        model_->cuda_model_->append_contexts(
+            contexts.data(), append_rows, context_length_, cuda_cache_, cancelled);
+        context_length_ += append_rows;
+    }
+    const float* last = concatenated_taps + (rows - 1) * tap_width;
+    pending_taps_.assign(last, last + tap_width);
+    pending_position_ = start_position + rows - 1;
+    lagged_anchor_position_ = -1;
+    if (cuda_cache_->logical_length() != context_length_) {
+        throw std::runtime_error(
+            "DFlash CUDA batched context cache length is inconsistent");
+    }
+}
+
+void Session::record_target_taps_batch_device(
+    std::int64_t start_position,
+    const float* tap_major_device,
+    int source_cuda_device,
+    std::int64_t source_rows,
+    std::int64_t rows,
+    const std::atomic<bool>& cancelled) {
+    model_->require_open();
+    throw_if_cancelled(cancelled);
+    const bool lagged_anchor = lagged_anchor_position_ >= 0;
+    const std::int64_t expected_start = lagged_anchor
+        ? lagged_anchor_position_
+        : (pending_position_ >= 0 ? pending_position_ + 1 : 0);
+    if (!model_->cuda_model_ || !model_->cuda_model_->has_device_tap_pack() ||
+        !cuda_cache_ || tap_major_device == nullptr || source_rows <= 0 ||
+        source_rows > model_->config_.block_size || rows <= 0 || rows > source_rows ||
+        start_position < 0 || start_position + rows > model_->config_.max_seq_len ||
+        start_position != expected_start ||
+        (lagged_anchor && (pending_position_ >= 0 || !pending_taps_.empty() ||
+                           context_length_ != lagged_anchor_position_))) {
+        throw std::runtime_error(
+            "DFlash device target tap batch is not contiguous/canonical");
+    }
+    if (pending_position_ >= 0) {
+        append_pending_context(cancelled);
+        pending_taps_.clear();
+        pending_position_ = -1;
+    }
+    pending_taps_ = model_->cuda_model_->append_contexts_device_tap_major(
+        tap_major_device, source_cuda_device, source_rows, rows,
+        context_length_, cuda_cache_, cancelled);
+    context_length_ += rows - 1;
+    pending_position_ = start_position + rows - 1;
+    lagged_anchor_position_ = -1;
+    if (cuda_cache_->logical_length() != context_length_) {
+        throw std::runtime_error(
+            "DFlash CUDA packed context cache length is inconsistent");
+    }
+}
+
+void Session::record_target_taps_batch_device_and_prepare_lagged_anchor(
+    std::int64_t start_position,
+    const float* tap_major_device,
+    int source_cuda_device,
+    std::int64_t source_rows,
+    std::int64_t rows,
+    const std::atomic<bool>& cancelled) {
+    model_->require_open();
+    throw_if_cancelled(cancelled);
+    if (!model_->cuda_model_ || !model_->cuda_model_->has_device_tap_pack() ||
+        !cuda_cache_ || tap_major_device == nullptr || source_rows <= 0 ||
+        source_rows > model_->config_.block_size || rows <= 0 ||
+        rows > source_rows || start_position < 0 ||
+        start_position + rows > model_->config_.max_seq_len ||
+        lagged_anchor_position_ != start_position || pending_position_ >= 0 ||
+        !pending_taps_.empty() || context_length_ != start_position) {
+        throw std::runtime_error(
+            "DFlash fused lagged target-tap batch is not contiguous/canonical");
+    }
+    model_->cuda_model_->append_contexts_device_tap_major_all(
+        tap_major_device, source_cuda_device, source_rows, rows,
+        start_position, cuda_cache_, cancelled);
+    context_length_ += rows;
+    lagged_anchor_position_ = context_length_;
+    if (cuda_cache_->logical_length() != context_length_) {
+        throw std::runtime_error(
+            "DFlash fused lagged context cache length is inconsistent");
+    }
+}
+
+void Session::prepare_lagged_anchor(
+    std::int64_t anchor_position,
+    const std::atomic<bool>& cancelled) {
+    model_->require_open();
+    throw_if_cancelled(cancelled);
+    if (lagged_anchor_position_ >= 0) {
+        if (lagged_anchor_position_ != anchor_position ||
+            context_length_ != anchor_position || pending_position_ >= 0 ||
+            !pending_taps_.empty()) {
+            throw std::runtime_error("DFlash lagged anchor state is inconsistent");
+        }
+        return;
+    }
+    if (anchor_position <= 0 || pending_position_ != anchor_position - 1 ||
+        pending_position_ != context_length_ || pending_taps_.empty()) {
+        throw std::runtime_error("DFlash lagged anchor is not contiguous/canonical");
+    }
+    append_pending_context(cancelled);
+    pending_taps_.clear();
+    pending_position_ = -1;
+    lagged_anchor_position_ = anchor_position;
+    if (context_length_ != anchor_position ||
+        (cuda_cache_ && cuda_cache_->logical_length() != context_length_)) {
+        throw std::runtime_error("DFlash lagged anchor cache length is inconsistent");
+    }
 }
 
 void Session::append_pending_context(const std::atomic<bool>& cancelled) {
@@ -1115,10 +1295,16 @@ void Session::append_pending_context(const std::atomic<bool>& cancelled) {
 Proposal Session::propose(
     std::int64_t anchor_token,
     std::int64_t proposal_tokens,
-    const std::atomic<bool>& cancelled) const {
+    const std::atomic<bool>& cancelled,
+    bool require_logits,
+    bool fast_k_quant) const {
     model_->require_open();
     throw_if_cancelled(cancelled);
-    if (pending_position_ != context_length_ || pending_taps_.empty() ||
+    const bool ordinary_anchor = pending_position_ == context_length_ &&
+        !pending_taps_.empty() && lagged_anchor_position_ < 0;
+    const bool lagged_anchor = pending_position_ < 0 && pending_taps_.empty() &&
+        lagged_anchor_position_ == context_length_;
+    if ((!ordinary_anchor && !lagged_anchor) ||
         proposal_tokens <= 0 || proposal_tokens > model_->proposal_tokens() ||
         context_length_ + model_->config_.block_size > model_->config_.max_seq_len) {
         throw std::runtime_error("DFlash proposal state/count exceeds its exact block contract");
@@ -1127,35 +1313,45 @@ Proposal Session::propose(
     const std::int64_t d = model_->config_.model_dim;
     const std::int64_t q_width = model_->config_.num_heads * model_->config_.head_dim;
     const std::int64_t kv_width = model_->config_.num_kv_heads * model_->config_.head_dim;
-    std::vector<float> hidden;
-    hidden.reserve(checked_size(checked_mul(block, d, "noise embeddings"), "noise embeddings"));
+    std::vector<std::int64_t> input_tokens;
+    input_tokens.reserve(static_cast<std::size_t>(block));
     for (std::int64_t row = 0; row < block; ++row) {
-        const std::int64_t token = row == 0 ? anchor_token : model_->config_.mask_token_id;
-        std::vector<float> embedding = model_->target_->raw_token_embedding(token);
-        hidden.insert(hidden.end(), embedding.begin(), embedding.end());
+        input_tokens.push_back(
+            row == 0 ? anchor_token : model_->config_.mask_token_id);
     }
-
     if (model_->cuda_model_) {
         if (!cuda_cache_ || cuda_cache_->logical_length() != context_length_) {
             throw std::runtime_error("DFlash CUDA proposal cache length is inconsistent");
         }
-        std::vector<float> cuda_normalized = model_->cuda_model_->forward_block(
-            hidden.data(), block, cuda_cache_, cancelled);
         Proposal proposal;
         proposal.token_ids.reserve(static_cast<std::size_t>(proposal_tokens));
-        proposal.logits.reserve(checked_size(checked_mul(
-            proposal_tokens, model_->target_->vocab_size(), "proposal logits"),
-            "proposal logits"));
+        if (!require_logits) {
+            const float* device_embeddings =
+                model_->target_->raw_token_embeddings_device(input_tokens);
+            const float* device_normalized = model_->cuda_model_->forward_block_device(
+                device_embeddings, model_->target_->cuda_device(), block,
+                cuda_cache_, cancelled);
+            proposal.token_ids = model_->target_->raw_argmax_rows_from_device_hidden(
+                device_normalized + d, model_->target_->cuda_device(),
+                proposal_tokens, fast_k_quant);
+            return proposal;
+        }
+        std::vector<float> hidden = model_->target_->raw_token_embeddings(input_tokens);
+        std::vector<float> cuda_normalized = model_->cuda_model_->forward_block(
+            hidden.data(), block, cuda_cache_, cancelled);
+        proposal.logits = model_->target_->raw_logits_rows_from_hidden(
+            cuda_normalized.data() + d, proposal_tokens, fast_k_quant);
+        const std::int64_t vocab = model_->target_->vocab_size();
         for (std::int64_t row = 0; row < proposal_tokens; ++row) {
-            const float* hidden_row = cuda_normalized.data() + (row + 1) * d;
-            std::vector<float> logits = model_->target_->raw_logits_from_hidden(hidden_row);
-            const auto best = std::max_element(logits.begin(), logits.end());
+            const float* logits = proposal.logits.data() + row * vocab;
+            const auto best = std::max_element(logits, logits + vocab);
             proposal.token_ids.push_back(static_cast<std::int64_t>(
-                std::distance(logits.begin(), best)));
-            proposal.logits.insert(proposal.logits.end(), logits.begin(), logits.end());
+                std::distance(logits, best)));
         }
         return proposal;
     }
+
+    std::vector<float> hidden = model_->target_->raw_token_embeddings(input_tokens);
 
     std::vector<float> normalized;
     std::vector<float> query;
@@ -1275,16 +1471,20 @@ Proposal Session::propose(
 
     Proposal proposal;
     proposal.token_ids.reserve(static_cast<std::size_t>(proposal_tokens));
-    proposal.logits.reserve(checked_size(checked_mul(
-        proposal_tokens, model_->target_->vocab_size(), "proposal logits"),
-        "proposal logits"));
+    if (require_logits) {
+        proposal.logits.reserve(checked_size(checked_mul(
+            proposal_tokens, model_->target_->vocab_size(), "proposal logits"),
+            "proposal logits"));
+    }
     for (std::int64_t row = 0; row < proposal_tokens; ++row) {
         const float* hidden_row = normalized.data() + (row + 1) * d;
         std::vector<float> logits = model_->target_->raw_logits_from_hidden(hidden_row);
         const auto best = std::max_element(logits.begin(), logits.end());
         proposal.token_ids.push_back(static_cast<std::int64_t>(
             std::distance(logits.begin(), best)));
-        proposal.logits.insert(proposal.logits.end(), logits.begin(), logits.end());
+        if (require_logits) {
+            proposal.logits.insert(proposal.logits.end(), logits.begin(), logits.end());
+        }
     }
     return proposal;
 }

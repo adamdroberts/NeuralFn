@@ -10,6 +10,7 @@ enum : std::uint32_t {
 
 enum : std::uint32_t {
     NFN_NATIVE_TILE_PACKED_WEIGHT_V1 = 1,
+    NFN_NATIVE_TILE_K_QUANT_MMQ_V1 = 1,
     NFN_NATIVE_TILE_PACKED_WEIGHT_F32 = 0,
     NFN_NATIVE_TILE_PACKED_WEIGHT_Q4_K = 12,
     NFN_NATIVE_TILE_PACKED_WEIGHT_Q5_K = 13,
@@ -358,12 +359,105 @@ struct NfnNativeTileGlimmerCacheCommitDescriptorV1 {
     void* cuda_stream;
 };
 
+// Decode-only composition of the three dependent per-layer operations used by
+// the resident Glimmer target: per-head Q/K RMS normalization (plus query
+// scale and optional positioned RoPE), one-token GQA, and the transactional
+// BF16 cache-row write.  The cache's logical length is still committed by the
+// resident only after the complete token succeeds; this operation merely
+// writes the otherwise-invisible row selected by `position`.
+//
+// The packed norm descriptors are embedded by value so the CUDA kernel never
+// dereferences host descriptor memory.  `has_*_norm_weight == 0` makes the
+// corresponding descriptor payload inert.
+struct NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    float* query;
+    float* key;
+    const float* current_value;
+    std::uint16_t* key_cache_bf16;
+    std::uint16_t* value_cache_bf16;
+    float* output;
+
+    NfnNativeTilePackedWeightDescriptorV1 query_norm_weight;
+    NfnNativeTilePackedWeightDescriptorV1 key_norm_weight;
+
+    std::int64_t query_heads;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t position;
+    std::int64_t first_key_position;
+    std::int64_t cache_capacity;
+    std::int64_t cache_row_stride;
+
+    float norm_eps;
+    float query_scale;
+    float rope_theta;
+    float attention_scale;
+    std::uint32_t rope_layout;
+    std::uint32_t has_query_norm_weight;
+    std::uint32_t has_key_norm_weight;
+    std::uint32_t query_norm_centered;
+    std::uint32_t key_norm_centered;
+    std::uint32_t apply_rope;
+    std::uint32_t reserved1;
+    void* cuda_stream;
+};
+
+// One immutable cache-layer entry used by the all-layer verification commit.
+// The containing descriptor's `layers` pointer addresses host memory; each
+// cache pointer stored here addresses device memory.  Keeping this table on the
+// host lets the C ABI validate every capacity/stride while the CUDA launcher
+// copies the small, bounded table into kernel parameters without a transient
+// device allocation.
+struct NfnNativeTileGlimmerCacheLayerV1 {
+    std::uint16_t* key_cache_bf16;
+    std::uint16_t* value_cache_bf16;
+    std::int64_t cache_capacity;
+    std::int64_t cache_row_stride;
+};
+
+// Commits a prefix of a transactionally staged verification block to every
+// target cache layer in one CUDA launch.  Staged K/V are laid out as
+// [layer, source_rows, kv_heads * head_dim].  `layers` is a host array with
+// `layer_count` entries and must remain valid only for the duration of the
+// synchronous C call; the cache payload pointers inside its entries are device
+// pointers.  The fixed layer limit keeps the CUDA parameter block below the
+// portable 4 KiB kernel-argument limit.
+struct NfnNativeTileGlimmerCacheCommitLayersDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t flags;
+    std::uint32_t reserved0;
+
+    const float* staged_keys;
+    const float* staged_values;
+    const NfnNativeTileGlimmerCacheLayerV1* layers;
+
+    std::int64_t layer_count;
+    std::int64_t source_rows;
+    std::int64_t rows;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t position;
+    std::int64_t source_layer_stride;
+    std::uint32_t reserved1;
+    std::uint32_t reserved2;
+    void* cuda_stream;
+};
+
 // Block attention evaluates current rows against accepted-context K/V.  With
 // flags=0 the current block is bidirectional for DFlash.  With
 // NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL it is the target verifier's causal
 // block.  Both modes obey the configured absolute sliding window.
-// Historical cache rows are BF16 ring-buffer entries; current-block K/V and
-// the output remain float32 so a proposal may be abandoned transactionally.
+// Historical cache rows are BF16 ring-buffer entries. In causal verifier mode,
+// earlier current-block rows are BF16-rounded on read to reproduce sequential
+// cache semantics while the query's own K/V stays float32. In non-causal
+// DFlash mode the current block remains float32. The output is always float32
+// so a proposal may be abandoned transactionally.
 struct NfnNativeTileDFlashBlockAttentionDescriptorV1 {
     std::uint32_t struct_size;
     std::uint32_t version;
@@ -508,6 +602,7 @@ int nfn_native_tile_ops_abi_version();
 int nfn_native_tile_strict_math_abi_version();
 int nfn_native_tile_turboquant_attention_abi_version();
 int nfn_native_tile_packed_weight_abi_version();
+int nfn_native_tile_k_quant_mmq_abi_version();
 int nfn_native_tile_glimmer_inference_abi_version();
 int nfn_native_tile_glimmer_vision_abi_version();
 int nfn_native_tile_glimmer_training_abi_version();
@@ -523,6 +618,150 @@ int nfn_native_tile_linear_packed_weight_float32_v1(
     float* output,
     std::int64_t rows,
     bool has_bias);
+// Optional K-quant inference fast path. The activation is quantized in
+// independent 32-value blocks; q8_values has rows*width int8 entries and
+// q8_scales/q8_sums each have rows*(width/32) float entries.
+int nfn_native_tile_quantize_q8_1_float32_v1(
+    const float* input,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    void* cuda_stream);
+int nfn_native_tile_linear_packed_weight_q8_1_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    const float* bias,
+    float* output,
+    std::int64_t rows,
+    bool has_bias);
+// Small-batch K-quant MMQ used by Muse Glimmer prefill and DFlash.
+// The descriptor/output arrays are host arrays containing CUDA device
+// pointers. All descriptors must have the same input_dim and use Q4_K, Q5_K,
+// or Q6_K. The implementation quantizes the shared FP32 activation once per
+// encoding present, executes one to four projections, and uses only the
+// caller-owned workspace on cuda_stream.
+std::int64_t nfn_native_tile_k_quant_mmq_workspace_bytes_v1(
+    std::int64_t rows,
+    std::int64_t input_dim);
+int nfn_native_tile_k_quant_mmq_multi_linear_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* input,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// Exact inference-only fusion of Glimmer's attention sigmoid gate with the
+// MMQ activation quantizer. It is numerically identical to materializing
+// `input / (1 + exp(-gate))` in FP32 before the ordinary MMQ call, while
+// eliminating that intermediate kernel and device-memory round trip.
+int nfn_native_tile_k_quant_mmq_multi_linear_gated_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* input,
+    const float* gate,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// Exact inference-only fusion of SwiGLU (`up * gate * sigmoid(gate)`) with
+// the MMQ activation quantizer for the following down projection.
+int nfn_native_tile_k_quant_mmq_multi_linear_swiglu_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* gate,
+    const float* up,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// Target-verifier variants preserve the one-row MMVQ activation layout and
+// warp accumulation order independently for every row, while co-scheduling up
+// to 16 rows per launch to reuse packed-weight cache lines. These must remain
+// distinct from prompt MMQ: switching prompt arithmetic changes greedy output.
+int nfn_native_tile_k_quant_mmvq_multi_linear_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* input,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// One-row counterpart for a Q8_1 activation already prepared in `workspace`
+// by the fused dual-RMS handoff below. It skips only activation quantization;
+// packed-weight dot products and reductions are identical to the ordinary
+// MMVQ entry point.
+int nfn_native_tile_k_quant_mmvq_multi_linear_prequantized_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+int nfn_native_tile_k_quant_mmvq_multi_linear_gated_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* input,
+    const float* gate,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+int nfn_native_tile_k_quant_mmvq_multi_linear_swiglu_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* gate,
+    const float* up,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// Exact one-row decode path using the pinned four-warp cooperative llama.cpp
+// MMVQ reduction. `workspace` needs at least input_dim/32 Q8_1 blocks and may
+// reuse the larger MMQ workspace returned above.
+int nfn_native_tile_k_quant_mmvq_linear_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const float* input,
+    float* output,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream);
+// Decode-only fused launch for two to four independent projections that share
+// one pre-quantized Q8_1 activation row. Unused descriptor/output slots must be
+// null. Each projection preserves the single-linear warp accumulation order.
+int nfn_native_tile_linear_packed_weight_q8_1_multi_decode_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor0,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor1,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor2,
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor3,
+    const std::int8_t* q8_values,
+    const float* q8_scales,
+    const float* q8_sums,
+    float* output0,
+    float* output1,
+    float* output2,
+    float* output3,
+    std::int64_t projection_count,
+    void* cuda_stream);
+// Deterministic row-wise argmax. Ties select the lowest column index.
+int nfn_native_tile_argmax_rows_float32_v1(
+    const float* values,
+    std::int64_t* output_indices,
+    float* output_values,
+    std::int64_t rows,
+    std::int64_t width,
+    void* cuda_stream);
 int nfn_native_tile_linear_backward_input_packed_weight_float32_v1(
     const NfnNativeTilePackedWeightDescriptorV1* descriptor,
     const float* grad_output,
@@ -531,6 +770,13 @@ int nfn_native_tile_linear_backward_input_packed_weight_float32_v1(
 int nfn_native_tile_glimmer_embedding_gather_float32_v1(
     const NfnNativeTilePackedWeightDescriptorV1* descriptor,
     std::int64_t token_id,
+    float* output);
+// Device-token counterpart used by a captured greedy decode graph. The token
+// ID is read when the graph executes, so one graph instance can serve every
+// generated token without patching a kernel node between launches.
+int nfn_native_tile_glimmer_embedding_gather_device_i64_float32_v1(
+    const NfnNativeTilePackedWeightDescriptorV1* descriptor,
+    const std::int64_t* token_id,
     float* output);
 int nfn_native_tile_glimmer_embedding_batch_i32_float32_v1(
     const NfnNativeTilePackedWeightDescriptorV1* descriptor,
@@ -546,6 +792,106 @@ int nfn_native_tile_glimmer_rms_norm_affine_float32_v1(
     float eps,
     bool centered,
     void* cuda_stream);
+int nfn_native_tile_glimmer_rms_norm_affine_capture_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream);
+// Fuses the decode-path Q8_1 activation quantizer with the residual-capturing
+// wide RMSNorm. The FP32 output/residual and Q8 metadata are bit-identical to
+// calling the two standalone operations in stream order.
+int nfn_native_tile_glimmer_rms_norm_affine_capture_residual_q8_1_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    float* output,
+    float* residual_output,
+    std::int8_t* q8_values,
+    float* q8_scales,
+    float* q8_sums,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream);
+int nfn_native_tile_glimmer_rms_norm_affine_add_residual_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* weight,
+    const float* residual_input,
+    float* output,
+    std::int64_t rows,
+    std::int64_t width,
+    float eps,
+    bool centered,
+    void* cuda_stream);
+// Decode composition for two adjacent Glimmer normalization stages:
+//
+//   hidden = residual_input + rms(input, first_weight, first_eps)
+//   residual_output = hidden
+//   normalized_output = rms(hidden, second_weight, second_eps)
+//
+// The reduction and FP32 operation order match the standalone add-residual
+// followed by capture-residual kernels, while removing one launch.
+int nfn_native_tile_glimmer_dual_rms_add_capture_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1* second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* cuda_stream);
+// Multi-row verifier specialization. Each row is partitioned across several
+// cooperative blocks while preserving the exact 256-lane FP32 reduction and
+// operation order of the ordinary dual-RMS path. The implementation currently
+// accepts only F32 affine norm descriptors; callers must retain the ordinary
+// kernel as the fallback for BF16 or other norm encodings.
+int nfn_native_tile_glimmer_dual_rms_add_capture_cooperative_batch_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1* second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* cuda_stream);
+// One-row decode megakernel variant. In addition to the ordinary dual-RMS
+// outputs, it writes the exact llama Q8_1 activation layout into the caller's
+// MMVQ workspace so the next packed projection can skip a standalone
+// quantization launch.
+int nfn_native_tile_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1(
+    const float* input,
+    const NfnNativeTilePackedWeightDescriptorV1* first_weight,
+    const float* residual_input,
+    float* hidden_output,
+    const NfnNativeTilePackedWeightDescriptorV1* second_weight,
+    float* normalized_output,
+    float* residual_output,
+    std::int64_t rows,
+    std::int64_t width,
+    float first_eps,
+    bool first_centered,
+    float second_eps,
+    bool second_centered,
+    void* mmvq_workspace,
+    std::int64_t mmvq_workspace_nbytes,
+    void* cuda_stream);
 int nfn_native_tile_glimmer_positioned_rope_float32_v1(
     float* query,
     float* key,
@@ -556,12 +902,84 @@ int nfn_native_tile_glimmer_positioned_rope_float32_v1(
     float theta,
     std::uint32_t layout,
     void* cuda_stream);
+// Decode-only composition of per-head Q/K RMS normalization, query scaling,
+// and optional positioned RoPE. Global NoPE layers set apply_rope=false.
+int nfn_native_tile_glimmer_qk_norm_scale_rope_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1* query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1* key_norm_weight,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    void* cuda_stream);
+// Batched counterpart used by target verification and DFlash proposal
+// blocks. Each row uses absolute position `position + row`.
+int nfn_native_tile_glimmer_qk_norm_scale_rope_batch_float32_v1(
+    float* query,
+    float* key,
+    const NfnNativeTilePackedWeightDescriptorV1* query_norm_weight,
+    const NfnNativeTilePackedWeightDescriptorV1* key_norm_weight,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float eps,
+    bool query_norm_centered,
+    bool key_norm_centered,
+    float query_scale,
+    std::int64_t position,
+    float theta,
+    std::uint32_t layout,
+    bool apply_rope,
+    void* cuda_stream);
 int nfn_native_tile_glimmer_gqa_decode_float32_v1(
     const NfnNativeTileGlimmerGqaDecodeDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_fused_decode_attention_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* descriptor);
+// Captured-graph counterpart of the fused decode operation. `device_position`
+// is read on device at execution time. Local layers pass their sliding window;
+// global NoPE layers pass max context and still derive first_key_position=0.
+int nfn_native_tile_glimmer_fused_decode_attention_device_position_float32_v1(
+    const NfnNativeTileGlimmerFusedDecodeAttentionDescriptorV1* descriptor,
+    const std::int64_t* device_position,
+    std::int64_t sliding_window);
 int nfn_native_tile_glimmer_cache_commit_bf16_v1(
     const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor);
+int nfn_native_tile_glimmer_cache_commit_rows_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitDescriptorV1* descriptor,
+    std::int64_t rows);
+int nfn_native_tile_glimmer_cache_commit_layers_bf16_v1(
+    const NfnNativeTileGlimmerCacheCommitLayersDescriptorV1* descriptor);
+// Packs target verification taps from [tap, source_row, hidden] to
+// [row, tap, hidden] without a host transpose. The selected source range is
+// contiguous and may be shorter than source_rows.
+int nfn_native_tile_glimmer_pack_target_taps_float32_v1(
+    const float* tap_major,
+    float* row_major,
+    std::int64_t source_rows,
+    std::int64_t source_row_offset,
+    std::int64_t rows,
+    std::int64_t tap_count,
+    std::int64_t hidden_width,
+    void* cuda_stream);
 int nfn_native_tile_dflash_block_attention_float32_v1(
     const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor);
+// Short-context DFlash verifier specialization. The caller supplies the FP32
+// score workspace; unsupported shapes/lengths fail closed so the resident
+// runtime can retain the general attention kernel as its fallback.
+int nfn_native_tile_dflash_block_attention_short_split_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor,
+    float* score_workspace,
+    std::int64_t score_workspace_nbytes);
 int nfn_native_tile_glimmer_vision_prepare_float32_v1(
     const NfnNativeTileGlimmerVisionPrepareDescriptorV1* descriptor);
 int nfn_native_tile_glimmer_vision_layer_norm_float32_v1(

@@ -14,7 +14,9 @@ import pytest
 from neuralfn.native_chat import (
     NativeChatConfigurationError,
     NativeChatMessage,
+    NativeChatRendererResolution,
     NativeTextCodec,
+    MuseGlimmerATEMRenderer,
     PlainRolesRenderer,
     resolve_native_chat_prompt,
     resolve_native_chat_renderer,
@@ -50,6 +52,7 @@ EXPECTED_READY_NATIVE_TEXT_ADAPTERS = (
     ("moe", "mixllama"),
     ("mixllama", "mixllama"),
     ("mixllama_fast", "mixllama"),
+    ("muse_glimmer", "muse-glimmer"),
 )
 
 
@@ -402,11 +405,26 @@ def test_shared_resident_transcript_driver_contract_for_every_ready_alias(
         model_name=selector,
         family=family,
     )
-    model = FakeModel(
-        artifact / "native-execution-manifest.json",
-        ["A<STOP>ignored", "B", "C", "D", "E"],
-    )
+    muse_outputs = [
+        f" to=user<|message|>{letter}<|eot|>" for letter in "ABCDE"
+    ]
+    outputs = muse_outputs if selector == "muse_glimmer" else [
+        "A<STOP>ignored", "B", "C", "D", "E"
+    ]
+    model = FakeModel(artifact / "native-execution-manifest.json", outputs)
     _install_fake_loader(monkeypatch, model)
+    if selector == "muse_glimmer":
+        manifest_path = artifact / "native-execution-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["stop_tokens"] = [200_001, 200_008]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        monkeypatch.setattr(
+            native_cli,
+            "resolve_native_chat_renderer",
+            lambda *_args, **_kwargs: NativeChatRendererResolution(
+                MuseGlimmerATEMRenderer(current_date="2026-08-12")
+            ),
+        )
     commands = iter(
         [
             "second",
@@ -426,7 +444,7 @@ def test_shared_resident_transcript_driver_contract_for_every_ready_alias(
             artifact=artifact,
             prompt="first",
             system_prompt="keep this",
-            max_new_tokens=8,
+            max_new_tokens=64 if selector == "muse_glimmer" else 8,
             seed=17,
         ),
         interactive=True,
@@ -445,8 +463,16 @@ def test_shared_resident_transcript_driver_contract_for_every_ready_alias(
     fourth_tokens, _fourth_reuse = model.session.prefills[3]
     after_tokens, after_reuse = model.session.prefills[4]
     assert first_reuse == 0
-    assert second_reuse == len(first_tokens) + 1  # first rendered prompt plus committed "A"
-    assert second_tokens[:second_reuse] == (*first_tokens, ord("A"))
+    expected_first_completion = (
+        len(muse_outputs[0]) if selector == "muse_glimmer" else 1
+    )
+    assert second_reuse == len(first_tokens) + expected_first_completion
+    expected_completion_tokens = (
+        tuple(map(ord, muse_outputs[0]))
+        if selector == "muse_glimmer"
+        else (ord("A"),)
+    )
+    assert second_tokens[:second_reuse] == (*first_tokens, *expected_completion_tokens)
     assert "ignored" not in CharacterCodec().decode(second_tokens)
     third_text = CharacterCodec().decode(third_tokens)
     assert "keep this" in third_text and "third" in third_text and "first" not in third_text
@@ -538,9 +564,11 @@ def test_auto_template_falls_back_with_warning_and_explicit_template_is_data(
     )
 
 
+@pytest.mark.parametrize("tile_flag", ["--tile-ops-lib", "--strict-tile-ops-lib"])
 def test_native_cli_flag_plumbing_uses_tty_default_and_cache_profile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    tile_flag: str,
 ) -> None:
     artifact = _artifact(tmp_path)
     tile_sidecar = tmp_path / "libtile-strict.so"
@@ -569,7 +597,7 @@ def test_native_cli_flag_plumbing_uses_tty_default_and_cache_profile(
             "qjl-3.5",
             "--turboquant-attention-backend",
             "tile-cuda",
-            "--tile-ops-lib",
+            tile_flag,
             str(tile_sidecar),
             "--cuda-runtime-lib",
             "libcudart.so.13",
@@ -586,7 +614,8 @@ def test_native_cli_flag_plumbing_uses_tty_default_and_cache_profile(
 
     assert result == 0
     config, kwargs = captured[0]
-    assert kwargs == {"interactive": True}
+    assert kwargs["interactive"] is True
+    assert kwargs["interactive_ui"].__class__.__name__ == "RichNativeInferenceUI"
     assert config.artifact == artifact / "native-execution-manifest.json"
     assert config.chat_mode is None
     assert config.system_prompt == "rules"
@@ -596,7 +625,82 @@ def test_native_cli_flag_plumbing_uses_tty_default_and_cache_profile(
     assert config.kv_cache.tile_ops_lib == str(tile_sidecar)
     assert config.kv_cache.cuda_runtime_lib == "libcudart.so.13"
     assert config.kv_cache.cuda_device == 2
+    assert config.model_load.tile_ops_lib == str(tile_sidecar)
+    assert config.model_load.cuda_runtime_lib == "libcudart.so.13"
+    assert config.model_load.cuda_device == 2
     assert config.max_new_tokens == 12
+
+
+def test_native_cli_default_allows_atem_reasoning_to_reach_final_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _artifact(tmp_path)
+    module = _load_nfn_module()
+    captured = []
+    monkeypatch.setattr(
+        "neuralfn.native_cli.run_native_artifact_cli",
+        lambda config, **kwargs: captured.append((config, kwargs)) or 0,
+    )
+
+    assert module._native_ir_infer_main(
+        ["infer", "--checkpoint", str(artifact), "--prompt", "hello"],
+        stdin_isatty=False,
+        stdout_isatty=False,
+    ) == 0
+
+    config, kwargs = captured[0]
+    assert config.max_new_tokens == 512
+    assert kwargs == {"interactive": False, "interactive_ui": None}
+
+
+def test_glimmer_transcript_retains_only_user_directed_atem_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _artifact(tmp_path, family="muse_glimmer", context=2048)
+    manifest_path = artifact / "native-execution-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["stop_tokens"] = [200_001, 200_008]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    outputs = [
+        " to=self<|message|>private reasoning<|eom|>"
+        "<|start|>assistant to=user<|message|>Visible A<|eot|>",
+        " to=user<|message|>Visible B<|eot|>",
+    ]
+    model = FakeModel(manifest_path, outputs)
+    _install_fake_loader(monkeypatch, model)
+    monkeypatch.setattr(
+        native_cli,
+        "resolve_native_chat_renderer",
+        lambda *_args, **_kwargs: NativeChatRendererResolution(
+            MuseGlimmerATEMRenderer(current_date="2026-08-12")
+        ),
+    )
+    commands = iter(["second", "/exit"])
+    stdout = io.StringIO()
+
+    assert run_native_artifact_cli(
+        NativeArtifactCLIConfig(
+            artifact=artifact,
+            prompt="first",
+            max_new_tokens=128,
+            seed=17,
+        ),
+        interactive=True,
+        codec=CharacterCodec(),
+        input_fn=lambda _prompt: next(commands),
+        stdout=stdout,
+        stderr=io.StringIO(),
+    ) == 0
+
+    rendered = stdout.getvalue()
+    assert "Visible A" in rendered and "Visible B" in rendered
+    assert "private reasoning" not in rendered
+    assert "to=self" not in rendered and "to=user" not in rendered
+    second_prompt = CharacterCodec().decode(model.session.prefills[1][0])
+    assert "Visible A" in second_prompt
+    assert "private reasoning" not in second_prompt
 
 
 def test_native_cli_modules_are_lean_imports() -> None:

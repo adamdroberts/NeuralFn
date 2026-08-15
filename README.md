@@ -71,6 +71,48 @@ nfn infer \
   --native-info
 ```
 
+`--strict-tile-ops-lib PATH` is an equivalent explicit spelling of
+`--tile-ops-lib PATH` for the whole-model CUDA sidecar.
+
+Omit `--prompt` on an interactive terminal to open the colorful resident chat
+TUI. It keeps one process-local multi-turn transcript, retains the system
+prompt, and reuses the exact native prefix/cache across turns:
+
+```bash
+conda activate NeuralFn
+nfn infer \
+  --checkpoint artifacts/glimmer-kquant \
+  --runtime native-cuda \
+  --weight-precision k-quant-17gb \
+  --companion-checkpoint dflash \
+  --speculative-decoding auto \
+  --chat-mode transcript \
+  --system-prompt "Be concise."
+```
+
+The installed CLI supplies the Rich presentation module; no separate TUI
+entry point is required. The banner reports runtime, effective weight
+precision, cache, DFlash state, tokenizer/template, context, and sampling.
+Each answer panel reports prefill/reuse, decode tok/s, and speculative
+acceptance. `/show` (or `/stats`) displays resident CUDA counters, `/reset`
+clears the conversation while retaining the system prompt, `/clear` redraws,
+and `/mode stateless|transcript` switches history behavior. Muse Glimmer ATEM
+stats include device-argmax call/row counts. Those counters directly confirm
+that both ordinary greedy target decoding and greedy DFlash proposal/
+verification vocabulary selection remained on device instead of copying the
+202,048-way logits to the host. ATEM
+`to=self` reasoning is never displayed or stored as the next assistant turn;
+only completed or length-limited `to=user` text enters transcript history.
+The CLI now reserves 512 completion tokens by default so reasoning-capable
+turns have room to reach that user-directed channel.
+
+`auto` remains quality-first and normally selects Dynamic when its complete
+budget fits a 32-GB device. Explicit `--weight-precision k-quant-17gb` is a
+strict request, not a maximum-VRAM class: it is valid on a 32-GB or larger GPU
+when that authenticated profile fits, and the runtime reports measured
+resident/working bytes rather than rejecting the device for having extra
+memory.
+
 The same family has a dedicated Torch-free trainer. Pretraining uses uint32
 token shards; SFT/LoRA/QLoRA/DPO/reward/PPO uses structured records with exact
 ATEM and checkpoint lineage:
@@ -112,6 +154,48 @@ BOS-prefixed raw prompt; full logit, rendered-chat, and DFlash oracle coverage
 is still open. See the precise implementation matrix, measurements, and kernel
 boundary in
 [`docs/glimmer-support-todo.md`](docs/glimmer-support-todo.md).
+
+A source-bound 2026-08-15 K-Quant-17GB exact-zero-temperature benchmark on
+that same card uses the full 52-layer Muse-Glimmer-30B as the target—no tiny or
+surrogate target—and measures **78.608 target-only tok/s** and **271.244 DFlash
+tok/s median** (one warmup plus ten measured 32-token trials from the same
+41-token ATEM prompt). The DFlash mean was 271.792 tok/s, with samples from
+269.303 to 274.820 tok/s. DFlash accepted 28 of 34 proposals per trial and is
+a 3.451x speedup over target-only. Both paths produced canonical token hash
+`63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1`,
+reported zero CPU model rows, and sampled peak CUDA deltas of 18,949,865,472
+and 20,654,850,048 bytes. The accepted target path captures a complete greedy
+token as one CUDA graph replay, groups packed projections, and hands the
+second wide RMSNorm's exact Q8 activation directly to MMVQ.
+
+The megakernels were retained from measured controls, not from launch count
+alone. Setting `NFN_GLIMMER_MMQ_MEGAKERNELS=0` in the **same binary** kept the
+token hash unchanged but measured 72.871 tok/s: the accepted path is 7.87%
+faster and uses 17,963 rather than 31,691 launches over the complete benchmark
+run. DFlash additionally reuses verifier Q8 activations, overlaps independent
+K/V/gate projections, writes K/V directly to transactional staging, uses a
+short-context split-attention kernel, and partitions its wide dual RMSNorm
+across eight cooperative blocks per row. Disabling only the cooperative RMS
+megakernel in the **same final binary** measured 264.724 tok/s median; enabling
+it adds 6.520 tok/s (+2.46%) with identical tokens, 28/34 acceptance, target
+rows, memory, and zero-CPU counters. `NFN_GLIMMER_COOPERATIVE_BATCH_RMS=0` is
+the matched development control. Packed-weight block hoisting also remains
+enabled after an earlier exact compile-time A/B measured 158.779 tok/s off and
+235.657 tok/s on. The fresh source-built 40-kernel sidecar
+`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`
+passed memcheck, synccheck, initcheck, and racecheck with zero errors/hazards.
+
+The earlier 256.69-tok/s DFlash result used an approximate verifier route and
+changed the canonical token hash, so it is not a production result. Exact
+DFlash speed depends heavily on acceptance: another prompt measured 73.60
+tok/s with 22 of 74 proposals accepted. Meta publishes 74.9/233.4 tok/s for an
+undisclosed RTX 5090 workload; the new exact NeuralFn numbers are numerically
+4.95% and 16.21% higher, but this is not a matched reproduction of Meta's
+undisclosed prompt and policy. A directly reproduced pinned llama.cpp build
+10349 (`62bf73d`) on the same 41-token prompt and 32-token greedy decode reached
+77.8 target-only and 225.7 DFlash tok/s. NeuralFn is 1.04% and 20.18% faster in
+that matched local comparison. No reproducible pinned ExecuTorch Glimmer
+artifact/command was available, so no ExecuTorch win is claimed.
 
 The release gate is executable with
 [`tools/qualify_muse_glimmer_gpu.py`](tools/qualify_muse_glimmer_gpu.py). It
@@ -850,15 +934,19 @@ compressed-attention calls. This does not establish a non-dense capability,
 quality neutrality, or a performance improvement. See
 [TurboQuant Portable Reference](docs/python-sdk/turboquant-reference.md).
 
-Interactive graph and resident-artifact inference now default to transcript mode and keep
-the initial prompt as its first turn. Use `--chat-mode stateless` or
-`/mode stateless` for independent prompts. `--system-prompt` supplies a leading
-instruction that remains active in stateless mode and after `/reset`, while
-`--chat-template auto|plain_roles|PATH` prefers a usable
-artifact/tokenizer template and warns before the CLI-only `plain_roles`
-fallback. The prompt builder reserves output capacity, drops the oldest whole
-turn groups first, and refuses to discard leading instructions or the newest
-request. Non-TTY inference remains one-shot.
+Interactive graph and resident-artifact inference now defaults to a colorful
+multi-turn transcript TUI and keeps the initial prompt as its first turn. Use
+`--chat-mode stateless` or `/mode stateless` for independent prompts.
+`--system-prompt` supplies a leading instruction that remains active in
+stateless mode and after `/reset`, while
+`--chat-template auto|plain_roles|PATH` prefers a usable artifact/tokenizer
+template and warns before the CLI-only `plain_roles` fallback. `/show` exposes
+the effective resident/CUDA/cache/speculation state without closing the model.
+The prompt builder reserves output capacity, drops the oldest whole turn
+groups first, and refuses to discard leading instructions or the newest
+request. Muse Glimmer's ATEM channel parser hides `to=self` text and retains
+only user-directed answers. Non-TTY inference remains one-shot and
+machine-friendly.
 
 ## Native text embedding training
 

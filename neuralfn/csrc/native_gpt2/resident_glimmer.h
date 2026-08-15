@@ -130,11 +130,15 @@ public:
 private:
     void require_open() const;
     void rebuild_cache();
-    void append_cached_token(std::int64_t token, std::int64_t position);
+    void append_cached_token(
+        std::int64_t token,
+        std::int64_t position,
+        bool fast_k_quant = false);
     void append_cached_embedding(
         std::int64_t token,
         std::int64_t position,
         const std::vector<float>& embedding);
+    void materialize_speculative_pending_token(bool fast_k_quant = false);
     std::int64_t cache_bytes() const;
 
     std::shared_ptr<GlimmerModel> model_;
@@ -162,6 +166,7 @@ private:
     std::int64_t speculative_accepted_ = 0;
     std::int64_t speculative_rejected_ = 0;
     bool speculative_ready_ = false;
+    bool speculative_pending_token_ = false;
     bool strict_model_compute_ = false;
 };
 
@@ -193,7 +198,8 @@ public:
         GlimmerCacheStorage* cache,
         const std::atomic<bool>& cancelled,
         const std::vector<std::int64_t>* tap_layers = nullptr,
-        std::vector<float>* target_taps = nullptr) const;
+        std::vector<float>* target_taps = nullptr,
+        bool fast_k_quant = false) const;
     void forward_append_embedding(
         const std::vector<float>& embedding,
         std::int64_t position,
@@ -206,7 +212,25 @@ public:
         const std::atomic<bool>& cancelled) const;
     std::vector<float> logits_from_hidden(const float* hidden) const;
     std::vector<float> raw_logits_from_hidden(const float* hidden) const;
+    std::vector<float> raw_logits_rows_from_hidden(
+        const float* hidden,
+        std::int64_t rows,
+        bool fast_k_quant = false) const;
+    std::vector<std::int64_t> raw_argmax_rows_from_hidden(
+        const float* hidden,
+        std::int64_t rows,
+        bool fast_k_quant = false) const;
+    std::vector<std::int64_t> raw_argmax_rows_from_device_hidden(
+        const float* device_hidden,
+        int source_cuda_device,
+        std::int64_t rows,
+        bool fast_k_quant = false) const;
+    bool has_cuda_device_argmax() const noexcept;
     std::vector<float> raw_token_embedding(std::int64_t token) const;
+    std::vector<float> raw_token_embeddings(
+        const std::vector<std::int64_t>& tokens) const;
+    const float* raw_token_embeddings_device(
+        const std::vector<std::int64_t>& tokens) const;
     std::vector<float> encode_media(
         const std::vector<float>& packed_patches,
         const std::vector<std::int64_t>& grid_thw,
@@ -252,6 +276,11 @@ public:
     std::int64_t cuda_resident_weight_bytes() const noexcept;
     std::int64_t cuda_workspace_bytes() const noexcept;
     std::int64_t cuda_kernel_launches() const noexcept;
+    std::int64_t cuda_k_quant_mmq_linears() const noexcept;
+    std::int64_t cuda_q8_activation_quantizations() const noexcept;
+    std::int64_t cuda_q8_packed_linears() const noexcept;
+    std::int64_t cuda_device_argmax_calls() const noexcept;
+    std::int64_t cuda_device_argmax_rows() const noexcept;
     int cuda_device() const noexcept;
     std::string cuda_tile_ops_library() const;
     std::string cuda_runtime_library() const;
@@ -286,7 +315,8 @@ private:
         GlimmerCacheStorage* cache,
         const std::atomic<bool>& cancelled,
         const std::vector<std::int64_t>* tap_layers,
-        std::vector<float>* target_taps) const;
+        std::vector<float>* target_taps,
+        bool fast_k_quant) const;
 
     const std::string checkpoint_path_;
     const GlimmerInferenceConfig config_;

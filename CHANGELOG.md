@@ -2,6 +2,133 @@
 
 ## Unreleased
 
+- Restored a colorful Rich TUI for interactive resident inference. TTY
+  `nfn infer` now opens a multi-turn transcript UI with model/runtime/precision/
+  cache/DFlash state, Markdown assistant panels, per-turn prefill/reuse/decode
+  and speculative-acceptance metrics, `/show|/stats`, `/reset`, `/clear`,
+  `/mode`, and clean resident teardown. The installed CLI package now includes
+  the presentation module. Muse Glimmer responses are parsed as ATEM protocol:
+  private `to=self` reasoning is hidden and never reinserted into transcript
+  history, while only `to=user` content is displayed/retained. The CLI default
+  completion allowance is now 512 tokens so reasoning-capable turns can reach
+  the final channel; callers can still override it. Non-TTY output and the lean
+  resident driver remain plain and dependency-light. Current verification
+  passed the focused CLI/TUI/chat/resident tests and an actual installed-CLI
+  TTY smoke. The canonical K-Quant-17GB+DFlash bundle loaded on the 32-GB RTX
+  5090, rendered ANSI/Rich output, answered `Hello!`, then answered `I just
+  said hello.` on turn two while reusing the transcript prefix. `/show`
+  reported five history messages and zero CPU model rows; `/exit` closed the
+  resident cleanly. The exact-artifact parser now accepts
+  `--strict-tile-ops-lib` as an alias of `--tile-ops-lib`, matching the
+  top-level help and strict-sidecar terminology.
+- Reworked current-source Glimmer packed CUDA execution for decode, prefill,
+  and DFlash verification. Q4_K/Q5_K/Q6_K projections now use
+  encoding-specialized warp GEMV; 16-row target verification streams packed
+  weights once with conditional row tiling, while one-row 256-output K/V
+  projections use a full block per output to avoid under-filling large GPUs.
+  Added versioned Q8 activation and packed-dot symbols with resident counters,
+  transactional multirow BF16 cache commit, deterministic 202,048-way device
+  argmax, and fused wide-RMSNorm residual-capture/add operations. Ordinary
+  greedy target decoding and greedy DFlash now select vocabulary rows on
+  device; DFlash returns only proposal/verification IDs and selected values
+  rather than copying two full 15-row matrices to the CPU. Sampled generation
+  retains complete distributions. Model stats and the TUI expose device-argmax
+  call/row counters as direct execution proof. One-token target execution
+  commits each layer's K/V directly after attention instead of staging 104
+  device-to-device copies, while cache logical length remains the atomic
+  visibility boundary; tentative multirow verification remains staged. Target
+  text prefill now processes causal 16-token blocks and
+  target/DFlash execution batches embeddings, positioned RoPE, tap transfer,
+  accepted-context injection, and cache commit while reusing persistent
+  verification scratch. The freshly compiled RTX 5090 direct-device probe
+  passed packed/Q8 projection, wide norm and fused residual forms,
+  RoPE/GQA/cache, DFlash, 202k-vocab loss, post-training, and vision kernels.
+  Focused real-geometry CUDA-event measurements versus the previous qualified
+  sidecar improved representative one-row Q/FFN/head projections by
+  2.260–3.215× and 16-row projections by 5.273–9.001×. Against the preceding
+  warp-only build, one-row 6,656→256 K/V improved 1.370–1.504×. Fused
+  norm-plus-residual capture improved 1.713× for one row and 1.282× for 16
+  rows with zero output error; fused residual add was bit-identical. The exact
+  final sidecar passed compute-sanitizer memcheck, synccheck, and initcheck
+  with zero errors and racecheck with zero hazards/errors, including the fused
+  norm and full-vocabulary argmax. The accepted revision groups one-token
+  Q/K/V/gate and MLP gate/up packed projections into versioned megakernel
+  launches, shares activation quantization, fuses sigmoid-gate/SwiGLU handoff,
+  and combines per-head Q/K norm, query scale, local RoPE/NoPE attention, and
+  cache commit. Its direct dual-RMS megakernel writes the ordinary hidden,
+  normalized, and residual-capture outputs while each warp also emits the
+  exact `block_q8_1` activation consumed by the following prequantized MMVQ;
+  this removes the rejected candidate's second reread/grid barrier and the
+  standalone quantization launch.
+  DFlash verification schedules eight input rows per block and hoists each
+  packed K-weight block once across those rows. Device-token embedding and
+  device-position attention entry points let the resident capture LM head →
+  device argmax → embedding → all 52 layers → cache/final hidden as one
+  repeated greedy-token CUDA graph with no host node patching.
+  `NFN_GLIMMER_MMQ_MEGAKERNELS=0` and `NFN_GLIMMER_CUDA_GRAPHS=0` remain
+  development-only A/B gates. The source-built final strict sidecar
+  (`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`)
+  and binding
+  (`5e3d983fbed735a4dee281ff2c07f165e8e32b47f807a0abe1d3504d58ec870d`)
+  passed the expanded 40-kernel direct-device probe under memcheck, synccheck,
+  initcheck, and racecheck with zero errors or hazards. The probe now verifies
+  the cooperative multirow dual-RMS output bit-for-bit against the ordinary
+  kernel and the short-context DFlash split-attention output against the
+  general implementation, in addition to handoff and fail-closed bounds.
+
+  A fresh-process, exact-zero-temperature canonical K-Quant-17GB benchmark
+  used the complete 52-layer Muse-Glimmer-30B target (not a tiny surrogate)
+  and generated 32 tokens from the same 41-token ATEM prompt after one warmup and
+  across ten measured trials. Target-only measured **78.608 tok/s** median
+  (78.515–78.809) with an 18,949,865,472-byte sampled peak. The final DFlash
+  path measured **271.244 tok/s** median and 271.792 mean
+  (269.303–274.820), accepted 28/34 proposals in every trial, processed 37
+  target rows in three blocks, and peaked at 20,654,850,048 bytes. Both paths
+  returned canonical hash
+  `63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1`
+  with zero CPU model rows.
+
+  The required megakernel controls use the same request, artifact, binding,
+  exact arithmetic, and output hash. Disabling runtime MMQ megakernels in the
+  same binary measured 72.871 tok/s and 31,691 launches versus 78.608 and
+  17,963 enabled: +7.87% throughput and 43.32% fewer launches. An otherwise
+  identical strict-sidecar compile with only
+  `NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK=0` measured 158.779 DFlash tok/s versus
+  235.657 enabled (+48.42%), with identical 28/34 acceptance and output hash.
+  The final verifier then added exact Q8 reuse, projection overlap, direct K/V
+  staging, short attention splitting, and the cooperative dual-RMS kernel.
+  Disabling only `NFN_GLIMMER_COOPERATIVE_BATCH_RMS` in that final binary
+  measured 264.724 tok/s versus 271.244 enabled (+2.46%), with identical
+  output, acceptance, target rows, sampled memory, and zero CPU rows. The first
+  RMS→Q8 handoff candidate
+  used a separate grid barrier/reread and was rejected at 76.90 tok/s. Direct
+  handoff screening selected 32 cooperative blocks after exact candidates at
+  4/8/16/32 blocks measured 74.596/76.549/77.770/78.357 tok/s. Shared packed
+  weights without hoisting, extra output warps, the 1,024-thread attention
+  candidate, and other launch-only fusions that failed matched throughput
+  checks were rejected rather than promoted.
+  The earlier 256.69-tok/s DFlash figure used a non-canonical approximate
+  verifier path and produced a different token hash; it is retracted rather
+  than presented as production performance. Exact DFlash throughput is also
+  acceptance-sensitive: a second prompt measured 73.60 tok/s with only 22/74
+  proposals accepted. The new exact results are numerically 4.95% and 16.21%
+  above Meta's published 74.9/233.4 RTX 5090 figures, but Meta does not disclose
+  the prompt/policy needed for a matched reproduction. A matched local pinned
+  llama.cpp build 10349 (`62bf73d`) reached 77.8 target-only and 225.7 DFlash
+  tok/s on the same prompt and policy, making NeuralFn 1.04% and 20.18% faster.
+  No reproducible pinned ExecuTorch comparator was available, so no ExecuTorch
+  win is claimed.
+  Full-logit, rendered-chat, sampled, and DFlash upstream-oracle parity remain
+  explicit release gates.
+- Verified the final Glimmer/TUI change set with 43 focused CLI/TUI/chat tests,
+  54 resident Glimmer/binding tests, 112 checkpoint/media/vision/training/
+  shard/distillation/qualification/API cases, and the mandatory 42-test
+  all-preset build/resolve/compile/forward suite including the pinned
+  Transformers Glimmer oracle. The exact accepted CUDA probe passed directly
+  and under memcheck, synccheck, initcheck, and racecheck; the real installed
+  CLI also completed a two-turn K-Quant-17GB+DFlash transcript-memory smoke.
+  Test-only dependencies were placed under `/var/mnt/disk2/tmp`; the immutable
+  OS and conda environments were not modified.
 - Completed a source-built 24-GB-tier Muse Glimmer qualification by explicitly
   selecting the canonical K-Quant-17GB profile on a larger physical RTX 5090.
   The harness recorded the real 33,708,376,064-byte device total instead of

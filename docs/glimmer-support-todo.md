@@ -1,6 +1,6 @@
 # Muse Glimmer native support: implementation status and remaining work
 
-> **Status (2026-08-13): the planned software paths are implemented.** NeuralFn now has
+> **Status (2026-08-15): the planned software paths are implemented.** NeuralFn now has
 > an exact `muse_glimmer` GPT preset, strict BF16 and official GGUF conversion,
 > resident C++ CPU and whole-model CUDA text execution, K-Quant-Dynamic and
 > K-Quant-17GB, VRAM-aware precision selection, DFlash speculative decoding,
@@ -22,6 +22,27 @@
 > both its 24-billion-byte tier and the card's real total. The official GGUF `mmproj`
 > remains still-image-only because its temporal patch projection is collapsed;
 > full-BF16 image/video vision can execute on CPU or whole-model CUDA.
+>
+> The final accepted current-source strict sidecar
+> (`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`)
+> also passed the full direct-device probe under memcheck, synccheck,
+> initcheck, and racecheck. On the canonical K-Quant-17GB target, a bounded
+> 41-token ATEM prompt used the complete 52-layer Muse-Glimmer-30B (no smaller
+> surrogate) and measured 78.608 target-only and **271.244 DFlash tok/s
+> median** over ten measured 32-token trials after one warmup. The DFlash mean
+> was 271.792 tok/s (269.303–274.820). Both modes returned the same canonical
+> token hash; each DFlash trial accepted 28/34 proposals and used 37 target
+> rows. A same-final-binary A/B measured 264.724 tok/s with only the cooperative
+> multirow dual-RMS megakernel disabled, so the retained kernel adds 6.520
+> tok/s (+2.46%) with identical output, acceptance, memory, and zero-CPU
+> counters. Earlier exact controls retain the 7.87% target megakernel gain and
+> the packed-weight-hoist gain (158.779 off versus 235.657 on). The
+> earlier 256.69 DFlash number used a non-canonical approximate verifier and is
+> retracted. The exact numbers are 4.95% and 16.21% above Meta's published
+> 74.9/233.4, although that upstream workload is undisclosed. Against a
+> directly reproduced pinned llama.cpp run on the same local workload,
+> NeuralFn is 1.04% faster target-only and 20.18% faster with DFlash; no
+> reproducible ExecuTorch comparator was available.
 
 This file began as the implementation plan for
 `meta-models/Muse-Glimmer-30B`. It now records what landed, the exact kernel
@@ -44,7 +65,7 @@ benchmark or an upstream full-size model parity run.
 | DFlash distillation | **Implemented in the Torch trainer** | A separate assistant-only trainer freezes the target, captures five taps, samples anchors, supports D-PACE/decay and self-logit KD, resumes exactly, audits greedy acceptance, and exports a target-bound native BF16 assistant. It does not claim Meta's unpublished training provenance. |
 | Distributed 30B training | **Implemented for full-BF16 AR/SFT pipeline parallelism** | One process/device per contiguous layer stage, NCCL P2P plus global reductions, per-rank admission, authenticated rank shards, atomic DONE marker, and strict distributed resume. Adapter/preference pipeline modes and tensor/data parallelism remain separate future work. |
 | Resident target CPU | **Implemented** | BF16 and official mixed F32/Q4_K/Q5_K/Q6_K profiles use hybrid local-ring/global-full KV caches and transactional verification. |
-| Resident target CUDA | **Implemented for text** | Target weights and model compute stay on the selected CUDA device. The current ABI uses FP32 activation buffers with BF16 or packed resident weights. |
+| Resident target CUDA | **Implemented for text** | Target weights and model compute stay on the selected CUDA device. The current ABI uses FP32 activation buffers with BF16 or packed resident weights, grouped packed-projection megakernels, and one captured graph replay per repeated greedy token. |
 | K-Quant-Dynamic / K-Quant-17GB | **Implemented** | Strict GGUF v3 parser, authenticated canonical profiles, exact packed CPU/CUDA dequant/GEMM dispatch, no whole-model dequantization. |
 | Automatic weight precision | **Implemented** | `auto` is quality-first and byte-budgeted on CUDA; explicit values are strict pins. CPU `auto` chooses the authenticated primary. |
 | DFlash speculative decoding | **Implemented** | BF16 and packed assistants, CPU/CUDA assistant execution, target block verification, greedy and lossless sampled acceptance, and atomic cache commit/crop. |
@@ -196,16 +217,18 @@ symbols from [`tile_ops.h`](../neuralfn/csrc/native_train/tile_ops.h):
 | --- | --- | --- |
 | Typed packed weights | `nfn_native_tile_packed_weight_validate_v1`, `nfn_native_tile_packed_weight_dequantize_float32_v1` | F32, BF16, Q4_K, Q5_K, Q6_K, and native NF4 group-64 descriptors; byte extent/shape/row-stride validation. |
 | Packed projection | `nfn_native_tile_linear_packed_weight_float32_v1` | Arbitrary rectangular target/assistant/vision matrices without whole-weight dequantization. |
+| Packed Q8 activation projection | `nfn_native_tile_quantize_q8_1_float32_v1`, `nfn_native_tile_linear_packed_weight_q8_1_float32_v1`, `nfn_native_tile_linear_packed_weight_q8_1_multi_decode_float32_v1` | Signed Q8 activation blocks plus Q4_K/Q5_K/Q6_K dot products. The one-token runtime quantizes each shared normalized input once; the multi-decode ABI launches Q/K/V/gate or MLP gate/up together. Exact-zero inference retains FP32 activations. |
+| Greedy row selection | `nfn_native_tile_argmax_rows_float32_v1` | Deterministic row-wise argmax through the 202,048-way vocabulary; equal maxima choose the lowest token ID. Greedy DFlash transfers only IDs/selected values, while sampled lossless decoding retains full p/q distributions. |
 | Packed backward input | `nfn_native_tile_linear_backward_input_packed_weight_float32_v1` | Frozen packed-base `dX` used by native QLoRA; no packed `dWeight`. |
-| Embedding | `nfn_native_tile_glimmer_embedding_gather_float32_v1`, `nfn_native_tile_glimmer_embedding_batch_i32_float32_v1` | Vocabulary 202,048 and signed 32-bit training IDs. |
-| Wide RMSNorm | `nfn_native_tile_glimmer_rms_norm_affine_float32_v1`, `nfn_native_tile_glimmer_rms_norm_backward_float32_v1` | Width 6,656, weightless/ordinary/centered modes, eps 1e-5/1e-8, FP32 reduction. |
-| Positioned RoPE | `nfn_native_tile_glimmer_positioned_rope_float32_v1`, `nfn_native_tile_glimmer_positioned_rope_batch_float32_v1` | Explicit absolute positions, Q32/KV2 or KV8, half-split/interleaved layout. |
-| Decode GQA | `nfn_native_tile_glimmer_gqa_decode_float32_v1` | Local ring or global cache, Q32/KV2, head 128, no fixed 1,024-key truncation. |
+| Embedding | `nfn_native_tile_glimmer_embedding_gather_float32_v1`, `nfn_native_tile_glimmer_embedding_gather_device_i64_float32_v1`, `nfn_native_tile_glimmer_embedding_batch_i32_float32_v1` | Vocabulary 202,048, device-indirect greedy graph input, and signed 32-bit training IDs. |
+| Wide RMSNorm | `nfn_native_tile_glimmer_rms_norm_affine_float32_v1`, `nfn_native_tile_glimmer_rms_norm_affine_capture_residual_float32_v1`, `nfn_native_tile_glimmer_rms_norm_affine_capture_residual_q8_1_float32_v1`, `nfn_native_tile_glimmer_rms_norm_affine_add_residual_float32_v1`, `nfn_native_tile_glimmer_dual_rms_add_capture_cooperative_batch_float32_v1`, `nfn_native_tile_glimmer_rms_norm_backward_float32_v1` | Width 6,656, weightless/ordinary/centered modes, eps 1e-5/1e-8, FP32 reduction. Optional fused forms capture the residual, emit bit-identical Q8 metadata, add the saved residual with exact FP32 order, or partition each multirow verifier norm across eight cooperative blocks. The cooperative form preserves the baseline 256-lane reduction order, accepts F32 affine descriptors, and falls back for BF16 norms. |
+| Positioned RoPE and Q/K prep | `nfn_native_tile_glimmer_positioned_rope_float32_v1`, `nfn_native_tile_glimmer_positioned_rope_batch_float32_v1`, `nfn_native_tile_glimmer_qk_norm_scale_rope_float32_v1` | Explicit absolute positions, Q32/KV2 or KV8, half-split/interleaved layout. One-token target decode fuses per-head Q/K RMS, query factor 3.87, and optional local RoPE; global layers select NoPE. |
+| Decode GQA | `nfn_native_tile_glimmer_gqa_decode_float32_v1`, `nfn_native_tile_glimmer_fused_decode_attention_float32_v1`, `nfn_native_tile_glimmer_fused_decode_attention_device_position_float32_v1` | Local ring or global cache, Q32/KV2, head 128, no fixed 1,024-key truncation. Fused forms preserve exact Q/K normalization, optional RoPE, attention, and cache order; the device-position form is graph-replay safe. |
 | Training attention | `nfn_native_tile_glimmer_attention_forward_float32_v1`, `..._backward_float32_v1` | Local causal window or global causal NoPE, online softmax and backward. |
-| Cache commit | `nfn_native_tile_glimmer_cache_commit_bf16_v1` | BF16 hybrid local/global cache append with absolute positions. |
+| Cache commit | `nfn_native_tile_glimmer_cache_commit_bf16_v1`, `nfn_native_tile_glimmer_cache_commit_rows_bf16_v1`, `nfn_native_tile_glimmer_cache_commit_layers_bf16_v1` | Single-row, transactional multirow, or all-layer BF16 hybrid local/global cache append with absolute positions and ring wraparound. |
 | Attention gate | `nfn_native_tile_glimmer_sigmoid_gate_float32_v1`, `..._backward_float32_v1` | `attention * sigmoid(gate)` before O projection. |
 | Logit transform | `nfn_native_tile_glimmer_logit_transform_float32_v1`, `..._backward_float32_v1` | Multiplier-before-softcap and exact derivative. |
-| DFlash attention | `nfn_native_tile_dflash_block_attention_float32_v1` | Accepted prefix plus bidirectional 16-row block, KV8, window 2,048. |
+| DFlash attention | `nfn_native_tile_dflash_block_attention_float32_v1`, `nfn_native_tile_dflash_block_attention_short_split_float32_v1` | Accepted prefix plus bidirectional 16-row block, KV8, window 2,048. The optional split-score/value specialization is fail-closed to at most 128 keys and uses caller-owned scratch; the general kernel remains the fallback. |
 | Vision preparation | `nfn_native_tile_glimmer_vision_prepare_float32_v1` | Learned 32×32 bilinear position interpolation plus authenticated window permutation. |
 | Vision LayerNorm | `nfn_native_tile_glimmer_vision_layer_norm_float32_v1` | Affine FP32 LayerNorm through width 8,192; production vision width is 1,536. |
 | Vision attention | `nfn_native_tile_glimmer_vision_attention_float32_v1` | Noncausal segmented full/window attention with half-split or interleaved 2-D RoPE. |
@@ -251,17 +274,182 @@ The formerly missing correctness paths now exist:
    loaded NCCL send/receive plus global reductions, stage-local memory
    admission, and authenticated per-rank model/optimizer/state shards.
 
+The current packed-inference optimization replaces the former serial output
+dot product with encoding-specialized warp GEMV for Q4_K, Q5_K, and Q6_K.
+One-token decode retains two reduction warps per output group and uses four
+independent channel groups for ordinary Q4_K/Q6_K projections, one for the
+Q5_K vocabulary head, and one for the hot paired Q4_K FFN gate/up shape after
+full-model A/Bs showed four regressed that larger grid. Multirow target
+verification keeps eight proposal rows in registers per block and decodes
+each packed weight block once for reuse across those rows. One row group per
+CTA is the accepted occupancy/register balance; 16 rows and two row groups
+lost the matched DFlash test.
+Target prefill now uses causal 16-token verification blocks, batched
+embedding/RoPE, one batched cache commit, batched assistant-tap capture,
+persistent verification scratch, and one staged D2H transfer for the five taps
+instead of per-row/per-layer synchronization. DFlash anchor/mask embedding,
+accepted-context injection, RoPE, cache commit, and target verification use
+the same batched seams.
+
+One-token target decode additionally groups Q/K/V/attention-gate projections
+into one multi-decode launch and groups MLP gate/up into another. The packed
+dot products retain their independently authenticated Q4_K/Q5_K/Q6_K tensor
+descriptors; the grouping is a launch contract, not a new on-disk encoding.
+Per-head Q/K RMS, query scaling, and local positioned RoPE are also one
+optional launch, while the same entry point skips RoPE on each fourth/global
+layer. Older ABI-v1 sidecars fall back to the exact standalone composition.
+
+Greedy DFlash no longer copies both 15×202,048 assistant and target logit
+matrices to the host merely to find their maxima. The shared CUDA target head
+runs the deterministic device argmax for assistant proposals, current target
+state, and all verification/bonus rows, returning at most 16 IDs and selected
+values. The sampled path deliberately keeps full logits because exact p/q
+acceptance and rejection-residual sampling require the complete vocabulary.
+
+Ordinary greedy target-only decoding now uses that same device argmax for its
+current vocabulary row. The one-token target path also writes each layer's K/V
+row directly into the hybrid cache after attention instead of staging and then
+issuing 104 device-to-device copies per token. Transactional visibility is
+still controlled by the cache's logical length, which advances only after the
+entire token succeeds. A local-ring overwrite is exactly one 2,048-token
+window behind and therefore cannot be observed by a retry; a global layer
+writes a fresh slot. Multi-token target verification deliberately retains its
+staging buffers because an accepted prefix may be shorter than the tentative
+16-row block.
+
+Two optional wide-norm entry points fuse residual capture and residual add
+with the existing 6,656-wide affine RMSNorm. The resident requires the pair as
+a unit and otherwise uses the older exact composition. On the RTX 5090,
+focused CUDA-event measurements on the post-revert final sidecar reduced
+one-row norm-plus-capture from 0.0098 to 0.0057 ms (1.713×) and 16-row
+norm-plus-capture from 0.0099 to 0.0077 ms (1.282×), with zero output error.
+The fused residual-add form is
+bit-identical to the separate FP32 add and was throughput-neutral in this
+microbenchmark.
+
+The strict one-row path also has a paired, optional handoff contract:
+`nfn_native_tile_glimmer_dual_rms_add_capture_mmvq_q8_float32_v1` computes the
+same two adjacent norms/residual outputs and writes exact `block_q8_1` bytes
+directly from each warp; then
+`nfn_native_tile_k_quant_mmvq_multi_linear_prequantized_float32_v1` consumes
+that workspace without launching activation quantization. The resident loads
+the symbols only as a complete pair and uses them only for rows=1. The raw
+probe compares every ordinary and handoff output bit-for-bit and checks short
+workspace/invalid-row rejection. A first implementation that reread the
+normalized row after a grid barrier was slower and was removed.
+
 Remaining CUDA work is performance and hardware qualification, not a silent
 fallback path: BF16 activation/fused matmul variants, optimized vision
 attention/LayerNorm, tensor/data parallelism, the 80-GB full-size run, and
 full-size layer/logit/chat/DFlash upstream-oracle parity beyond the completed
 16-token raw target check. Live NVCC, four-tool sanitizer coverage, and the
-32-GB Dynamic full-size benchmark are complete. The current exact native
-ABI stores activations and accumulates in FP32 while retaining BF16 or packed
-weights.
+32-GB Dynamic full-size benchmark are complete. The strict path stores
+activations and accumulates in FP32 while retaining BF16 or packed weights;
+the separately counted Q8 seam changes only the packed input representation.
+
+The generic optional Q8 activation seam remains restricted to the separately
+gated positive-temperature projection path. The new strict dual-RMS handoff is
+different: its Q8 representation is byte-identical to the existing exact MMVQ
+quantizer and is accepted for exact-zero decode only because the raw ABI probe
+and full-artifact token hash match the ordinary composition. Generated-token
+hashes are still narrower evidence than full-logit parity.
 
 Standalone sigmoid or logit-transform fusion is no longer a correctness gap;
 the versioned functions above exist.
+
+### 5.3 Still-missing CUDA performance kernels
+
+No kernel below is required for correctness of the advertised resident text,
+DFlash, post-training, or still-image paths; those paths fail closed and have
+no CPU model-compute fallback. They are the concrete missing pieces for the
+remaining throughput and scale goals:
+
+The accepted launch-amortized target baseline is no longer a sequence of
+ordinary one-projection launches. It groups one-row Q/K/V/attention-gate and
+MLP gate/up packed projections so each group shares one activation
+quantization, fuses the sigmoid-gate or SwiGLU handoff into the packed output
+projection, and captures LM-head → device argmax → device-token embedding → 52
+layers → cache/final hidden as one repeated greedy-token CUDA graph. The graph
+uses versioned device-token and device-position entry points; host arguments
+are not patched between replays. Exact multirow verification does not use the
+one-row projection/handoff wrappers, but its MMVQ kernel now hoists each
+decoded packed weight block across eight input rows. The exact runtime-off and
+compile-time-hoist-off A/B evidence is in section 11.
+
+Nsight Systems on the final exact DFlash route identifies packed verification
+MMVQ, not launch overhead, as the remaining bottleneck: Q4_K 19,968-output
+rows consumed about 55.9 ms, Q6_K 6,656-output rows 27.1 ms, Q4_K 6,656-output
+rows 22.1 ms, and Q4_K 4,096-output rows 11.4 ms in the profiled turn. Exact
+batched MMVQ accounted for roughly 134 ms, versus about 14.4 ms of norms, 9.4
+ms of attention, and 8.2 ms of the Q5_K head. A new fusion is accepted only if
+it preserves the canonical token hash and wins a matched full-model on/off
+test; fewer launches alone is insufficient.
+
+1. **BF16 activation packed GEMM/GEMV** — a proposed
+   `nfn_native_tile_linear_packed_weight_bf16_activation_v1` family for
+   Q4_K/Q5_K/Q6_K and BF16 weights, including backward-input. The current
+   resident keeps FP32 activations and converts/accumulates around packed
+   weights, which costs bandwidth and prevents tensor-core BF16 tiling.
+2. **Arithmetic-exact persistent packed MMVQ** — the accepted target
+   megakernels remove launches and share activation quantization, while the
+   verifier reuses a decoded packed weight block across eight Q8_1 rows.
+   Output groups still stream independent packed rows. A next-generation
+   kernel must reuse larger decoded weight tiles across output work without
+   changing the pinned accumulation/rounding order. It
+   must cover 6,656→4,096/256/19,968, 19,968→6,656, and
+   6,656→202,048 tail shapes for verifier row counts 2..16. This is the primary
+   next performance margin and long-context efficiency rather than a blocker
+   to the now-completed pinned llama.cpp comparison. Another grouping wrapper
+   is not sufficient. Shared whole-weight staging, two-output/two-warp, and upstream
+   four-warp candidates all lost the full-model A/B or changed output and were
+   removed.
+3. **Chunked packed vocabulary selection** — target/head kernels that stream
+   the 202,048-row packed LM head directly into deterministic argmax/top-k and
+   sampled p/q reductions without materializing the full FP32 logits matrix.
+   Exact sampled DFlash additionally needs on-device `min(1,p/q)` acceptance
+   and `max(p-q,0)` residual sampling over the complete vocabulary.
+4. **Flash-style hybrid GQA** — BF16/paged online-attention prefill and decode
+   specialized for Q32/KV2/H128, local ring 2,048, and global context 131,072,
+   plus Q32/KV8 DFlash block attention. The current kernels are correct at
+   those lengths but use FP32 scalar/cache traversal and leave substantial
+   long-context throughput on the table.
+5. **Fused DFlash proposal/verification** — retain the five target taps,
+   assistant block state, shared-head reductions, acceptance prefix, and
+   transactional cache metadata on device across a 16-slot step. Today those
+   operations are CUDA-resident but remain multiple launches with host-visible
+   step orchestration.
+6. **Tensor-parallel inference collectives** — sharded packed Q/K/V/O, FFN,
+   embedding, and vocabulary-head kernels plus NCCL all-reduce/all-gather for
+   BF16 and Dynamic deployment beyond a single device. Pipeline-parallel
+   training exists; tensor-parallel resident inference does not.
+7. **Optimized vision kernels** — tensor-core patch/adaptor projections and
+   varlen BF16 full/window attention for the 1,536-wide vision tower. The
+   current vision ABI is correct and CUDA-only at request time, but is not a
+   throughput-optimized multimodal stack.
+
+An attempted fusion of target GQA, BF16 cache commit, and sigmoid gating was
+bit-exact and reduced launch count, but repeated target throughput was flat or
+worse; it was rejected and is not present in the accepted source. A later
+two-kernel attention split passed an initial smoke but changed greedy output on
+repeat and was fully reverted. A non-streaming `decode_many` binding measured
+74.72 tok/s, below the accepted path, and was also reverted. Full-token CUDA
+graph replay and the grouped projection megakernels were retained only after
+repeated exact-output A/Bs showed a gain. Set `NFN_GLIMMER_CUDA_GRAPHS=0` or
+`NFN_GLIMMER_MMQ_MEGAKERNELS=0` only for development bisection.
+
+For DFlash, the accepted policy uses exact five-row-tail MMVQ where applicable,
+reuses Q8 workspaces across K/V/gate and MLP-up projections, overlaps
+independent projections on auxiliary streams, writes K/V directly into
+transactional staging, and selects short-context split attention only below
+its proved 128-key bound. The cooperative dual-RMS kernel partitions each row
+over eight blocks while reproducing the ordinary FP32 bits. Its final
+same-binary control measured 264.724 tok/s off versus 271.244 on (+2.46%), with
+the same canonical hash and 28/34 acceptance. Packed-weight decode hoisting is
+also retained from an earlier compile-time A/B at 158.779 tok/s off versus
+235.657 on. Wider Q5/Q6 row groups, FFN-specific row tiling, all-row attention
+splitting, concurrent split quantization, shared whole-weight staging, and
+extra output warps either regressed end-to-end throughput or changed the exact
+path and remain absent.
 
 ## 6. Resident target and DFlash execution
 
@@ -281,6 +469,17 @@ the versioned functions above exist.
 - [x] Added proposed/accepted/rejected and target/assistant step counters.
 - [x] Disabled stock DFlash after a native adapter is attached unless an exact
   compatible assistant lineage is supplied.
+- [x] Added 16-token causal CUDA prefill, persistent verification workspaces,
+  batched raw embedding/positioned RoPE/cache commit, and batched target-tap
+  capture/context injection for the paired runtime.
+- [x] Added device-indirect token embedding and device-position fused attention
+  so a complete repeated greedy target token can execute as one CUDA graph
+  replay without host node patching. Grouped Q/K/V/gate and MLP gate/up
+  megakernels share activation quantization and fuse gate/SwiGLU handoff.
+- [x] Restored the installed colorful multi-turn TUI with live runtime/cache/
+  DFlash statistics, per-turn prefill/decode/acceptance metrics, transcript
+  controls, and ATEM channel-safe output. Private `to=self` reasoning is never
+  displayed or reinserted; only `to=user` text enters history.
 
 Example:
 
@@ -295,6 +494,14 @@ nfn infer \
   --prompt "Explain speculative decoding briefly." \
   --native-info
 ```
+
+For the multi-turn TUI, omit `--prompt`, add `--chat-mode transcript` and an
+optional `--system-prompt`, then use `/show`, `/reset`, `/clear`, `/mode`, and
+`/exit` inside the resident process. An explicit
+`--weight-precision k-quant-17gb` remains valid on a 32-GB device; only `auto`
+prefers Dynamic when the complete measured budget fits.
+`--strict-tile-ops-lib PATH` is accepted as an alias of `--tile-ops-lib PATH`
+for the whole-model CUDA sidecar.
 
 ## 7. Automatic precision selection
 
@@ -461,6 +668,31 @@ Still required before performance or full-hardware release claims:
   block attention, 202,048-way masked CE, DPO/reward/PPO, and the vision
   prepare/LayerNorm/attention/pixel-shuffle kernels with zero errors or race
   hazards;
+- [x] rebuild and run the 2026-08-14 current-source direct-device probe after
+  the packed/prefill optimization. It passed Q4_K/Q5_K/Q6_K multilinear and
+  backward-input, Q8 activation/packed linear, 202,048-way row argmax, wide
+  norm plus fused residual capture/add, positioned RoPE,
+  windowed GQA, single and multirow cache commit, DFlash attention,
+  202,048-way losses, post-training objectives, and vision on device 0;
+- [x] rerun `memcheck`, `synccheck`, `initcheck`, and `racecheck` against the
+  exact accepted sidecar. The first three reported zero errors and racecheck
+  reported zero hazards/errors while executing the full direct-device list,
+  including multi-projection Q8, fused Q/K norm-scale-RoPE, wide norm/Q8
+  capture, full-vocabulary argmax, device-indirect embedding, device-position
+  fused attention/cache commit, DFlash, post-training, and vision. The accepted
+  strict binary has SHA-256
+  `d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`;
+- [x] run bounded authenticated target-only and DFlash ATEM chat benchmarks
+  against that exact sidecar and binding. Target-only produced the same
+  canonical 32-token hash in ten trials at 78.608 tok/s median. The final
+  current-source DFlash path produced that same canonical hash in ten trials
+  with 28/34 accepted proposals and 37 target rows at 271.244 tok/s median
+  (271.792 mean). A same-final-binary run with only cooperative batched RMS
+  disabled measured 264.724 tok/s. Earlier retained controls measured 72.871
+  target tok/s with its runtime megakernels off, and 158.779 DFlash tok/s with
+  packed-weight hoisting off versus 235.657 enabled. These are exact-workload
+  measurements, not a general quality claim or a matched reproduction of
+  Meta's undisclosed benchmark;
 - [ ] finish one current-source canonical BF16, Dynamic, 17GB, and DFlash
   matrix across the representative 24/32/80-GB profile tiers. The standalone
   32→Dynamic run is complete with the default VRAM-driven `auto` selector,
@@ -483,9 +715,94 @@ Still required before performance or full-hardware release claims:
 - [ ] publish the complete three-class p50/p95 TTFT, tokens/s, DFlash
   acceptance, resident bytes, load peak, and context/session matrix. The
   measured packed-profile rows are published below; 80-GB remains open;
-- [ ] qualify the current exact CUDA paths for production performance before
-  publishing throughput claims; software capability bits remain ABI/artifact
-  gated and are not benchmark claims.
+- [x] qualify the current exact CUDA paths for bounded production-performance
+  claims. The exact local request, hashes, distributions, memory, CPU counters,
+  and megakernel controls are published below. Software capability bits remain
+  ABI/artifact gated and are not general benchmark claims.
+
+Focused CUDA-event measurements on the RTX 5090 compare the final current
+sidecar with the previously qualified v5 sidecar. They use deterministic
+synthetic packed tensors at real Glimmer matrix geometry and verify output
+error before timing:
+
+| Projection geometry | Rows | Final time | Speedup vs v5 |
+| --- | ---: | ---: | ---: |
+| Q4_K 6,656→4,096 | 1 | 0.018 ms | 2.260× |
+| Q4_K 6,656→19,968 | 1 | 0.055 ms | 3.174× |
+| Q6_K 19,968→6,656 | 1 | 0.083 ms | 3.183× |
+| Q5_K 6,656→202,048 | 1 | 0.626 ms | 3.215× |
+| Q4_K 6,656→256 | 16 | 0.032 ms | 1.258× |
+| Q6_K 6,656→256 | 16 | 0.038 ms | 1.156× |
+| Q4_K 6,656→4,096 | 16 | 0.106 ms | 5.273× |
+| Q4_K 6,656→19,968 | 16 | 0.376 ms | 7.961× |
+| Q6_K 19,968→6,656 | 16 | 0.454 ms | 9.001× |
+| Q5_K 6,656→202,048 | 16 | 4.198 ms | 8.917× |
+
+The largest observed accumulation-order difference in these rows was
+0.00415. This is focused kernel evidence only. It does not establish target
+tok/s, DFlash tok/s, acceptance, ATEM quality, or a win over Meta/llama.cpp/
+ExecuTorch; those require the fresh-process full-model run above.
+
+For one-row K/V projections, a later geometry guard routes 256-output packed
+matrices back to the full-block/output kernel because one warp per output
+under-fills the RTX 5090. Against the immediately preceding warp-only build,
+6,656→256 measured 0.008 ms for Q4_K (1.504×), 0.008 ms for Q5_K
+(1.502×), and 0.010 ms for Q6_K (1.370×), with the wide and 16-row
+paths unchanged. `tools/bench_muse_glimmer_residual_norm.py` separately
+reproduces the fused-norm measurements above; neither microbenchmark is an
+end-to-end throughput claim.
+
+The fresh-process current-source chat gate used the canonical K-Quant-17GB
+artifact on the 33,708,376,064-byte RTX 5090. Every row used strict computation
+(`temperature=0`) and the same 41-token rendered ATEM prompt:
+
+| Mode | Generated tokens / trials | Decode throughput | Accepted / proposed per trial | Peak sampled CUDA delta | Aggregate launches |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Target, accepted megakernels | 32 / 10 | 78.608 tok/s median (78.515–78.809) | n/a | 18,949,865,472 B | 17,963 |
+| Target, same binary with runtime megakernels off | 32 / 10 | 72.871 tok/s median (72.787–73.068) | n/a | 18,954,059,776 B | 31,691 |
+| DFlash, final current-source path | 32 / 10 | **271.244 tok/s median**, 271.792 mean (269.303–274.820) | 28 / 34 | 20,654,850,048 B | 38,269 target + 3,762 assistant |
+| DFlash, same final binary with cooperative batched RMS off | 32 / 10 | 264.724 tok/s median (262.292–269.188) | 28 / 34 | 20,654,850,048 B | 38,269 target + 3,762 assistant |
+| DFlash, earlier packed-weight hoist on | 32 / 10 | 235.657 tok/s median (235.455–239.393) | 28 / 34 | 20,652,752,896 B | 38,269 target + 3,762 assistant |
+| DFlash, earlier otherwise-identical packed-weight hoist off | 32 / 10 | 158.779 tok/s median (143.194–160.181) | 28 / 34 | 20,652,752,896 B | 38,269 target + 3,762 assistant |
+
+Every row has one warmup in addition to the ten measured trials; cumulative
+launch counters include that warmup. All rows produced token hash
+`63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1`,
+and reported zero CPU model-compute rows. DFlash rows processed 37 target rows
+in three assistant blocks. The target comparison retains grouping plus the
+direct dual-RMS→Q8→MMVQ handoff by measured evidence: 7.87% more throughput,
+43.32% fewer launches, and identical output. The verifier comparison retains
+the cooperative dual-RMS megakernel by final same-binary evidence: 2.46% more
+throughput with the same launch count, acceptance, output, and sampled peak.
+The earlier compile-time comparison retains packed-weight block hoisting by
+48.42% with the same acceptance/output path.
+
+The final clean sidecar and matching binding SHA-256 digests are respectively
+`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994` and
+`5e3d983fbed735a4dee281ff2c07f165e8e32b47f807a0abe1d3504d58ec870d`.
+The final DFlash and same-binary cooperative-RMS-off JSON digests are
+`e3af55be90ab2c7271db6d83e61c2d470a6f371a82d98ec2327e1b7f0feb9ceb`
+and `3b78d9f065080d4c03bcb7b31bdc768efc16215752dff05d26c77d3aedd5cd03`.
+The 40-kernel probe binary digest is
+`a68d34fbda89ae05e6d7d95fa2531dd1e3d494a8b8444e5cc42726934a12204b`.
+
+The previously recorded 256.69-tok/s DFlash run returned non-canonical hash
+`5868f53efb03b40e2b6c094e13efb981baacf1c23fe622479e3eefcfc3eaa20d`;
+it used an approximate verifier arithmetic path and is rejected. Speculative
+throughput is also acceptance-sensitive: a second prompt accepted 22/74 and
+measured 73.60 tok/s despite the same implementation and 32-token length.
+
+Meta's published RTX 5090 table reports 74.9 target-only and 233.4 DFlash
+tok/s. The local exact target and DFlash results are numerically 4.95% and
+16.21% higher, but Meta does not publish the exact prompt/token count/acceptance
+distribution, so those ratios are not reproducible head-to-head scores. The
+direct local oracle used llama.cpp build 10349 at
+pinned commit `62bf73d`, the same K-Quant-17GB artifact, 41-token ATEM prompt,
+32-token greedy policy, GPU, and DFlash companion. It measured 77.8 target-only
+and 225.7 DFlash tok/s. NeuralFn is 1.04% and 20.18% faster in those matched
+local results. No comparable pinned ExecuTorch Glimmer artifact/command was
+available in the audited upstream contract, so the document records that
+comparison as unavailable instead of manufacturing a result.
 
 After the three runs, `tools/qualify_muse_glimmer_gpu.py verify --result ...`
 requires all classes, canonical packed hashes, full 52-layer/6,656-wide

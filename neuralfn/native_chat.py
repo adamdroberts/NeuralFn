@@ -106,6 +106,22 @@ class NativeChatMessage:
             object.__setattr__(self, "tool_call_id", str(self.tool_call_id))
 
 
+@dataclass(frozen=True, slots=True)
+class NativeAssistantResponse:
+    """One decoded assistant turn after renderer-specific protocol handling.
+
+    ``visible_text`` is the only text that is safe to display or retain in a
+    transcript.  ``reasoning_text`` is kept separate so ATEM ``to=self``
+    content can never accidentally become the next assistant message.
+    """
+
+    visible_text: str
+    reasoning_text: str = ""
+    raw_text: str = ""
+    used_channel_protocol: bool = False
+    final_channel_complete: bool = True
+
+
 class NativeTextCodec:
     name: str
 
@@ -1037,6 +1053,87 @@ def strip_native_text_delimiters(text: str, delimiters: Sequence[str]) -> str:
     return text[:end].rstrip()
 
 
+_ATEM_ASSISTANT_CHANNEL_RE = re.compile(
+    r"(?:<\|start\|>assistant)?[ \t\r\n]+to=(self|user)<\|message\|>"
+)
+_ATEM_CHANNEL_END_RE = re.compile(r"<\|(eom|eot|end_of_text)\|>")
+_ATEM_SUSPICIOUS_CONTROL_RE = re.compile(
+    r"(?:to=(?:self|user)<\|message\|>|<\|start\|>assistant|<\|message\|>)"
+)
+
+
+def parse_native_assistant_response(
+    text: str,
+    renderer: NativeChatRenderer,
+    *,
+    delimiters: Sequence[str] = (),
+) -> NativeAssistantResponse:
+    """Decode one model continuation without leaking renderer control channels.
+
+    Muse Glimmer starts generation immediately after ``<|start|>assistant``.
+    Its continuation can contain a private ``to=self`` reasoning message,
+    followed by a new assistant ``to=user`` message.  A generic delimiter
+    trim cannot distinguish those channels and can therefore expose private
+    reasoning or persist it into the next turn.  This parser treats the ATEM
+    envelope as protocol and returns only user-directed text.
+    """
+
+    raw = str(text)
+    if renderer.name != MUSE_GLIMMER_ATEM_PROFILE:
+        return NativeAssistantResponse(
+            visible_text=strip_native_text_delimiters(raw, delimiters),
+            raw_text=raw,
+        )
+
+    matches = tuple(_ATEM_ASSISTANT_CHANNEL_RE.finditer(raw))
+    if not matches:
+        # A direct plain-text answer is a useful fail-soft behavior for an
+        # otherwise valid Glimmer completion.  Once any ATEM control fragment
+        # appears, however, fail closed instead of presenting possible
+        # private-channel content as an answer.
+        if _ATEM_SUSPICIOUS_CONTROL_RE.search(raw):
+            return NativeAssistantResponse(
+                visible_text="",
+                raw_text=raw,
+                used_channel_protocol=True,
+                final_channel_complete=False,
+            )
+        return NativeAssistantResponse(
+            visible_text=strip_native_text_delimiters(raw, delimiters),
+            raw_text=raw,
+        )
+
+    user_segments: list[str] = []
+    reasoning_segments: list[str] = []
+    final_channel_complete = False
+    for index, match in enumerate(matches):
+        channel = match.group(1)
+        segment_end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+        ending = _ATEM_CHANNEL_END_RE.search(raw, match.end(), segment_end)
+        content_end = ending.start() if ending is not None else segment_end
+        content = raw[match.end() : content_end].strip()
+        if channel == "self":
+            if content:
+                reasoning_segments.append(content)
+            continue
+        if content:
+            user_segments.append(content)
+        # <|eom|> only closes an internal message.  A user-directed answer is
+        # complete at end-of-turn/end-of-text; an unterminated answer is still
+        # displayable as a length-limited partial response.
+        final_channel_complete = bool(
+            ending is not None and ending.group(1) in {"eot", "end_of_text"}
+        )
+
+    return NativeAssistantResponse(
+        visible_text="\n\n".join(user_segments).rstrip(),
+        reasoning_text="\n\n".join(reasoning_segments).rstrip(),
+        raw_text=raw,
+        used_channel_protocol=True,
+        final_channel_complete=final_channel_complete if user_segments else False,
+    )
+
+
 __all__ = [
     "HuggingFaceTokenizerJSONCodec",
     "IncrementalTokenDecoder",
@@ -1053,6 +1150,7 @@ __all__ = [
     "NATIVE_MANIFEST_SCHEMA",
     "NATIVE_MANIFEST_VERSION",
     "NativeChatConfigurationError",
+    "NativeAssistantResponse",
     "NativeChatMessage",
     "NativeChatPrompt",
     "NativeChatRenderer",
@@ -1067,6 +1165,7 @@ __all__ = [
     "native_output_limit",
     "native_stop_token_ids",
     "native_text_stop_delimiters",
+    "parse_native_assistant_response",
     "read_native_execution_manifest",
     "resolve_native_chat_prompt",
     "resolve_native_chat_renderer",

@@ -44,7 +44,8 @@ struct Config {
 struct Proposal {
     std::vector<std::int64_t> token_ids;
     // Row-major [proposal_tokens, target_vocab]. These are raw shared-head
-    // logits, intentionally without the target multiplier or softcap.
+    // logits, intentionally without the target multiplier or softcap. Greedy
+    // CUDA proposal may leave this empty after device-side argmax.
     std::vector<float> logits;
 };
 
@@ -63,10 +64,34 @@ public:
         std::int64_t position,
         const std::vector<float>& concatenated_taps,
         const std::atomic<bool>& cancelled);
+    void record_target_taps_batch(
+        std::int64_t start_position,
+        const float* concatenated_taps,
+        std::int64_t rows,
+        const std::atomic<bool>& cancelled);
+    void record_target_taps_batch_device(
+        std::int64_t start_position,
+        const float* tap_major_device,
+        int source_cuda_device,
+        std::int64_t source_rows,
+        std::int64_t rows,
+        const std::atomic<bool>& cancelled);
+    void record_target_taps_batch_device_and_prepare_lagged_anchor(
+        std::int64_t start_position,
+        const float* tap_major_device,
+        int source_cuda_device,
+        std::int64_t source_rows,
+        std::int64_t rows,
+        const std::atomic<bool>& cancelled);
+    void prepare_lagged_anchor(
+        std::int64_t anchor_position,
+        const std::atomic<bool>& cancelled);
     Proposal propose(
         std::int64_t anchor_token,
         std::int64_t proposal_tokens,
-        const std::atomic<bool>& cancelled) const;
+        const std::atomic<bool>& cancelled,
+        bool require_logits = true,
+        bool fast_k_quant = false) const;
 
     std::int64_t context_length() const noexcept { return context_length_; }
     std::int64_t pending_position() const noexcept { return pending_position_; }
@@ -81,6 +106,7 @@ private:
     std::shared_ptr<neuralfn::resident_glimmer_cuda::DFlashCache> cuda_cache_;
     std::vector<float> pending_taps_;
     std::int64_t pending_position_ = -1;
+    std::int64_t lagged_anchor_position_ = -1;
     std::int64_t context_length_ = 0;
 };
 
@@ -110,9 +136,11 @@ public:
     std::int64_t parameter_count() const noexcept { return parameter_count_; }
     std::int64_t weight_bytes() const noexcept { return weight_bytes_; }
     bool whole_model_cuda() const noexcept { return static_cast<bool>(cuda_model_); }
+    bool cuda_device_tap_pack() const noexcept;
     std::int64_t cuda_resident_weight_bytes() const noexcept;
     std::int64_t cuda_workspace_bytes() const noexcept;
     std::int64_t cuda_kernel_launches() const noexcept;
+    std::int64_t cuda_k_quant_mmq_linears() const noexcept;
     const std::shared_ptr<neuralfn::resident_glimmer::GlimmerModel>& target() const noexcept {
         return target_;
     }
