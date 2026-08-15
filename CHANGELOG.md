@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+- Raised exact K-Quant-17GB+DFlash throughput above the 300-tok/s target on an
+  RTX 5090 by changing the multirow packed verifier, not by weakening model or
+  arithmetic gates. Each cooperative MMVQ group now computes two adjacent
+  output channels with independent DP4A/FP32 accumulators; the launch grid
+  divides the output domain by both channel and group counts so it does not
+  schedule empty CTAs. Qualified defaults use eight verifier rows, two output
+  groups for Q4_K/Q6_K and one for Q5_K, interleaved DP4A schedule 2,
+  read-only cached Q8 activation loads, Q6_K weight predecode, and `.cg`
+  packed-weight streaming. A ten-trial retained run measured **317.022 tok/s
+  median** (316.869 mean, 315.214–318.853); its paired seven-trial result was
+  317.461 versus 316.353 for the production control. A clean source-default
+  full-library rebuild measured 316.687 median / 317.030 mean
+  (315.868–319.865) and a 20,656,160,768-byte peak. All results used the full
+  52-layer target, produced the canonical 32-token hash, accepted 28/34
+  proposals in three DFlash blocks, processed 37 target rows, and reported
+  zero CPU model-compute rows. The retained exact one-run peak was 321.238
+  tok/s.
+
+  Audited the GPT-2-evo ThunderKittens 2 attention path before attempting a
+  transplant. Its packed square BF16 MHA contract cannot represent Glimmer's
+  Q32/KV2 or DFlash's unequal-length Q32/KV8 geometry, and Nsight attributes
+  only about 3.8% of kernel time to DFlash attention versus 35.2% exact Q4
+  rows-8 MMVQ and 21.2% tiled Q4 MMQ. Two experimental TK integer-Q4 paths
+  regressed to roughly 23.3 and 3.0 tok/s and remain disabled in production.
+  Runtime
+  megakernels/CUDA graphs remain only where existing exact on/off A/Bs prove a
+  gain; new attention/gate/SwiGLU fusion and asynchronous-handoff experiments
+  that were flat or slower were reverted.
+
+  Added a sequential fail-closed kernel-matrix runner and a checked-in catalog
+  of 272 full-model candidates. It records binary/result hashes, complete
+  kernel combinations, canonical output and speculative counters, rankings,
+  and the no-gain streak after every run. The last confirmed gain was attempt
+  221; attempts 222–271 are 50 consecutive full-model runs without a confirmed
+  improvement, with attempt 272 as an extra ten-trial check. The apparent
+  321.760-tok/s Q5-groups=2/register-cap=128 peak was rejected because that
+  confirmation measured only 316.247 median. New unit coverage verifies
+  manifest uniqueness, fail-closed full-model/output gates, ranking, and that
+  any genuine improvement resets a consecutive no-gain count. The clean
+  strict library
+  (`ef9a8877679d69825ee3c7782e407d07f4bf7bfe19a065b2be7f30a0860767e8`)
+  passed the current 40-kernel real-device probe plus memcheck, synccheck, and
+  initcheck with zero errors and racecheck with zero hazards/errors/warnings.
 - Restored a colorful Rich TUI for interactive resident inference. TTY
   `nfn infer` now opens a multi-turn transcript UI with model/runtime/precision/
   cache/DFlash state, Markdown assistant panels, per-turn prefill/reuse/decode
@@ -66,7 +109,7 @@
   device argmax → embedding → all 52 layers → cache/final hidden as one
   repeated greedy-token CUDA graph with no host node patching.
   `NFN_GLIMMER_MMQ_MEGAKERNELS=0` and `NFN_GLIMMER_CUDA_GRAPHS=0` remain
-  development-only A/B gates. The source-built final strict sidecar
+  development-only A/B gates. The source-built pre-multi-output strict sidecar
   (`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`)
   and binding
   (`5e3d983fbed735a4dee281ff2c07f165e8e32b47f807a0abe1d3504d58ec870d`)
@@ -80,7 +123,7 @@
   used the complete 52-layer Muse-Glimmer-30B target (not a tiny surrogate)
   and generated 32 tokens from the same 41-token ATEM prompt after one warmup and
   across ten measured trials. Target-only measured **78.608 tok/s** median
-  (78.515–78.809) with an 18,949,865,472-byte sampled peak. The final DFlash
+  (78.515–78.809) with an 18,949,865,472-byte sampled peak. That DFlash
   path measured **271.244 tok/s** median and 271.792 mean
   (269.303–274.820), accepted 28/34 proposals in every trial, processed 37
   target rows in three blocks, and peaked at 20,654,850,048 bytes. Both paths
@@ -111,11 +154,13 @@
   verifier path and produced a different token hash; it is retracted rather
   than presented as production performance. Exact DFlash throughput is also
   acceptance-sensitive: a second prompt measured 73.60 tok/s with only 22/74
-  proposals accepted. The new exact results are numerically 4.95% and 16.21%
+  proposals accepted. Those historical exact results were numerically 4.95%
+  and 16.21%
   above Meta's published 74.9/233.4 RTX 5090 figures, but Meta does not disclose
   the prompt/policy needed for a matched reproduction. A matched local pinned
   llama.cpp build 10349 (`62bf73d`) reached 77.8 target-only and 225.7 DFlash
-  tok/s on the same prompt and policy, making NeuralFn 1.04% and 20.18% faster.
+  tok/s on the same prompt and policy, making that revision 1.04% and 20.18%
+  faster.
   No reproducible pinned ExecuTorch comparator was available, so no ExecuTorch
   win is claimed.
   Full-logit, rendered-chat, sampled, and DFlash upstream-oracle parity remain

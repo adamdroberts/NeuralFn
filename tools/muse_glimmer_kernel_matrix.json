@@ -1,0 +1,1941 @@
+{
+  "qualification": {
+    "hardware": {
+      "cuda_device": 0,
+      "name": "NVIDIA GeForce RTX 5090",
+      "total_vram_bytes": 33708376064
+    },
+    "workload": {
+      "artifact_sha256": "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e",
+      "weight_precision": "k-quant-17gb",
+      "dflash": true,
+      "prompt_tokens": 41,
+      "generated_tokens": 32,
+      "target_layers": 52,
+      "expected_output_sha256_le_u32": "63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1",
+      "expected_accepted_tokens": 28,
+      "expected_proposed_tokens": 34,
+      "expected_target_rows": 37,
+      "expected_speculative_blocks": 3,
+      "expected_cpu_model_compute_rows": 0
+    },
+    "retained_combination": {
+      "packed_weight_global_load_policy": "cg",
+      "mmvq_input_rows_per_block": 8,
+      "mmvq_output_channels_per_group": 2,
+      "q4_output_groups_per_block": 2,
+      "q5_output_groups_per_block": 1,
+      "q6_output_groups_per_block": 2,
+      "dp4a_schedule": 2,
+      "q8_readonly_cache": true,
+      "q6_weight_predecode": true,
+      "register_cap": null
+    },
+    "confirmed_performance": {
+      "ten_run_median_tokens_per_second": 317.02241290688266,
+      "ten_run_mean_tokens_per_second": 316.8692205679262,
+      "ten_run_minimum_tokens_per_second": 315.2144302839672,
+      "ten_run_maximum_tokens_per_second": 318.8532792547361,
+      "paired_seven_run_control_median_tokens_per_second": 316.35270950505503,
+      "paired_seven_run_retained_median_tokens_per_second": 317.4613504694935,
+      "retained_single_run_peak_tokens_per_second": 321.238,
+      "source_default_rebuild_ten_run_median_tokens_per_second": 316.68696591168793,
+      "source_default_rebuild_ten_run_mean_tokens_per_second": 317.0299903478848,
+      "source_default_rebuild_peak_tokens_per_second": 319.8648315193992,
+      "source_default_rebuild_peak_sampled_vram_bytes": 20656160768
+    },
+    "ranked_confirmed_combinations": [
+      {
+        "rank": 1,
+        "attempts": [219, 221],
+        "combination": "two-output MMVQ,Q4g2,Q5g1,Q6g2,rows8,dp4a2,q8-readonly,q6-predecode,no-register-cap,dlcm-cg",
+        "best_median_tokens_per_second": 317.4613504694935,
+        "confirmation_repetitions": [10, 7],
+        "tile_ops_sha256": "9ae3eda41e9cdff0b38fba9b16a2bed537661a73abeae77d1f6797154e8ba90b",
+        "status": "retained"
+      },
+      {
+        "rank": 2,
+        "attempts": [220],
+        "combination": "two-output production control before q8-readonly plus q6-predecode",
+        "best_median_tokens_per_second": 316.35270950505503,
+        "confirmation_repetitions": [7],
+        "tile_ops_sha256": "cae6432e3f4a051a3fbca973f56be5dffc3f8339d66ff7cdd276750a2939354d",
+        "status": "superseded"
+      },
+      {
+        "rank": 3,
+        "attempts": [247],
+        "combination": "retained-combination,maxrregcount=128",
+        "best_median_tokens_per_second": 316.34037524428834,
+        "confirmation_repetitions": [7],
+        "tile_ops_sha256": "38354aea441e0aaa796289f72657d95a6bb37b08630ed026c1f35766e3d5f151",
+        "status": "rejected-below-retained"
+      },
+      {
+        "rank": 4,
+        "attempts": [272],
+        "combination": "retained-combination,Q5-output-groups=2,maxrregcount=128",
+        "best_median_tokens_per_second": 316.2471409379317,
+        "confirmation_repetitions": [10],
+        "tile_ops_sha256": "541d0f6020215226d7b72b70b310e157edda7a9db8ab7f3c954b0a55af7c6acd",
+        "status": "rejected-below-retained"
+      },
+      {
+        "rank": 5,
+        "attempts": [248],
+        "combination": "retained-combination,maxrregcount=176",
+        "best_median_tokens_per_second": 315.72396096172923,
+        "confirmation_repetitions": [7],
+        "tile_ops_sha256": "706dbd3602affbd5c178a0c716af11e06eb44894cacf6849bcb950cdc289c5ef",
+        "status": "rejected-below-retained"
+      },
+      {
+        "rank": 6,
+        "attempts": [153],
+        "combination": "corrected-two-output-Q4-Q5-Q6,without-q8-readonly-or-q6-predecode",
+        "best_median_tokens_per_second": 314.75050107728725,
+        "confirmation_repetitions": [10],
+        "tile_ops_sha256": "fc82ec25db56e6ced73e94738bddbbfa2ea85a3d500ea0e8c54e31e608919ac8",
+        "status": "superseded"
+      }
+    ],
+    "rejected_unconfirmed_peak": {
+      "attempt": 265,
+      "combination": "q5-output-groups=2,maxrregcount=128",
+      "single_run_tokens_per_second": 321.76,
+      "confirmation_attempt": 272,
+      "confirmation_ten_run_median_tokens_per_second": 316.2471409379317,
+      "reason": "ten-run confirmation was below the retained combination"
+    },
+    "saturation": {
+      "last_confirmed_improvement_attempt": 221,
+      "first_consecutive_no_improvement_attempt": 222,
+      "last_required_no_improvement_attempt": 271,
+      "consecutive_full_model_runs_without_confirmed_improvement": 50,
+      "extra_confirmation_attempt": 272,
+      "total_full_model_candidate_runs": 272
+    }
+  },
+  "candidates": [
+    {
+      "name": "qualified-full-control",
+      "category": "control",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_native_train_tile_ops_glimmer_clean_full_strict.so",
+      "notes": "Qualified full-library 271 tok/s control"
+    },
+    {
+      "name": "thin-control-dp4a0",
+      "category": "mmvq-dp4a",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a0.so",
+      "notes": "Current source with the pinned dependent DP4A expressions"
+    },
+    {
+      "name": "independent-dp4a1",
+      "category": "mmvq-dp4a",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a1.so",
+      "notes": "Four independent DP4A operations followed by integer adds"
+    },
+    {
+      "name": "interleaved-dp4a2",
+      "category": "mmvq-dp4a",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2.so",
+      "notes": "Interleaved dot-product and activation-sum dependency chains"
+    },
+    {
+      "name": "independent-qsum-dp4a3",
+      "category": "mmvq-dp4a",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a3.so",
+      "notes": "Pinned dot chain with two independent activation-sum DP4As"
+    },
+    {
+      "name": "tk-int8-q4-warp1",
+      "category": "thunderkittens-mmvq",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_tkq4_warp1.so",
+      "notes": "ThunderKittens warp INT8 m16n16k32 verifier path for Q4_K"
+    },
+    {
+      "name": "interleaved-dp4a2-repeat-a",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2.so",
+      "notes": "Independent full-model repeat of run 4"
+    },
+    {
+      "name": "interleaved-dp4a2-repeat-b",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2.so",
+      "notes": "Independent full-model repeat of run 4"
+    },
+    {
+      "name": "interleaved-dp4a2-repeat-c",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2.so",
+      "notes": "Independent full-model repeat of run 4"
+    },
+    {
+      "name": "dp4a2-q4-rows4",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q4r4.so",
+      "notes": "Four reused verifier rows per Q4_K CTA"
+    },
+    {
+      "name": "dp4a2-q4-rows16",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q4r16.so",
+      "notes": "Sixteen reused verifier rows per Q4_K CTA"
+    },
+    {
+      "name": "dp4a2-q5-rows4",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q5r4.so",
+      "notes": "Four reused verifier rows per Q5_K CTA"
+    },
+    {
+      "name": "dp4a2-q5-rows16",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q5r16.so",
+      "notes": "Sixteen reused verifier rows per Q5_K CTA"
+    },
+    {
+      "name": "dp4a2-q6-rows4",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r4.so",
+      "notes": "Four reused verifier rows per Q6_K CTA"
+    },
+    {
+      "name": "dp4a2-q6-rows16",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16.so",
+      "notes": "Sixteen reused verifier rows per Q6_K CTA"
+    },
+    {
+      "name": "dp4a2-rms-blocks4",
+      "category": "norm-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-rmsb4.so",
+      "notes": "Four cooperative RMS CTAs per verifier row"
+    },
+    {
+      "name": "dp4a2-warps4",
+      "category": "mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-warps4.so",
+      "notes": "Four MMVQ output warps per CTA"
+    },
+    {
+      "name": "dp4a2-q8-readonly-cache",
+      "category": "mmvq-cache-policy",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q8cache.so",
+      "notes": "Read-only/L1 loads for reused verifier Q8 blocks"
+    },
+    {
+      "name": "dp4a2-q8-readonly-cache-q6-rows16",
+      "category": "mmvq-cache-policy",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q8cache-q6r16.so",
+      "notes": "Q8 read-only cache plus the run-15 Q6_K row geometry"
+    },
+    {
+      "name": "dp4a0-q8-readonly-cache-q6-rows16",
+      "category": "mmvq-cache-policy",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a0-q8cache-q6r16.so",
+      "notes": "Pinned DP4A expressions with Q8 cache and Q6_K rows16"
+    },
+    {
+      "name": "dp4a2-q8-cache-q5q6-rows16",
+      "category": "mmvq-cache-policy",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q8cache-q5r16-q6r16.so",
+      "notes": "Q8 cache with sixteen-row Q5_K and Q6_K reuse"
+    },
+    {
+      "name": "dp4a2-q6r16-output-groups2",
+      "category": "mmvq-output-locality",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16-outg2.so",
+      "notes": "Two output-channel groups per CTA plus Q6_K rows16"
+    },
+    {
+      "name": "dp4a2-q6r16-output-groups4",
+      "category": "mmvq-output-locality",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16-outg4.so",
+      "notes": "Four output-channel groups per CTA plus Q6_K rows16"
+    },
+    {
+      "name": "dp4a0-q6r16-output-groups2",
+      "category": "mmvq-output-locality",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a0-q6r16-outg2.so",
+      "notes": "Pinned DP4A schedule with two output groups and Q6_K rows16"
+    },
+    {
+      "name": "dp4a2-output-groups2",
+      "category": "mmvq-output-locality",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-outg2.so",
+      "notes": "Two output-channel groups per CTA with default row geometry"
+    },
+    {
+      "name": "dp4a2-q6r16-repeat-a",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16.so",
+      "notes": "Independent repeat of the run-15 winner"
+    },
+    {
+      "name": "dp4a2-q6r16-repeat-b",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16.so",
+      "notes": "Independent repeat of the run-15 winner"
+    },
+    {
+      "name": "dp4a2-q6r16-repeat-c",
+      "category": "confirmation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-q6r16.so",
+      "notes": "Independent repeat of the run-15 winner"
+    },
+    {
+      "name": "grouped-gqa4-q6r16",
+      "category": "attention-megakernel",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_grouped-gqa4-q6r16.so",
+      "notes": "Four-query-head exact FP32 grouped-GQA K/V reuse megakernel"
+    },
+    {
+      "name": "grouped-gqa2-q6r16",
+      "category": "attention-megakernel",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_grouped-gqa2-q6r16.so",
+      "notes": "Two-query-head grouped-GQA megakernel plus Q6_K rows16"
+    },
+    {
+      "name": "grouped-gqa2",
+      "category": "attention-megakernel",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_grouped-gqa2.so",
+      "notes": "Two-query-head grouped-GQA megakernel with default row geometry"
+    },
+    {
+      "name": "grouped-gqa2-output-groups2",
+      "category": "attention-megakernel",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_grouped-gqa2-outg2.so",
+      "notes": "Head-pair GQA plus two MMVQ output groups"
+    },
+    {
+      "name": "grouped-gqa2-dp4a0",
+      "category": "attention-megakernel",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_grouped-gqa2-dp4a0.so",
+      "notes": "Head-pair GQA with pinned DP4A schedule"
+    },
+    {
+      "name": "dp4a2-register-limit96",
+      "category": "mmvq-register-pressure",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-reg96.so",
+      "notes": "Global candidate max register count 96"
+    },
+    {
+      "name": "dp4a2-register-limit104",
+      "category": "mmvq-register-pressure",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-reg104.so",
+      "notes": "Global candidate max register count 104"
+    },
+    {
+      "name": "dp4a2-register-limit112",
+      "category": "mmvq-register-pressure",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-reg112.so",
+      "notes": "Global candidate max register count 112"
+    },
+    {
+      "name": "dp4a2-register-limit120",
+      "category": "mmvq-register-pressure",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-reg120.so",
+      "notes": "Global candidate max register count 120"
+    },
+    {
+      "name": "dp4a2-register-limit124",
+      "category": "mmvq-register-pressure",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_dp4a2-reg124.so",
+      "notes": "Global candidate max register count 124"
+    },
+    {
+      "name": "tk-int8-q4-direct-fragments",
+      "category": "thunderkittens-mmvq",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_tkq4-directfrag.so",
+      "notes": "TK integer MMA with direct fragment epilogue and no per-K32 C staging"
+    },
+    {
+      "name": "tiled-mmq-rows16-crossover",
+      "category": "mmvq-mmq-crossover",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-dp4a2-q6r16.so",
+      "notes": "Pinned llama tiled MMQ for full 16-row verifier blocks"
+    },
+    {
+      "name": "tiled-mmq16-attention-input-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-attn-in.so",
+      "notes": "Tiled MMQ only for 16-row Q/K/V/attention-gate projections"
+    },
+    {
+      "name": "tiled-mmq16-attention-output-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-attn-out.so",
+      "notes": "Tiled MMQ only for 16-row attention output projections"
+    },
+    {
+      "name": "tiled-mmq16-mlp-up-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-mlp-up.so",
+      "notes": "Tiled MMQ only for 16-row SwiGLU gate/up projections"
+    },
+    {
+      "name": "tiled-mmq16-mlp-down-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-mlp-down.so",
+      "notes": "Tiled MMQ only for 16-row SwiGLU down projections"
+    },
+    {
+      "name": "tiled-mmq16-lm-head-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-lm-head.so",
+      "notes": "Tiled MMQ only for 16-row 202,048-vocabulary head projections"
+    },
+    {
+      "name": "tiled-mmq16-other-only",
+      "category": "mmvq-mmq-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-other.so",
+      "notes": "Tiled MMQ only for unmatched 16-row projection shapes"
+    },
+    {
+      "name": "tiled-mmq16-lm-head-plus-other",
+      "category": "mmvq-mmq-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-lmhead-other.so",
+      "notes": "Combine the two exact family-isolation paths"
+    },
+    {
+      "name": "tiled-mmq16-target-layers-00-12",
+      "category": "mmvq-mmq-layer-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-layers00-12-all.so",
+      "notes": "Tiled MMQ for all sensitive projections in target layers 0 through 12 plus the LM head"
+    },
+    {
+      "name": "tiled-mmq16-target-layers-13-25",
+      "category": "mmvq-mmq-layer-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-layers13-25-all.so",
+      "notes": "Tiled MMQ for all sensitive projections in target layers 13 through 25 plus the LM head"
+    },
+    {
+      "name": "tiled-mmq16-target-layers-26-38",
+      "category": "mmvq-mmq-layer-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-layers26-38-all.so",
+      "notes": "Tiled MMQ for all sensitive projections in target layers 26 through 38 plus the LM head"
+    },
+    {
+      "name": "tiled-mmq16-target-layers-39-51",
+      "category": "mmvq-mmq-layer-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate_mmq16-layers39-51-all.so",
+      "notes": "Tiled MMQ for all sensitive projections in target layers 39 through 51 plus the LM head"
+    },
+    {
+      "name": "tiled-mmq-lm-head-rows5-plus",
+      "category": "mmvq-mmq-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq-lmhead-rows5.so",
+      "notes": "Tiled MMQ for the LM head in both 16-row blocks and the exact five-row verifier tail"
+    },
+    {
+      "name": "lm-head-mmq-plus-precomputed-qsum",
+      "category": "exact-mmvq-arithmetic",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-precomputed-qsum.so",
+      "notes": "Exact Q4/Q5 activation sums precomputed once per Q8 block, plus 16-row tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-plus-transposed-q8",
+      "category": "exact-mmvq-layout",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-transposed-q8.so",
+      "notes": "Block-major verifier Q8 rows for adjacent row loads, plus 16-row tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-plus-predecoded-q6",
+      "category": "exact-mmvq-arithmetic",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-predecode-q6.so",
+      "notes": "Hoist decoded Q6 signed vectors and scales across rows, plus 16-row tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-plus-q4-rows16-shared",
+      "category": "exact-mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-q4r16-shared.so",
+      "notes": "One Q4 weight traversal for 16 rows using shared FP32 accumulators, plus tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-plus-q4-rowgroups2",
+      "category": "exact-mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-q4-rowgroups2.so",
+      "notes": "Two eight-row verifier groups per CTA with padded five-row tail, plus tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-plus-outputgroups2",
+      "category": "exact-mmvq-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-lmhead-outputgroups2.so",
+      "notes": "Two output-channel groups per exact MMVQ CTA, plus tiled LM head"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups2-q6-groups1-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g1-dp4a2.so",
+      "notes": "Two output groups only for Q4; Q5/Q6 retain one group"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups1-q6-groups2-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g1-q6g2-dp4a2.so",
+      "notes": "Two output groups only for Q6; Q4/Q5 retain one group"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups2-q6-groups2-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Two output groups for Q4 and Q6 with Q5 isolated"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups3-q6-groups1-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g3-q6g1-dp4a2.so",
+      "notes": "Three output groups only for Q4"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups4-q6-groups1-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g4-q6g1-dp4a2.so",
+      "notes": "Four output groups only for Q4"
+    },
+    {
+      "name": "lm-head-mmq-q4-q5-groups2-q6-groups1-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q5g2-q6g1-dp4a2.so",
+      "notes": "Two output groups for Q4 and the exact five-row Q5 head tail"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups2-q6-groups3-dp4a2",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g3-dp4a2.so",
+      "notes": "Two Q4 output groups and three Q6 output groups"
+    },
+    {
+      "name": "lm-head-mmq-q4-groups2-q6-groups1-dp4a0",
+      "category": "exact-mmvq-encoding-geometry",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g1-dp4a0.so",
+      "notes": "Q4-only two-group geometry with pinned dependent DP4A schedule"
+    },
+    {
+      "name": "tiled-mmq16-exact-q8-scale",
+      "category": "mmq-exact-quantization-seam",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-exactq8-mode1.so",
+      "notes": "All 16-row target projections use tiled MMQ with MMVQ division order and FP16-rounded Q8 scales"
+    },
+    {
+      "name": "tiled-mmq16-legacy-scale-quantized-sums",
+      "category": "mmq-exact-quantization-seam",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-exactq8-mode2.so",
+      "notes": "All 16-row target projections use tiled MMQ with reciprocal quantization and quantized-byte sums"
+    },
+    {
+      "name": "tiled-mmq16-exact-q8-scale-and-sums",
+      "category": "mmq-exact-quantization-seam",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-exactq8-mode3.so",
+      "notes": "All 16-row target projections use tiled MMQ with exact-scale quantization and quantized-byte sums"
+    },
+    {
+      "name": "tiled-mmq16-preserved-mmvq-workspace",
+      "category": "mmq-dual-layout-workspace",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-preserve-mode0.so",
+      "notes": "All 16-row target projections use tiled MMQ while preserving ordinary Q8_1 for prequantized K/V/gate and MLP-up"
+    },
+    {
+      "name": "tiled-mmq16-preserved-workspace-exact-scale",
+      "category": "mmq-dual-layout-workspace",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-preserve-mode1.so",
+      "notes": "Dual-layout verifier workspace plus MMVQ-compatible scale division and FP16 rounding"
+    },
+    {
+      "name": "tiled-mmq16-preserved-workspace-exact-scale-sums",
+      "category": "mmq-dual-layout-workspace",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-mmq16-preserve-mode3.so",
+      "notes": "Dual-layout verifier workspace plus MMVQ-compatible scale and quantized-byte sum seam"
+    },
+    {
+      "name": "preserved-mmq3-attention-input-plus-lm",
+      "category": "mmq-corrected-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-attnin-lm.so",
+      "notes": "Corrected tiled Q/K/V/gate-input family plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-attention-output-plus-lm",
+      "category": "mmq-corrected-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-attnout-lm.so",
+      "notes": "Corrected tiled attention-output family plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-mlp-up-plus-lm",
+      "category": "mmq-corrected-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-mlpup-lm.so",
+      "notes": "Corrected tiled MLP gate/up family plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-mlp-down-plus-lm",
+      "category": "mmq-corrected-family-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-mlpdown-lm.so",
+      "notes": "Corrected tiled MLP-down family plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-input-families-plus-lm",
+      "category": "mmq-corrected-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-attnin-mlpup-lm.so",
+      "notes": "Corrected attention-input and MLP-up families plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-output-families-plus-lm",
+      "category": "mmq-corrected-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-attnout-mlpdown-lm.so",
+      "notes": "Corrected attention-output and MLP-down families plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-all-attention-plus-lm",
+      "category": "mmq-corrected-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-attention-all-lm.so",
+      "notes": "Corrected attention input/output families plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-all-mlp-plus-lm",
+      "category": "mmq-corrected-family-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-mlp-all-lm.so",
+      "notes": "Corrected MLP up/down families plus tiled LM head"
+    },
+    {
+      "name": "preserved-mmq3-without-attention-input",
+      "category": "mmq-corrected-family-ablation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-without-attnin.so",
+      "notes": "All corrected tiled families except attention input"
+    },
+    {
+      "name": "preserved-mmq3-without-attention-output",
+      "category": "mmq-corrected-family-ablation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-without-attnout.so",
+      "notes": "All corrected tiled families except attention output"
+    },
+    {
+      "name": "preserved-mmq3-without-mlp-up",
+      "category": "mmq-corrected-family-ablation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-without-mlpup.so",
+      "notes": "All corrected tiled families except MLP up"
+    },
+    {
+      "name": "preserved-mmq3-without-mlp-down",
+      "category": "mmq-corrected-family-ablation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-without-mlpdown.so",
+      "notes": "All corrected tiled families except MLP down"
+    },
+    {
+      "name": "preserved-mmq3-first-full-verifier-block",
+      "category": "mmq-verifier-block-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-block0.so",
+      "notes": "Corrected tiled intermediates only in the first 16-row verifier block; tiled LM head remains enabled in every full block"
+    },
+    {
+      "name": "preserved-mmq3-second-full-verifier-block",
+      "category": "mmq-verifier-block-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-block1.so",
+      "notes": "Corrected tiled intermediates only in the second 16-row verifier block; tiled LM head remains enabled in every full block"
+    },
+    {
+      "name": "preserved-mmq3-first-two-full-verifier-blocks",
+      "category": "mmq-verifier-block-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-blocks01.so",
+      "notes": "Corrected tiled intermediates in both baseline 16-row verifier blocks"
+    },
+    {
+      "name": "preserved-mmq3-fused-dual-q8-write",
+      "category": "mmq-dual-layout-fusion",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-fused-dualq8.so",
+      "notes": "One quantization kernel writes both tiled-MMQ and reusable exact-MMVQ Q8 layouts"
+    },
+    {
+      "name": "preserved-mmq3-split-q8-stream64",
+      "category": "mmq-stream-k",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-split-stream64.so",
+      "notes": "Corrected split dual-Q8 path with 64 stream-K CTAs for underfilled tiled-MMQ verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-split-q8-stream-auto-control",
+      "category": "mmq-stream-k",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-split-stream-auto.so",
+      "notes": "Rebuilt split dual-Q8 path with llama's original stream-K occupancy heuristic"
+    },
+    {
+      "name": "preserved-mmq3-groups2-stream-auto",
+      "category": "mmq-stream-k-exact-tail",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Corrected full-tile MMQ plus the exact-tail Q4/Q6 two-group winner and llama auto stream-K"
+    },
+    {
+      "name": "preserved-mmq3-groups2-stream128",
+      "category": "mmq-stream-k-exact-tail",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream128.so",
+      "notes": "Corrected full-tile MMQ, exact-tail groups2, and 128 stream-K CTAs for underfilled verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-groups2-stream144",
+      "category": "mmq-stream-k-exact-tail",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream144.so",
+      "notes": "Corrected full-tile MMQ, exact-tail groups2, and 144 stream-K CTAs for underfilled verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-groups2-stream160",
+      "category": "mmq-stream-k-exact-tail",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream160.so",
+      "notes": "Corrected full-tile MMQ, exact-tail groups2, and 160 stream-K CTAs for underfilled verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-groups2-stream170",
+      "category": "mmq-stream-k-exact-tail",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream170.so",
+      "notes": "Corrected full-tile MMQ, exact-tail groups2, and all 170 SMs assigned to narrow verifier MMQ"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream144",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream144.so",
+      "notes": "144 stream-K CTAs only where llama's occupancy heuristic would split an underfilled narrow projection"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream152",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream152.so",
+      "notes": "152 stream-K CTAs only for underfilled narrow verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "160 stream-K CTAs only for underfilled narrow verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream164",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream164.so",
+      "notes": "164 stream-K CTAs only for underfilled narrow verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream168",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream168.so",
+      "notes": "168 stream-K CTAs only for underfilled narrow verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream169",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream169.so",
+      "notes": "169 stream-K CTAs only for underfilled narrow verifier projections"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream170-control",
+      "category": "mmq-stream-k-narrow-only",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream170.so",
+      "notes": "170 stream-K CTAs for narrow projections while leaving naturally efficient tiles unchanged"
+    },
+    {
+      "name": "preserved-mmq3-groups2-j8",
+      "category": "mmq-row-tile",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-j8.so",
+      "notes": "Two J=8 row tiles replace the normal J=16 verifier MMQ tile"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output256-only",
+      "category": "mmq-stream-k-width-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-256.so",
+      "notes": "Use the favorable 160-CTA partition only for 256-wide K/V projections"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output4096-only",
+      "category": "mmq-stream-k-width-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-4096.so",
+      "notes": "Use the favorable 160-CTA partition only for 4096-wide Q/attention-gate projections"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output6656-only",
+      "category": "mmq-stream-k-width-isolation",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-6656.so",
+      "notes": "Use the favorable 160-CTA partition only for 6656-wide attention-output and MLP-down projections"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output256-4096",
+      "category": "mmq-stream-k-width-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-256-4096.so",
+      "notes": "160-CTA stream-K on 256- and 4096-wide projections; 6656-wide projections retain llama auto"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output256-6656",
+      "category": "mmq-stream-k-width-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-256-6656.so",
+      "notes": "160-CTA stream-K on 256- and 6656-wide projections; 4096-wide projections retain llama auto"
+    },
+    {
+      "name": "preserved-mmq3-stream160-output4096-6656",
+      "category": "mmq-stream-k-width-combination",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-stream160-4096-6656.so",
+      "notes": "160-CTA stream-K on 4096- and 6656-wide projections; 256-wide projections retain llama auto"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160-repeat1",
+      "category": "mmq-stability",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Independent full-model repeat of the 160-CTA output-matching winner"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160-repeat2",
+      "category": "mmq-stability",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Independent full-model repeat of the 160-CTA output-matching winner"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160-repeat3",
+      "category": "mmq-stability",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Independent full-model repeat of the 160-CTA output-matching winner"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160-repeat4",
+      "category": "mmq-stability",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Independent full-model repeat of the 160-CTA output-matching winner"
+    },
+    {
+      "name": "preserved-mmq3-narrow-stream160-repeat5",
+      "category": "mmq-stability",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Independent full-model repeat of the 160-CTA output-matching winner"
+    },
+    {
+      "name": "exact-groups2-dp4a2-stable-r10",
+      "category": "stable-control",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Ten in-process full-generation trials of the leading strict-exact combination"
+    },
+    {
+      "name": "preserved-mmq3-stream-auto-stable-r10",
+      "category": "stable-control",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Ten in-process trials of corrected tiled MMQ with llama stream-K auto"
+    },
+    {
+      "name": "preserved-mmq3-stream160-stable-r10",
+      "category": "stable-control",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-narrow-stream160.so",
+      "notes": "Ten in-process trials of corrected tiled MMQ with 160 CTAs on underfilled widths"
+    },
+    {
+      "name": "preserved-mmq3-bf16-target-taps",
+      "category": "dflash-conditioning-precision",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-tapround1.so",
+      "notes": "Round packed target taps to BF16 before the DFlash context projection"
+    },
+    {
+      "name": "preserved-mmq3-fp16-target-taps",
+      "category": "dflash-conditioning-precision",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-tapround2.so",
+      "notes": "Round packed target taps to FP16 before the DFlash context projection"
+    },
+    {
+      "name": "preserved-mmq3-tf32-target-taps",
+      "category": "dflash-conditioning-precision",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-tapround3.so",
+      "notes": "Round packed target taps to a TF32-width mantissa before the DFlash context projection"
+    },
+    {
+      "name": "draft8-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft8.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Eight-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft8-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft8.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Eight-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "draft10-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft10.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Ten-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft10-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft10.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Ten-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "draft11-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft11.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Eleven-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft11-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft11.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Eleven-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "draft12-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft12.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Twelve-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft12-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft12.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Twelve-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "draft13-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft13.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Thirteen-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft13-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft13.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Thirteen-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "draft14-exact-mmvq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft14.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "Fourteen-token DFlash proposal ceiling with strict exact batched MMVQ"
+    },
+    {
+      "name": "draft14-fast-mmq",
+      "category": "dflash-draft-length",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_draft14.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Fourteen-token DFlash proposal ceiling with corrected tiled MMQ where the row threshold permits"
+    },
+    {
+      "name": "stream-handoff-control-exact",
+      "category": "runtime-stream-handoff",
+      "binding_lib": "/tmp/_native_inference_glimmer_async_handoff.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_ASYNC_STREAM_HANDOFF": "0"
+      },
+      "notes": "New binding with event handoff disabled, retaining three host stream synchronizations per proposal"
+    },
+    {
+      "name": "stream-handoff-events-exact",
+      "category": "runtime-stream-handoff",
+      "binding_lib": "/tmp/_native_inference_glimmer_async_handoff.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "notes": "CUDA-event target-to-assistant-to-target handoff with one host wait per proposal"
+    },
+    {
+      "name": "stream-handoff-control-fast-mmq",
+      "category": "runtime-stream-handoff",
+      "binding_lib": "/tmp/_native_inference_glimmer_async_handoff.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "env": {
+        "NFN_GLIMMER_ASYNC_STREAM_HANDOFF": "0"
+      },
+      "notes": "Output-matching fast MMQ control with the old synchronization sequence"
+    },
+    {
+      "name": "stream-handoff-events-fast-mmq",
+      "category": "runtime-stream-handoff",
+      "binding_lib": "/tmp/_native_inference_glimmer_async_handoff.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-preserve3-groups2-stream0.so",
+      "notes": "Output-matching fast MMQ plus CUDA-event stream handoff"
+    },
+    {
+      "name": "exact-mmvq-groups-control",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_GROUPS": "0"
+      },
+      "notes": "Exact verifier control with independent Q/K/V/gate and gate/up launches"
+    },
+    {
+      "name": "exact-mmvq-grouped-projections",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_GROUPS": "1"
+      },
+      "notes": "Co-schedule exact verifier attention and MLP input projections without changing reduction order"
+    },
+    {
+      "name": "exact-mmvq-fused-gate-output",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_GATE": "1"
+      },
+      "notes": "Fuse exact sigmoid preparation and attention output projection"
+    },
+    {
+      "name": "exact-mmvq-fused-swiglu-down",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_SWIGLU": "1"
+      },
+      "notes": "Fuse exact SwiGLU preparation and MLP down projection"
+    },
+    {
+      "name": "exact-mmvq-fused-output-pair",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_GATE": "1",
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_SWIGLU": "1"
+      },
+      "notes": "Fuse both exact nonlinear preparation/output projection pairs"
+    },
+    {
+      "name": "exact-mmvq-groups-plus-gate",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_GROUPS": "1",
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_GATE": "1"
+      },
+      "notes": "Grouped input projections plus fused attention gate/output"
+    },
+    {
+      "name": "exact-mmvq-groups-plus-swiglu",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_GROUPS": "1",
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_SWIGLU": "1"
+      },
+      "notes": "Grouped input projections plus fused SwiGLU/down"
+    },
+    {
+      "name": "exact-mmvq-all-megakernels",
+      "category": "exact-mmvq-megakernel",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/libnfn_glimmer_candidate-encgroups-q4g2-q6g2-dp4a2.so",
+      "env": {
+        "NFN_GLIMMER_EXACT_MMVQ_GROUPS": "1",
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_GATE": "1",
+        "NFN_GLIMMER_EXACT_MMVQ_FUSED_SWIGLU": "1"
+      },
+      "notes": "All exact verifier projection/nonlinear megakernels enabled"
+    },
+    {
+      "name": "exact-mmvq-two-channels-two-groups",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-ch2-g2.so",
+      "notes": "Two adjacent output channels per cooperative group and two groups per Q4/Q6 CTA"
+    },
+    {
+      "name": "exact-mmvq-two-channels-one-group",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-ch2-g1.so",
+      "notes": "Two adjacent output channels per cooperative group with one group per CTA"
+    },
+    {
+      "name": "exact-mmvq-four-channels-one-group",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-ch4-g1.so",
+      "notes": "Four adjacent output channels per cooperative group with one group per CTA"
+    },
+    {
+      "name": "exact-mmvq-two-channels-two-groups-stable-r10",
+      "category": "stable-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-ch2-g2.so",
+      "notes": "Ten in-process trials of the exact two-channel/two-group full-model winner"
+    },
+    {
+      "name": "exact-mmvq-fixed-grid-q4c2-q5c2-q6c2",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c2.so",
+      "notes": "Two adjacent outputs for every K encoding with launch grids divided by the full outputs-per-CTA geometry"
+    },
+    {
+      "name": "exact-mmvq-fixed-grid-q4c2-q5c1-q6c1",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c1-q6c1.so",
+      "notes": "Corrected output grid with two outputs for Q4_K and one for Q5_K/Q6_K"
+    },
+    {
+      "name": "exact-mmvq-fixed-grid-q4c2-q5c1-q6c2",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c1-q6c2.so",
+      "notes": "Corrected output grid with two outputs for Q4_K/Q6_K and one for Q5_K"
+    },
+    {
+      "name": "exact-mmvq-fixed-grid-q4c2-q5c2-q6c1",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c1.so",
+      "notes": "Corrected output grid with two outputs for Q4_K/Q5_K and one for Q6_K"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c2-q5c2-q6c2-stable-r10",
+      "category": "stable-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c2.so",
+      "notes": "Ten in-process full-model trials of the corrected two-output Q4_K/Q5_K/Q6_K candidate"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c3-q5c2-q6c2",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c3-q5c2-q6c2.so",
+      "notes": "Three adjacent Q4_K outputs; two adjacent Q5_K/Q6_K outputs"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c2-q5c3-q6c2",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c3-q6c2.so",
+      "notes": "Three adjacent Q5_K outputs; two adjacent Q4_K/Q6_K outputs"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c2-q5c2-q6c3",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c3.so",
+      "notes": "Three adjacent Q6_K outputs; two adjacent Q4_K/Q5_K outputs"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c3-q5c1-q6c2",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c3-q5c1-q6c2.so",
+      "notes": "Three adjacent Q4_K outputs, one Q5_K output, and two Q6_K outputs"
+    },
+    {
+      "name": "exact-mmvq-fixed-q4c2-q5c1-q6c3",
+      "category": "exact-mmvq-output-geometry",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c1-q6c3.so",
+      "notes": "Two adjacent Q4_K outputs, one Q5_K output, and three Q6_K outputs"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g1-q5g1-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g1-q5g1-q6g2.so",
+      "notes": "Two outputs per group with one Q4_K/Q5_K group and two Q6_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g3-q5g1-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g3-q5g1-q6g2.so",
+      "notes": "Two outputs per group with three Q4_K groups, one Q5_K group, and two Q6_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g4-q5g1-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g4-q5g1-q6g2.so",
+      "notes": "Two outputs per group with four Q4_K groups, one Q5_K group, and two Q6_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g1-q6g1",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g1-q6g1.so",
+      "notes": "Two outputs per group with two Q4_K groups and one Q5_K/Q6_K group"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g1-q6g3",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g1-q6g3.so",
+      "notes": "Two outputs per group with two Q4_K groups, one Q5_K group, and three Q6_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g1-q6g4",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g1-q6g4.so",
+      "notes": "Two outputs per group with two Q4_K groups, one Q5_K group, and four Q6_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g2-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g2-q6g2.so",
+      "notes": "Two outputs and two cooperative groups for every K encoding"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g3-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g3-q6g2.so",
+      "notes": "Two outputs per group with two Q4_K/Q6_K groups and three Q5_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g4-q6g2",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g4-q6g2.so",
+      "notes": "Two outputs per group with two Q4_K/Q6_K groups and four Q5_K groups"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g3-q6g4",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g3-q6g4.so",
+      "notes": "Combine the strongest single-run Q5_K and Q6_K group counts"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g2-q6g4",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g2-q6g4.so",
+      "notes": "Two Q5_K groups and four Q6_K groups with the two-output geometry"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4g2-q5g3-q6g1",
+      "category": "exact-mmvq-output-groups",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g3-q6g1.so",
+      "notes": "Three Q5_K groups and one Q6_K group with the two-output geometry"
+    },
+    {
+      "name": "exact-mmvq-fixed-all-c2-control-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c2.so",
+      "notes": "Seven-run paired control for the all-two-channel Q4g2/Q5g1/Q6g2 configuration"
+    },
+    {
+      "name": "exact-mmvq-fixed-q5g2-q6g4-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g2-q6g4.so",
+      "notes": "Seven-run paired confirmation of the Q5g2/Q6g4 candidate"
+    },
+    {
+      "name": "exact-mmvq-abab-control-a-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c2.so",
+      "notes": "First A leg of an A/B/A/B control-versus-Q5g2/Q6g4 comparison"
+    },
+    {
+      "name": "exact-mmvq-abab-q5g2-q6g4-b-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g2-q6g4.so",
+      "notes": "First B leg of an A/B/A/B control-versus-Q5g2/Q6g4 comparison"
+    },
+    {
+      "name": "exact-mmvq-abab-control-a2-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-q4c2-q5c2-q6c2.so",
+      "notes": "Second A leg of an A/B/A/B control-versus-Q5g2/Q6g4 comparison"
+    },
+    {
+      "name": "exact-mmvq-abab-q5g2-q6g4-b2-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4g2-q5g2-q6g4.so",
+      "notes": "Second B leg of an A/B/A/B control-versus-Q5g2/Q6g4 comparison"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4r2",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4r2.so",
+      "notes": "Two input rows per exact Q4_K block; Q5_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4r4",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4r4.so",
+      "notes": "Four input rows per exact Q4_K block; Q5_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4r16",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4r16.so",
+      "notes": "Sixteen input rows per exact Q4_K block; Q5_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q6r4",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q6r4.so",
+      "notes": "Four input rows per exact Q6_K block; Q4_K/Q5_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q6r16",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q6r16.so",
+      "notes": "Sixteen input rows per exact Q6_K block; Q4_K/Q5_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q6r2",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q6r2.so",
+      "notes": "Two input rows per exact Q6_K block; Q4_K/Q5_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q5r2",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q5r2.so",
+      "notes": "Two input rows per exact Q5_K block; Q4_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q5r4",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q5r4.so",
+      "notes": "Four input rows per exact Q5_K block; Q4_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q5r16",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q5r16.so",
+      "notes": "Sixteen input rows per exact Q5_K block; Q4_K/Q6_K remain at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4r4-q6r4",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4r4-q6r4.so",
+      "notes": "Four input rows for Q4_K and Q6_K; Q5_K remains at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q4r16-q6r16",
+      "category": "exact-mmvq-row-tiling",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q4r16-q6r16.so",
+      "notes": "Sixteen input rows for Q4_K and Q6_K; Q5_K remains at eight"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg128",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg128.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=128"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg144",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg144.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=144"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg152",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg152.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=152"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg160",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg160.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=160"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg168",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg168.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=168"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg176",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg176.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=176"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-reg192",
+      "category": "exact-mmvq-register-cap",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-reg192.so",
+      "notes": "Compile the exact two-output kernel with maxrregcount=192"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-dp4a0",
+      "category": "exact-mmvq-instruction-schedule",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-dp4a0.so",
+      "notes": "Two-output kernel with the original sequential DP4A schedule"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-dp4a1",
+      "category": "exact-mmvq-instruction-schedule",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-dp4a1.so",
+      "notes": "Two-output kernel with interleaved DP4A schedule 1"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-dp4a3",
+      "category": "exact-mmvq-instruction-schedule",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-dp4a3.so",
+      "notes": "Two-output kernel with interleaved DP4A schedule 3"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-ca",
+      "category": "exact-mmvq-cache-policy",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-ca.so",
+      "notes": "Cache packed global loads in L1 and L2 via ptxas dlcm=ca"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-default",
+      "category": "exact-mmvq-cache-policy",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-default.so",
+      "notes": "Use the compiler default global-load cache policy instead of forced dlcm=cg"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-q5r4-q6g4",
+      "category": "exact-mmvq-near-tie-combination",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-q5r4-q6g4.so",
+      "notes": "Combine the near-tie Q5 four-row and Q6 four-group settings"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-default-reg192",
+      "category": "exact-mmvq-final-combination",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-default-reg192.so",
+      "notes": "Compiler-default load caching combined with maxrregcount=192"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-ca-reg192",
+      "category": "exact-mmvq-final-combination",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-ca-reg192.so",
+      "notes": "L1/L2 cache-all packed loads combined with maxrregcount=192"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-default-q5r4",
+      "category": "exact-mmvq-final-combination",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-default-q5r4.so",
+      "notes": "Compiler-default load caching with four-row Q5_K exact MMVQ"
+    },
+    {
+      "name": "exact-mmvq-fixed-c2-cache-default-q5r4-q6g4",
+      "category": "exact-mmvq-final-combination",
+      "binding_lib": "/tmp/_native_inference_glimmer_exact_groups_fused.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_exact-fixed-c2-cache-default-q5r4-q6g4.so",
+      "notes": "Compiler-default load caching with four-row Q5_K and four-group Q6_K"
+    },
+    {
+      "name": "phase2-clean-q8-readonly-cache",
+      "category": "clean-binding-verifier-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache.so",
+      "notes": "Production two-output geometry with read-only-cache Q8 loads"
+    },
+    {
+      "name": "phase2-clean-precomputed-qsum",
+      "category": "clean-binding-verifier-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-precomputed-qsum.so",
+      "notes": "Production two-output geometry with quantizer-provided Q4_K/Q5_K subset sums"
+    },
+    {
+      "name": "phase2-clean-transposed-q8",
+      "category": "clean-binding-verifier-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-transpose-q8.so",
+      "notes": "Production two-output geometry with block-major verifier Q8 rows"
+    },
+    {
+      "name": "phase2-clean-predecoded-q6",
+      "category": "clean-binding-verifier-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-predecode-q6.so",
+      "notes": "Production two-output geometry with Q6_K weight decode hoisted across verifier rows"
+    },
+    {
+      "name": "phase2-clean-weight-hoist-off",
+      "category": "clean-binding-verifier-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-hoist-off.so",
+      "notes": "Arithmetic control that reloads packed weights independently for every verifier row"
+    },
+    {
+      "name": "phase2-clean-five-row-tail-off",
+      "category": "clean-binding-verifier-tail",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-tail-off.so",
+      "notes": "Route the final five target rows through the padded eight-row specialization"
+    },
+    {
+      "name": "phase2-clean-warps1",
+      "category": "clean-binding-verifier-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-warps1.so",
+      "notes": "One reduction warp per output group with two adjacent outputs"
+    },
+    {
+      "name": "phase2-clean-warps4",
+      "category": "clean-binding-verifier-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-warps4.so",
+      "notes": "Four reduction warps per output group with two adjacent outputs"
+    },
+    {
+      "name": "phase2-clean-rowgroups2-tail-off",
+      "category": "clean-binding-verifier-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-rowgroups2-tailoff.so",
+      "notes": "Two independent eight-row groups per CTA; specialized five-row tail disabled"
+    },
+    {
+      "name": "phase2-clean-q8cache-preqsum",
+      "category": "clean-binding-verifier-combination",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-preqsum.so",
+      "notes": "Read-only Q8 loads plus precomputed Q4_K/Q5_K subset sums"
+    },
+    {
+      "name": "phase2-clean-q8cache-transpose",
+      "category": "clean-binding-verifier-combination",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-transpose.so",
+      "notes": "Read-only Q8 loads plus block-major verifier Q8 rows"
+    },
+    {
+      "name": "phase2-clean-preqsum-transpose",
+      "category": "clean-binding-verifier-combination",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-preqsum-transpose.so",
+      "notes": "Precomputed Q4_K/Q5_K subset sums plus block-major verifier Q8 rows"
+    },
+    {
+      "name": "phase2-clean-q8cache-predecode-q6",
+      "category": "clean-binding-verifier-combination",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "Read-only Q8 loads plus Q6_K predecode"
+    },
+    {
+      "name": "phase2-clean-preqsum-predecode-q6",
+      "category": "clean-binding-verifier-combination",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-preqsum-predecodeq6.so",
+      "notes": "Precomputed Q4_K/Q5_K subset sums plus Q6_K predecode"
+    },
+    {
+      "name": "phase2-clean-q8cache-predecode-q6-stable-r10",
+      "category": "stable-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "Ten-trial confirmation of the exact 321.238 tok/s Q8-cache plus Q6-predecode candidate"
+    },
+    {
+      "name": "phase2-paired-production-control-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/var/mnt/disk2/tmp/glimmer-300-kernel-matrix/libnfn_glimmer_production_strict.so",
+      "notes": "Seven-trial production-default control paired immediately with the phase-two winner"
+    },
+    {
+      "name": "phase2-paired-q8cache-predecode-q6-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "Seven-trial Q8-cache plus Q6-predecode leg paired with the production control"
+    },
+    {
+      "name": "phase3-cache-default",
+      "category": "winner-cache-policy",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-cache-default.so",
+      "notes": "Q8-cache/Q6-predecode winner with compiler-default global-load caching"
+    },
+    {
+      "name": "phase3-cache-ca",
+      "category": "winner-cache-policy",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-cache-ca.so",
+      "notes": "Q8-cache/Q6-predecode winner with cache-all global loads"
+    },
+    {
+      "name": "phase3-reg128",
+      "category": "winner-register-cap",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg128.so",
+      "notes": "Q8-cache/Q6-predecode winner with maxrregcount=128"
+    },
+    {
+      "name": "phase3-reg144",
+      "category": "winner-register-cap",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg144.so",
+      "notes": "Q8-cache/Q6-predecode winner with maxrregcount=144"
+    },
+    {
+      "name": "phase3-reg160",
+      "category": "winner-register-cap",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg160.so",
+      "notes": "Q8-cache/Q6-predecode winner with maxrregcount=160"
+    },
+    {
+      "name": "phase3-reg176",
+      "category": "winner-register-cap",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg176.so",
+      "notes": "Q8-cache/Q6-predecode winner with maxrregcount=176"
+    },
+    {
+      "name": "phase3-reg192",
+      "category": "winner-register-cap",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg192.so",
+      "notes": "Q8-cache/Q6-predecode winner with maxrregcount=192"
+    },
+    {
+      "name": "phase3-q6r4",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6r4.so",
+      "notes": "Four verifier rows per predecoded Q6_K block"
+    },
+    {
+      "name": "phase3-q6r16",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6r16.so",
+      "notes": "Sixteen verifier rows per predecoded Q6_K block"
+    },
+    {
+      "name": "phase3-q6g1",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6g1.so",
+      "notes": "One cooperative output group for predecoded Q6_K"
+    },
+    {
+      "name": "phase3-q6g3",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6g3.so",
+      "notes": "Three cooperative output groups for predecoded Q6_K"
+    },
+    {
+      "name": "phase3-q6g4",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6g4.so",
+      "notes": "Four cooperative output groups for predecoded Q6_K"
+    },
+    {
+      "name": "phase3-q6c1",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6c1.so",
+      "notes": "One adjacent output channel per predecoded Q6_K group"
+    },
+    {
+      "name": "phase3-q6c3",
+      "category": "winner-q6-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q6c3.so",
+      "notes": "Three adjacent output channels per predecoded Q6_K group"
+    },
+    {
+      "name": "phase3-q5r4",
+      "category": "winner-q5-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q5r4.so",
+      "notes": "Four verifier rows per Q5_K block on the phase-three winner"
+    },
+    {
+      "name": "phase3-q5r16",
+      "category": "winner-q5-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q5r16.so",
+      "notes": "Sixteen verifier rows per Q5_K block on the phase-three winner"
+    },
+    {
+      "name": "phase3-q5g2",
+      "category": "winner-q5-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q5g2.so",
+      "notes": "Two cooperative output groups for Q5_K"
+    },
+    {
+      "name": "phase3-q4g1",
+      "category": "winner-q4-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q4g1.so",
+      "notes": "One cooperative output group for Q4_K"
+    },
+    {
+      "name": "phase3-q4g3",
+      "category": "winner-q4-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q4g3.so",
+      "notes": "Three cooperative output groups for Q4_K"
+    },
+    {
+      "name": "phase3-q4r4",
+      "category": "winner-q4-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q4r4.so",
+      "notes": "Four verifier rows per Q4_K block on the phase-three winner"
+    },
+    {
+      "name": "phase3-q4r16",
+      "category": "winner-q4-geometry",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-q4r16.so",
+      "notes": "Sixteen verifier rows per Q4_K block on the phase-three winner"
+    },
+    {
+      "name": "phase3-dp4a0",
+      "category": "winner-instruction-schedule",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-dp4a0.so",
+      "notes": "Pinned sequential DP4A schedule with Q8 cache and Q6 predecode"
+    },
+    {
+      "name": "phase3-dp4a1",
+      "category": "winner-instruction-schedule",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-dp4a1.so",
+      "notes": "Independent DP4A schedule 1 with Q8 cache and Q6 predecode"
+    },
+    {
+      "name": "phase3-dp4a3",
+      "category": "winner-instruction-schedule",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-dp4a3.so",
+      "notes": "Independent DP4A schedule 3 with Q8 cache and Q6 predecode"
+    },
+    {
+      "name": "phase3-paired-uncapped-control-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "Seven-trial uncapped control for the phase-three register comparison"
+    },
+    {
+      "name": "phase3-paired-reg128-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg128.so",
+      "notes": "Seven-trial maxrregcount=128 leg"
+    },
+    {
+      "name": "phase3-paired-reg176-r7",
+      "category": "paired-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg176.so",
+      "notes": "Seven-trial maxrregcount=176 leg"
+    },
+    {
+      "name": "phase3-reg128-abab-control-a-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "First uncapped A leg for the maxrregcount=128 A/B/A/B check"
+    },
+    {
+      "name": "phase3-reg128-abab-b-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg128.so",
+      "notes": "First maxrregcount=128 B leg"
+    },
+    {
+      "name": "phase3-reg128-abab-control-a2-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase2-q8cache-predecodeq6.so",
+      "notes": "Second uncapped A leg for the maxrregcount=128 A/B/A/B check"
+    },
+    {
+      "name": "phase3-reg128-abab-b2-r3",
+      "category": "interleaved-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-reg128.so",
+      "notes": "Second maxrregcount=128 B leg"
+    },
+    {
+      "name": "phase3-paired-q4-output-dataflow",
+      "category": "winner-q4-dataflow",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-paired-q4.so",
+      "notes": "Load each verifier Q8 block once while evaluating two exact Q4_K output channels"
+    },
+    {
+      "name": "phase3-final-cachedefault-reg128",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-reg128.so",
+      "notes": "Compiler-default cache policy plus maxrregcount=128"
+    },
+    {
+      "name": "phase3-final-cachedefault-reg176",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-reg176.so",
+      "notes": "Compiler-default cache policy plus maxrregcount=176"
+    },
+    {
+      "name": "phase3-final-cachedefault-q6g1",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-q6g1.so",
+      "notes": "Compiler-default cache policy plus one Q6_K output group"
+    },
+    {
+      "name": "phase3-final-cachedefault-q6g4",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-q6g4.so",
+      "notes": "Compiler-default cache policy plus four Q6_K output groups"
+    },
+    {
+      "name": "phase3-final-cachedefault-q5g2",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-q5g2.so",
+      "notes": "Compiler-default cache policy plus two Q5_K output groups"
+    },
+    {
+      "name": "phase3-final-cachedefault-q6g4-q5g2",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-q6g4-q5g2.so",
+      "notes": "Compiler-default caching with Q6g4 and Q5g2"
+    },
+    {
+      "name": "phase3-final-q6g1-q5g2",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q6g1-q5g2.so",
+      "notes": "One Q6_K group combined with two Q5_K groups"
+    },
+    {
+      "name": "phase3-final-q6g4-q5r16",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q6g4-q5r16.so",
+      "notes": "Four Q6_K groups combined with sixteen Q5_K rows"
+    },
+    {
+      "name": "phase3-final-q5g2-q5r16",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q5g2-q5r16.so",
+      "notes": "Two Q5_K groups combined with sixteen Q5_K rows"
+    },
+    {
+      "name": "phase3-final-q6g1-reg128",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q6g1-reg128.so",
+      "notes": "One Q6_K group plus maxrregcount=128"
+    },
+    {
+      "name": "phase3-final-q6g4-reg128",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q6g4-reg128.so",
+      "notes": "Four Q6_K groups plus maxrregcount=128"
+    },
+    {
+      "name": "phase3-final-q5g2-reg128",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q5g2-reg128.so",
+      "notes": "Two Q5_K groups plus maxrregcount=128"
+    },
+    {
+      "name": "phase3-final-cachedefault-dp4a0",
+      "category": "winner-interaction",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-cachedefault-dp4a0.so",
+      "notes": "Compiler-default cache policy plus pinned DP4A schedule 0"
+    },
+    {
+      "name": "phase3-final-reg112",
+      "category": "winner-register-cap-fine",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-reg112.so",
+      "notes": "Fine register sweep at maxrregcount=112"
+    },
+    {
+      "name": "phase3-final-reg120",
+      "category": "winner-register-cap-fine",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-reg120.so",
+      "notes": "Fine register sweep at maxrregcount=120"
+    },
+    {
+      "name": "phase3-final-reg136",
+      "category": "winner-register-cap-fine",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-reg136.so",
+      "notes": "Fine register sweep at maxrregcount=136"
+    },
+    {
+      "name": "phase3-final-reg152",
+      "category": "winner-register-cap-fine",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-reg152.so",
+      "notes": "Fine register sweep at maxrregcount=152"
+    },
+    {
+      "name": "phase3-final-reg168",
+      "category": "winner-register-cap-fine",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-reg168.so",
+      "notes": "Fine register sweep at maxrregcount=168"
+    },
+    {
+      "name": "phase3-final-q5g2-reg128-stable-r10",
+      "category": "stable-confirmation",
+      "binding_lib": "/var/mnt/disk2/tmp/_native_inference_glimmer_clean.cpython-313-x86_64-linux-gnu.so",
+      "tile_ops_lib": "/tmp/libnfn_glimmer_phase3-final-q5g2-reg128.so",
+      "notes": "Ten-trial confirmation of the exact 321.760 tok/s Q5g2 plus maxrregcount=128 candidate"
+    }
+  ]
+}

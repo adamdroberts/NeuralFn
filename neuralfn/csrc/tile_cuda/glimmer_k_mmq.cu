@@ -9,6 +9,22 @@
 #include "tile_ops.h"
 #include "vecdotq.cuh"
 
+#ifndef NFN_GLIMMER_MMVQ_TK_Q4
+#define NFN_GLIMMER_MMVQ_TK_Q4 0
+#endif
+
+#ifndef NFN_GLIMMER_GROUPED_GQA_ATTENTION
+#define NFN_GLIMMER_GROUPED_GQA_ATTENTION 0
+#endif
+
+#ifndef NFN_GLIMMER_GROUPED_GQA_HEADS
+#define NFN_GLIMMER_GROUPED_GQA_HEADS 4
+#endif
+
+#if NFN_GLIMMER_MMVQ_TK_Q4
+#include "kittens.cuh"
+#endif
+
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <cooperative_groups.h>
@@ -79,6 +95,50 @@ constexpr std::int64_t kPaddingRows = 16;
 #define NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK 1
 #endif
 
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK
+// Independent output-channel groups can share a CTA and issue identical Q8
+// verifier reads close together while preserving each channel's two-warp
+// reduction. Per-encoding defaults below retain the qualified RTX 5090 shape.
+#define NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK 1
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP
+// Keep two adjacent output channels in the same threads. This reuses the
+// activation row and amortizes block scheduling while retaining each channel's
+// original DP4A sequence, FP32 accumulation, and reduction order.
+#define NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP 2
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q4
+#define NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q4 \
+  NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q5
+#define NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q5 \
+  NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q6
+#define NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q6 \
+  NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q4
+// Two groups (four output channels per CTA) was the qualified Q4_K optimum.
+#define NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q4 2
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q5
+#define NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q5 \
+  NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q6
+// Match Q4_K's qualified four-output CTA geometry for Q6_K projections.
+#define NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q6 2
+#endif
+
 #ifndef NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK
 // Retain one decoded packed-weight block across independent verifier rows.
 // Set this to 0 only for the arithmetic-equivalent benchmark control path.
@@ -107,15 +167,127 @@ constexpr std::int64_t kPaddingRows = 16;
 #endif
 
 #ifndef NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT
-// Candidate path that makes Q6_K's two signed packed vectors and scales
-// explicitly loop-invariant across verifier rows.
-#define NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT 0
+// Keep Q6_K's two signed packed vectors and scales explicitly loop-invariant
+// across verifier rows. Paired full-model qualification retained this together
+// with read-only Q8 loads on RTX 5090.
+#define NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT 1
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_DP4A_SCHEDULE
+// The pinned Q4_K/Q5_K helpers express each eight-byte dot product as one
+// dependent pair of DP4A instructions, followed by another dependent pair for
+// the activation sum. Candidate schedules 1-3 expose more independent integer
+// work without changing either integer results or FP32 accumulation order.
+// Schedule 2 was the qualified full-model winner; zero remains available as
+// the pinned llama.cpp control for regression measurements.
+#define NFN_GLIMMER_MMVQ_DP4A_SCHEDULE 2
+#endif
+
+#ifndef NFN_GLIMMER_MMVQ_CACHE_Q8
+// The strict build streams packed model weights with .cg loads. Q8 verifier
+// activations are the opposite access pattern: every output channel reuses a
+// small immutable row set. Use the read-only load path so those blocks may
+// reside in L1 while packed weights continue to bypass it.
+#define NFN_GLIMMER_MMVQ_CACHE_Q8 1
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_QUANTIZATION_MODE
+// Candidate modes for bringing the tiled-MMQ Q8 seam closer to the exact
+// MMVQ contract. Bit 0 uses max/127 division and an FP16-rounded scale; bit 1
+// stores scale*sum(quantized bytes) instead of the pre-quantization FP32 sum.
+// Zero retains the pinned llama.cpp MMQ layout and arithmetic.
+#define NFN_GLIMMER_MMQ_QUANTIZATION_MODE 0
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE
+// Candidate route used when an MMVQ entry point dispatches a full verifier
+// tile to MMQ.  The target runtime intentionally reuses the first projection's
+// ordinary Q8_1 workspace for K/V/gate or MLP-up.  Keep that layout at the
+// workspace base and place MMQ's transposed Q8 tile after it.
+#define NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE 0
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT
+// Candidate switch for the dual-layout verifier seam.  The fused path writes
+// llama MMQ's transposed Q8 tile and the ordinary MMVQ Q8_1 rows in one
+// kernel.  The split path keeps the same two layouts but lets each quantizer
+// retain its accepted launch geometry; this is useful when the extra stores
+// raise register pressure in the fused kernel.
+#define NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT 1
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_STREAM_K_BLOCKS
+// Zero retains llama.cpp's occupancy heuristic.  A positive candidate value
+// requests that many stream-K CTAs for underfilled (< one SM wave) MMQ tiles,
+// clamped to [tile_count, multiprocessor_count].  Large, naturally full grids
+// keep the pinned heuristic so this knob isolates Glimmer's narrow verifier
+// projections rather than perturbing the 202048-column LM head.
+#define NFN_GLIMMER_MMQ_STREAM_K_BLOCKS 0
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_256
+#define NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_256 \
+  NFN_GLIMMER_MMQ_STREAM_K_BLOCKS
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_4096
+#define NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_4096 \
+  NFN_GLIMMER_MMQ_STREAM_K_BLOCKS
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_6656
+#define NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_6656 \
+  NFN_GLIMMER_MMQ_STREAM_K_BLOCKS
+#endif
+
+#ifndef NFN_GLIMMER_MMQ_ROWS16_J
+// llama's normal small-batch crossover uses J=16 for a sixteen-row verifier.
+// J=8 is a candidate geometry with two row tiles; only these two proven
+// template instantiations are supported.
+#define NFN_GLIMMER_MMQ_ROWS16_J 16
+#endif
+
+#ifndef NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION
+// Candidate-only conditioning seam for DFlash.  Zero leaves the production
+// FP32 target-tap packer in the base Tile library.  One rounds each packed tap
+// to BF16, two to FP16, and three to a TF32-width (10-bit mantissa) FP32 value.
+// Speculative verification remains target-authoritative; the sweep determines
+// whether removing insignificant tap noise restores the three-block draft
+// path after tiled-MMQ target verification.
+#define NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION 0
 #endif
 
 #ifndef NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS
 // Values above the public verifier maximum keep the exact MMVQ path. Candidate
 // builds can lower this to measure the pinned tiled MMQ crossover directly.
 #define NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS 17
+#endif
+
+#ifndef NFN_GLIMMER_MMQ16_CALL_MASK
+// Candidate-only selector for routing sixteen-row verifier calls through the
+// faster tiled MMQ implementation.  The full mask preserves the historical
+// threshold behavior; individual bits let end-to-end qualification isolate
+// which projection families remain token/counter exact under MMQ rounding.
+#define NFN_GLIMMER_MMQ16_CALL_MASK 0x3f
+#endif
+
+#ifndef NFN_GLIMMER_MMQ16_LAYER_BEGIN
+// Candidate-only half-open target-layer interval.  The public ABI does not
+// currently carry a layer id, so the verifier call sequence is tracked per
+// host thread for performance exploration.  A selected production policy must
+// replace this with explicit descriptor metadata before it is enabled by
+// default.
+#define NFN_GLIMMER_MMQ16_LAYER_BEGIN 0
+#endif
+
+#ifndef NFN_GLIMMER_MMQ16_LAYER_END
+#define NFN_GLIMMER_MMQ16_LAYER_END 52
+#endif
+
+#ifndef NFN_GLIMMER_MMQ16_BLOCK_MASK
+// Candidate-only selector for successive full 16-row verification blocks.
+// A short (<16-row) tail resets the per-thread sequence for the next turn.
+#define NFN_GLIMMER_MMQ16_BLOCK_MASK 0xffffffffU
 #endif
 
 #ifndef NFN_GLIMMER_MMVQ_EXACT_FIVE_ROW_TAIL
@@ -199,6 +371,37 @@ static_assert(
     NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK == 1 ||
         NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK == 2,
     "NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK must be 1 or 2");
+#define NFN_GLIMMER_VALIDATE_OUTPUT_CHANNELS(value) \
+  ((value) >= 1 && (value) <= 4)
+static_assert(
+    NFN_GLIMMER_VALIDATE_OUTPUT_CHANNELS(
+        NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q4) &&
+        NFN_GLIMMER_VALIDATE_OUTPUT_CHANNELS(
+            NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q5) &&
+        NFN_GLIMMER_VALIDATE_OUTPUT_CHANNELS(
+            NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q6),
+    "per-encoding MMVQ output channels must be between 1 and 4");
+#undef NFN_GLIMMER_VALIDATE_OUTPUT_CHANNELS
+#define NFN_GLIMMER_VALIDATE_OUTPUT_GROUPS(value) \
+  ((value) >= 1 && (value) <= 8)
+static_assert(
+    NFN_GLIMMER_VALIDATE_OUTPUT_GROUPS(
+        NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q4) &&
+        NFN_GLIMMER_VALIDATE_OUTPUT_GROUPS(
+            NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q5) &&
+        NFN_GLIMMER_VALIDATE_OUTPUT_GROUPS(
+            NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q6),
+    "per-encoding MMVQ output groups must be between 1 and 8");
+#undef NFN_GLIMMER_VALIDATE_OUTPUT_GROUPS
+static_assert(
+    NFN_GLIMMER_MMVQ_WARPS * NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK *
+            NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q4 <= 32 &&
+        NFN_GLIMMER_MMVQ_WARPS * NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK *
+            NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q5 <= 32 &&
+        NFN_GLIMMER_MMVQ_WARPS * NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK *
+            NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q6 <=
+        32,
+    "MMVQ row/output groups exceed the CUDA block thread limit");
 static_assert(
     NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK == 0 ||
         NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK == 1,
@@ -207,6 +410,12 @@ static_assert(
     NFN_GLIMMER_MMVQ_SHARED_ACCUMULATORS == 0 ||
         NFN_GLIMMER_MMVQ_SHARED_ACCUMULATORS == 1,
     "NFN_GLIMMER_MMVQ_SHARED_ACCUMULATORS must be 0 or 1");
+static_assert(
+    !NFN_GLIMMER_MMVQ_SHARED_ACCUMULATORS ||
+        (NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q4 == 1 &&
+         NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q5 == 1 &&
+         NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q6 == 1),
+    "shared MMVQ accumulators currently require one output channel per group");
 static_assert(
     NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM == 0 ||
         NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM == 1,
@@ -220,9 +429,65 @@ static_assert(
         NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT == 1,
     "NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT must be 0 or 1");
 static_assert(
+    NFN_GLIMMER_MMVQ_DP4A_SCHEDULE >= 0 &&
+        NFN_GLIMMER_MMVQ_DP4A_SCHEDULE <= 3,
+    "NFN_GLIMMER_MMVQ_DP4A_SCHEDULE must be between 0 and 3");
+static_assert(
+    NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT == 0 ||
+        NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT == 1,
+    "NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT must be zero or one");
+static_assert(
+    NFN_GLIMMER_MMQ_STREAM_K_BLOCKS >= 0 &&
+        NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_256 >= 0 &&
+        NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_4096 >= 0 &&
+        NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_6656 >= 0,
+    "MMQ stream-K block counts must be nonnegative");
+static_assert(
+    NFN_GLIMMER_MMQ_ROWS16_J == 8 || NFN_GLIMMER_MMQ_ROWS16_J == 16,
+    "NFN_GLIMMER_MMQ_ROWS16_J must be 8 or 16");
+static_assert(
+    NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION >= 0 &&
+        NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION <= 3,
+    "NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION must be between zero and three");
+static_assert(
+    NFN_GLIMMER_MMVQ_CACHE_Q8 == 0 || NFN_GLIMMER_MMVQ_CACHE_Q8 == 1,
+    "NFN_GLIMMER_MMVQ_CACHE_Q8 must be 0 or 1");
+static_assert(
+    NFN_GLIMMER_MMQ_QUANTIZATION_MODE >= 0 &&
+        NFN_GLIMMER_MMQ_QUANTIZATION_MODE <= 3,
+    "NFN_GLIMMER_MMQ_QUANTIZATION_MODE must be between 0 and 3");
+static_assert(
+    NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE == 0 ||
+        NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE == 1,
+    "NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE must be 0 or 1");
+static_assert(
+    !NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE ||
+        (!NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM &&
+         !NFN_GLIMMER_MMVQ_TRANSPOSE_Q8_ROWS),
+    "preserved verifier Q8 currently requires the ordinary row-major layout");
+static_assert(
+    NFN_GLIMMER_MMVQ_TK_Q4 == 0 || NFN_GLIMMER_MMVQ_TK_Q4 == 1,
+    "NFN_GLIMMER_MMVQ_TK_Q4 must be 0 or 1");
+static_assert(
+    NFN_GLIMMER_GROUPED_GQA_ATTENTION == 0 ||
+        NFN_GLIMMER_GROUPED_GQA_ATTENTION == 1,
+    "NFN_GLIMMER_GROUPED_GQA_ATTENTION must be 0 or 1");
+static_assert(
+    NFN_GLIMMER_GROUPED_GQA_HEADS == 2 ||
+        NFN_GLIMMER_GROUPED_GQA_HEADS == 4,
+    "NFN_GLIMMER_GROUPED_GQA_HEADS must be 2 or 4");
+static_assert(
     NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS >= 2 &&
         NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS <= 17,
     "NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS must be between 2 and 17");
+static_assert(
+    (NFN_GLIMMER_MMQ16_CALL_MASK & ~0x3f) == 0,
+    "NFN_GLIMMER_MMQ16_CALL_MASK contains an unknown projection-family bit");
+static_assert(
+    NFN_GLIMMER_MMQ16_LAYER_BEGIN >= 0 &&
+        NFN_GLIMMER_MMQ16_LAYER_BEGIN <= NFN_GLIMMER_MMQ16_LAYER_END &&
+        NFN_GLIMMER_MMQ16_LAYER_END <= 52,
+    "MMQ16 target-layer interval must be inside [0, 52]");
 static_assert(
     NFN_GLIMMER_MMVQ_EXACT_FIVE_ROW_TAIL == 0 ||
         NFN_GLIMMER_MMVQ_EXACT_FIVE_ROW_TAIL == 1,
@@ -272,6 +537,7 @@ __global__ void quantize_q8_1_mmq(
     const float* __restrict__ input,
     const float* __restrict__ auxiliary,
     block_q8_1_mmq* __restrict__ output,
+    block_q8_1* __restrict__ preserved_mmvq,
     std::int64_t rows,
     std::int64_t width) {
   const std::int64_t row = blockIdx.x;
@@ -330,23 +596,60 @@ __global__ void quantize_q8_1_mmq(
     }
   }
 
-  const float inverse = 127.0f / maximum;
+  float scale;
   char4 quantized;
+#if NFN_GLIMMER_MMQ_QUANTIZATION_MODE & 1
+  scale = maximum / 127.0f;
+  if (maximum == 0.0f) {
+    quantized = make_char4(0, 0, 0, 0);
+  } else {
+    quantized.x = roundf(values.x / scale);
+    quantized.y = roundf(values.y / scale);
+    quantized.z = roundf(values.z / scale);
+    quantized.w = roundf(values.w / scale);
+  }
+  const float stored_scale = __half2float(__float2half(scale));
+#else
+  const float inverse = 127.0f / maximum;
   quantized.x = roundf(values.x * inverse);
   quantized.y = roundf(values.y * inverse);
   quantized.z = roundf(values.z * inverse);
   quantized.w = roundf(values.w * inverse);
-  const float scale = 1.0f / inverse;
+  scale = 1.0f / inverse;
+  const float stored_scale = scale;
+#endif
+
+#if NFN_GLIMMER_MMQ_QUANTIZATION_MODE & 2
+  int quantized_sum = static_cast<int>(quantized.x) +
+      static_cast<int>(quantized.y) + static_cast<int>(quantized.z) +
+      static_cast<int>(quantized.w);
+  for (int offset = 4; offset > 0; offset >>= 1) {
+    quantized_sum += __shfl_xor_sync(
+        0xffffffffU, quantized_sum, offset, 32);
+  }
+  const float stored_sum = stored_scale * quantized_sum;
+#else
+  const float stored_sum = sum;
+#endif
 
   const std::int64_t k_block = i0 / QK8_1_MMQ;
   const std::int64_t within = i0 % QK8_1_MMQ;
   block_q8_1_mmq& block = output[k_block * rows + row];
   reinterpret_cast<char4*>(block.qs)[within / 4] = quantized;
+  if (preserved_mmvq != nullptr) {
+    block_q8_1& exact_block = preserved_mmvq[
+        row * (width / QK8_1) + i0 / QK8_1];
+    reinterpret_cast<char4*>(exact_block.qs)[(i0 % QK8_1) / 4] =
+        quantized;
+    if (i0 % QK8_1 == 0) {
+      exact_block.ds = make_half2(stored_scale, stored_sum);
+    }
+  }
   if (within % 32 == 0) {
     if constexpr (StoreSums) {
-      block.ds4[within / 32] = make_half2(scale, sum);
+      block.ds4[within / 32] = make_half2(stored_scale, stored_sum);
     } else {
-      block.d4[within / 32] = scale;
+      block.d4[within / 32] = stored_scale;
     }
   }
 }
@@ -468,6 +771,114 @@ __device__ __forceinline__ float q5_k_q8_1_presummed(
 #endif
 
 #if NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK
+template <typename Value>
+__device__ __forceinline__ Value mmvq_load_q8(
+    const Value* __restrict__ address) {
+#if NFN_GLIMMER_MMVQ_CACHE_Q8
+  return __ldg(address);
+#else
+  return *address;
+#endif
+}
+
+__device__ __forceinline__ float q4_k_q8_1_scheduled(
+    const int* __restrict__ v,
+    const int* __restrict__ u,
+    const std::uint8_t* __restrict__ scales,
+    const std::uint8_t* __restrict__ minimums,
+    const half2& dm,
+    const float* __restrict__ d8) {
+#if NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 0
+  return vec_dot_q4_K_q8_1_impl_vmmq(v, u, scales, minimums, dm, d8);
+#else
+  float scaled_sum = 0.0f;
+  float minimum_sum = 0.0f;
+#pragma unroll
+  for (int index = 0; index < QR4_K; ++index) {
+    const int v0 = (v[0] >> (4 * index)) & 0x0F0F0F0F;
+    const int v1 = (v[1] >> (4 * index)) & 0x0F0F0F0F;
+    int dot;
+    int qsum;
+#if NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 1
+    const int dot0 = ggml_cuda_dp4a(v0, u[2 * index], 0);
+    const int dot1 = ggml_cuda_dp4a(v1, u[2 * index + 1], 0);
+    const int sum0 = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    const int sum1 = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], 0);
+    dot = dot0 + dot1;
+    qsum = sum0 + sum1;
+#elif NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 2
+    dot = ggml_cuda_dp4a(v0, u[2 * index], 0);
+    qsum = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    dot = ggml_cuda_dp4a(v1, u[2 * index + 1], dot);
+    qsum = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], qsum);
+#else
+    dot = ggml_cuda_dp4a(
+        v1, u[2 * index + 1],
+        ggml_cuda_dp4a(v0, u[2 * index], 0));
+    const int sum0 = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    const int sum1 = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], 0);
+    qsum = sum0 + sum1;
+#endif
+    scaled_sum += d8[index] * (dot * scales[index]);
+    minimum_sum += d8[index] * (qsum * minimums[index]);
+  }
+  const float2 converted = __half22float2(dm);
+  return converted.x * scaled_sum - converted.y * minimum_sum;
+#endif
+}
+
+__device__ __forceinline__ float q5_k_q8_1_scheduled(
+    const int* __restrict__ low,
+    const int* __restrict__ high,
+    const int* __restrict__ u,
+    const std::uint8_t* __restrict__ scales,
+    const std::uint8_t* __restrict__ minimums,
+    const half2& dm,
+    const float* __restrict__ d8) {
+#if NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 0
+  return vec_dot_q5_K_q8_1_impl_vmmq(
+      low, high, u, scales, minimums, dm, d8);
+#else
+  float scaled_sum = 0.0f;
+  float minimum_sum = 0.0f;
+#pragma unroll
+  for (int index = 0; index < QR5_K; ++index) {
+    const int low0 = (low[0] >> (4 * index)) & 0x0F0F0F0F;
+    const int low1 = (low[1] >> (4 * index)) & 0x0F0F0F0F;
+    const int high0 = ((high[0] >> index) << 4) & 0x10101010;
+    const int high1 = ((high[1] >> index) << 4) & 0x10101010;
+    const int v0 = low0 | high0;
+    const int v1 = low1 | high1;
+    int dot;
+    int qsum;
+#if NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 1
+    const int dot0 = ggml_cuda_dp4a(v0, u[2 * index], 0);
+    const int dot1 = ggml_cuda_dp4a(v1, u[2 * index + 1], 0);
+    const int sum0 = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    const int sum1 = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], 0);
+    dot = dot0 + dot1;
+    qsum = sum0 + sum1;
+#elif NFN_GLIMMER_MMVQ_DP4A_SCHEDULE == 2
+    dot = ggml_cuda_dp4a(v0, u[2 * index], 0);
+    qsum = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    dot = ggml_cuda_dp4a(v1, u[2 * index + 1], dot);
+    qsum = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], qsum);
+#else
+    dot = ggml_cuda_dp4a(
+        v0, u[2 * index],
+        ggml_cuda_dp4a(v1, u[2 * index + 1], 0));
+    const int sum0 = ggml_cuda_dp4a(0x01010101, u[2 * index], 0);
+    const int sum1 = ggml_cuda_dp4a(0x01010101, u[2 * index + 1], 0);
+    qsum = sum0 + sum1;
+#endif
+    scaled_sum += d8[index] * (dot * scales[index]);
+    minimum_sum += d8[index] * (qsum * minimums[index]);
+  }
+  const float2 converted = __half22float2(dm);
+  return converted.x * scaled_sum - converted.y * minimum_sum;
+#endif
+}
+
 // The pinned llama.cpp VMMQ helpers decode the packed-weight side of a dot
 // product inside every call. Multi-row speculative verification invokes that
 // call for several independent activation rows against the same weight block.
@@ -528,7 +939,7 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
         const block_q8_1* q8i = q8_rows + mmvq_q8_workspace_index(
             input_row0 + row, q8_index, q8_blocks_per_row,
             q8_padded_rows);
-        d8[i] = __low2float(q8i->ds);
+        d8[i] = __low2float(mmvq_load_q8(&q8i->ds));
 #if NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM
         const int subset = (quant_index / 2) % 4;
         qsum[i] = q8_sums[
@@ -538,14 +949,14 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
 #endif
         const int* values = reinterpret_cast<const int*>(q8i->qs) +
             ((quant_index / 2) % 4);
-        u[2 * i + 0] = values[0];
-        u[2 * i + 1] = values[4];
+        u[2 * i + 0] = mmvq_load_q8(values + 0);
+        u[2 * i + 1] = mmvq_load_q8(values + 4);
       }
 #if NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM
       partial[row * PartialStride] += q4_k_q8_1_presummed(
           v, u, qsum, sc, m, block->dm, d8);
 #else
-      partial[row * PartialStride] += vec_dot_q4_K_q8_1_impl_vmmq(
+      partial[row * PartialStride] += q4_k_q8_1_scheduled(
           v, u, sc, m, block->dm, d8);
 #endif
     }
@@ -594,7 +1005,7 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
         const block_q8_1* q8i = q8_rows + mmvq_q8_workspace_index(
             input_row0 + row, q8_index, q8_blocks_per_row,
             q8_padded_rows);
-        d8[i] = __low2float(q8i->ds);
+        d8[i] = __low2float(mmvq_load_q8(&q8i->ds));
 #if NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM
         const int subset = (quant_index / 2) % 4;
         qsum[i] = q8_sums[
@@ -604,14 +1015,14 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
 #endif
         const int* values = reinterpret_cast<const int*>(q8i->qs) +
             ((quant_index / 2) % 4);
-        u[2 * i + 0] = values[0];
-        u[2 * i + 1] = values[4];
+        u[2 * i + 0] = mmvq_load_q8(values + 0);
+        u[2 * i + 1] = mmvq_load_q8(values + 4);
       }
 #if NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM
       partial[row * PartialStride] += q5_k_q8_1_presummed(
           vl, vh, u, qsum, sc, m, block->dm, d8);
 #else
-      partial[row * PartialStride] += vec_dot_q5_K_q8_1_impl_vmmq(
+      partial[row * PartialStride] += q5_k_q8_1_scheduled(
           vl, vh, u, sc, m, block->dm, d8);
 #endif
     }
@@ -657,9 +1068,10 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
         const block_q8_1* q8 = q8_rows + mmvq_q8_workspace_index(
             input_row0 + row, q8_block + bq8_offset + 2 * i,
             q8_blocks_per_row, q8_padded_rows);
-        u[i] = get_int_b4(
-            q8->qs, quant_index % QI8_1);
-        d8[i] = __low2float(q8->ds);
+        u[i] = mmvq_load_q8(
+            reinterpret_cast<const int*>(q8->qs) +
+            quant_index % QI8_1);
+        d8[i] = __low2float(mmvq_load_q8(&q8->ds));
       }
 #if NFN_GLIMMER_MMVQ_PREDECODE_Q6_WEIGHT
       float sum = 0.0f;
@@ -676,6 +1088,7 @@ __device__ __forceinline__ void mmvq_vec_dot_reuse_weight_block(
     }
   }
 }
+
 #endif
 
 template <ggml_type Type>
@@ -697,6 +1110,28 @@ __host__ __device__ constexpr int mmvq_input_rows_per_block() {
     return NFN_GLIMMER_MMVQ_INPUT_ROWS_PER_BLOCK_Q5;
   } else {
     return NFN_GLIMMER_MMVQ_INPUT_ROWS_PER_BLOCK_Q6;
+  }
+}
+
+template <ggml_type Type>
+__host__ __device__ constexpr int mmvq_output_groups_per_block() {
+  if constexpr (Type == GGML_TYPE_Q4_K) {
+    return NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q4;
+  } else if constexpr (Type == GGML_TYPE_Q5_K) {
+    return NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q5;
+  } else {
+    return NFN_GLIMMER_MMVQ_OUTPUT_GROUPS_PER_BLOCK_Q6;
+  }
+}
+
+template <ggml_type Type>
+__host__ __device__ constexpr int mmvq_output_channels_per_group() {
+  if constexpr (Type == GGML_TYPE_Q4_K) {
+    return NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q4;
+  } else if constexpr (Type == GGML_TYPE_Q5_K) {
+    return NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q5;
+  } else {
+    return NFN_GLIMMER_MMVQ_OUTPUT_CHANNELS_PER_GROUP_Q6;
   }
 }
 
@@ -965,7 +1400,9 @@ template <
     bool SmallK,
     int InputRowsPerBlock>
 __launch_bounds__(
-    32 * NFN_GLIMMER_MMVQ_WARPS * NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK,
+    32 * NFN_GLIMMER_MMVQ_WARPS *
+        NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK *
+        mmvq_output_groups_per_block<Type>(),
     1) __global__ void
 linear_mmvq_multi_rows(
     const void* __restrict__ weights0,
@@ -985,20 +1422,27 @@ linear_mmvq_multi_rows(
     std::int64_t output_dim2,
     std::int64_t output_dim3) {
   constexpr int warps_per_block = NFN_GLIMMER_MMVQ_WARPS;
-  constexpr int outputs_per_block = SmallK ? warps_per_block : 1;
+  constexpr int outputs_per_block = SmallK
+      ? warps_per_block
+      : mmvq_output_channels_per_group<Type>();
+  constexpr int output_groups = mmvq_output_groups_per_block<Type>();
   constexpr int qk = ggml_cuda_type_traits<Type>::qk;
   constexpr int qi = ggml_cuda_type_traits<Type>::qi;
   constexpr int vdr = mmvq_vdr<Type>();
   constexpr int blocks_per_iteration = vdr * warps_per_block * 32 / qi;
   const std::int64_t operation_blocks0 =
-      (output_dim0 + outputs_per_block - 1) / outputs_per_block;
+      (output_dim0 + outputs_per_block * output_groups - 1) /
+      (outputs_per_block * output_groups);
   const std::int64_t operation_blocks1 =
-      (output_dim1 + outputs_per_block - 1) / outputs_per_block;
+      (output_dim1 + outputs_per_block * output_groups - 1) /
+      (outputs_per_block * output_groups);
   const std::int64_t operation_blocks2 =
-      (output_dim2 + outputs_per_block - 1) / outputs_per_block;
+      (output_dim2 + outputs_per_block * output_groups - 1) /
+      (outputs_per_block * output_groups);
   const std::int64_t operation_block_count = operation_blocks0 +
       operation_blocks1 + operation_blocks2 +
-      (output_dim3 + outputs_per_block - 1) / outputs_per_block;
+      (output_dim3 + outputs_per_block * output_groups - 1) /
+          (outputs_per_block * output_groups);
   const std::int64_t block = blockIdx.x;
   if (block >= operation_block_count) return;
   const void* weights = weights0;
@@ -1026,10 +1470,14 @@ linear_mmvq_multi_rows(
 
   const int lane = threadIdx.x;
   const int warp = threadIdx.y;
-  const int row_group = threadIdx.z;
+  const int output_group =
+      threadIdx.z / NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK;
+  const int row_group =
+      threadIdx.z % NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK;
   const int thread = 32 * warp + lane;
   const std::int64_t output_channel0 =
-      operation_block * outputs_per_block;
+      operation_block * outputs_per_block * output_groups +
+      output_group * outputs_per_block;
   const int weight_blocks_per_row = static_cast<int>(input_dim / qk);
   const std::int64_t input_row0 =
       (static_cast<std::int64_t>(blockIdx.y) *
@@ -1043,11 +1491,13 @@ linear_mmvq_multi_rows(
   if constexpr (!SmallK) {
     __shared__ float shared_partials
         [NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK]
+        [output_groups]
         [warps_per_block][InputRowsPerBlock][32];
 #pragma unroll
     for (int input_offset = 0; input_offset < InputRowsPerBlock;
          ++input_offset) {
-      shared_partials[row_group][warp][input_offset][lane] = 0.0f;
+      shared_partials[row_group][output_group][warp][input_offset][lane] =
+          0.0f;
     }
     __syncthreads();
     for (int weight_block = thread / (qi / vdr);
@@ -1064,7 +1514,7 @@ linear_mmvq_multi_rows(
           static_cast<int>(output_channel0) * weight_blocks_per_row +
               weight_block,
           quant_index,
-          &shared_partials[row_group][warp][0][lane]);
+          &shared_partials[row_group][output_group][warp][0][lane]);
     }
     __syncthreads();
     if (warp > 0) return;
@@ -1072,10 +1522,12 @@ linear_mmvq_multi_rows(
     for (int input_offset = 0; input_offset < InputRowsPerBlock;
          ++input_offset) {
       const std::int64_t input_row = input_row0 + input_offset;
-      float value = shared_partials[row_group][0][input_offset][lane];
+      float value = shared_partials[
+          row_group][output_group][0][input_offset][lane];
 #pragma unroll
       for (int other_warp = 1; other_warp < warps_per_block; ++other_warp) {
-        value += shared_partials[row_group][other_warp][input_offset][lane];
+        value += shared_partials[
+            row_group][output_group][other_warp][input_offset][lane];
       }
       value = warp_reduce_sum<32>(value);
       if (lane == 0 && input_row < rows && output_channel0 < output_dim) {
@@ -1094,14 +1546,22 @@ linear_mmvq_multi_rows(
 #if NFN_GLIMMER_MMVQ_HOIST_WEIGHT_BLOCK
     if constexpr (!SmallK) {
       if (input_row0 < rows && output_channel0 < output_dim) {
-        mmvq_vec_dot_reuse_weight_block<Type, InputRowsPerBlock, 1>(
-            weights, q8_rows, q8_sums,
-            static_cast<int>(input_dim / QK8_1),
-            q8_padded_rows,
-            input_row0, q8_block,
-            static_cast<int>(output_channel0) * weight_blocks_per_row +
-                weight_block,
-            quant_index, &partial[0][0]);
+        #pragma unroll
+        for (int output_index = 0; output_index < outputs_per_block;
+             ++output_index) {
+          if (output_channel0 + output_index < output_dim) {
+            mmvq_vec_dot_reuse_weight_block<
+                Type, InputRowsPerBlock, outputs_per_block>(
+                weights, q8_rows, q8_sums,
+                static_cast<int>(input_dim / QK8_1),
+                q8_padded_rows,
+                input_row0, q8_block,
+                static_cast<int>(output_channel0 + output_index) *
+                        weight_blocks_per_row +
+                    weight_block,
+                quant_index, &partial[0][output_index]);
+          }
+        }
         continue;
       }
     }
@@ -1131,6 +1591,7 @@ linear_mmvq_multi_rows(
 
   __shared__ float warp_partials[
       NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK]
+      [output_groups]
       [warps_per_block > 1 ? warps_per_block - 1 : 1]
       [InputRowsPerBlock][outputs_per_block][32];
   if (warp > 0) {
@@ -1140,8 +1601,9 @@ linear_mmvq_multi_rows(
 #pragma unroll
       for (int output_index = 0; output_index < outputs_per_block;
            ++output_index) {
-        warp_partials[row_group][warp - 1][input_offset][output_index][lane] =
-            partial[input_offset][output_index];
+        warp_partials[
+            row_group][output_group][warp - 1][input_offset][output_index]
+            [lane] = partial[input_offset][output_index];
       }
     }
   }
@@ -1158,7 +1620,9 @@ linear_mmvq_multi_rows(
       for (int other_warp = 0; other_warp < warps_per_block - 1;
            ++other_warp) {
         partial[input_offset][output_index] +=
-            warp_partials[row_group][other_warp][input_offset][output_index][lane];
+            warp_partials[
+                row_group][output_group][other_warp][input_offset]
+                [output_index][lane];
       }
       partial[input_offset][output_index] = warp_reduce_sum<32>(
           partial[input_offset][output_index]);
@@ -1207,6 +1671,24 @@ cudaError_t launch_mmq(
   const int waves = (tiles + multiprocessors - 1) / multiprocessors;
   const int efficiency = 100 * tiles / (multiprocessors * waves);
   int stream_blocks = efficiency >= 90 ? tiles : multiprocessors;
+#if NFN_GLIMMER_MMQ_STREAM_K_BLOCKS > 0 || \
+    NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_256 > 0 || \
+    NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_4096 > 0 || \
+    NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_6656 > 0
+  int requested_stream_blocks = NFN_GLIMMER_MMQ_STREAM_K_BLOCKS;
+  if (output_dim == 256) {
+    requested_stream_blocks = NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_256;
+  } else if (output_dim == 4096) {
+    requested_stream_blocks = NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_4096;
+  } else if (output_dim == 6656) {
+    requested_stream_blocks = NFN_GLIMMER_MMQ_STREAM_K_BLOCKS_6656;
+  }
+  if (requested_stream_blocks > 0 && tiles < multiprocessors &&
+      efficiency < 90) {
+    stream_blocks = max(
+        tiles, min(requested_stream_blocks, multiprocessors));
+  }
+#endif
   const bool needs_fixup = tiles % stream_blocks != 0;
   const std::size_t required_fixup = needs_fixup
       ? static_cast<std::size_t>(stream_blocks) * J * tile_i * sizeof(float)
@@ -1290,6 +1772,18 @@ cudaError_t dispatch_rows(
         row_stride_bytes, fixup_workspace, fixup_workspace_bytes,
         multiprocessors, stream);
   }
+#if NFN_GLIMMER_MMQ_ROWS16_J == 8
+  if (fallback) {
+    return launch_mmq<Type, 8, true>(
+        packed_weights, q8, output, rows, input_dim, output_dim,
+        row_stride_bytes, fixup_workspace, fixup_workspace_bytes,
+        multiprocessors, stream);
+  }
+  return launch_mmq<Type, 8, false>(
+      packed_weights, q8, output, rows, input_dim, output_dim,
+      row_stride_bytes, fixup_workspace, fixup_workspace_bytes,
+      multiprocessors, stream);
+#else
   if (fallback) {
     return launch_mmq<Type, 16, true>(
         packed_weights, q8, output, rows, input_dim, output_dim,
@@ -1300,6 +1794,7 @@ cudaError_t dispatch_rows(
       packed_weights, q8, output, rows, input_dim, output_dim,
       row_stride_bytes, fixup_workspace, fixup_workspace_bytes,
       multiprocessors, stream);
+#endif
 }
 
 bool query_multiprocessors(int* output) {
@@ -1321,9 +1816,11 @@ bool workspace_layout(
     std::int64_t rows,
     std::int64_t input_dim,
     int multiprocessors,
+    std::size_t* q8_offset,
     std::size_t* q8_bytes,
     std::size_t* total_bytes) {
-  if (q8_bytes == nullptr || total_bytes == nullptr || rows < 1 || rows > 16 ||
+  if (q8_offset == nullptr || q8_bytes == nullptr || total_bytes == nullptr ||
+      rows < 1 || rows > 16 ||
       input_dim <= 0 || input_dim % QK8_1_MMQ != 0 || multiprocessors <= 0) {
     return false;
   }
@@ -1337,13 +1834,28 @@ bool workspace_layout(
   }
   const std::size_t raw_q8 = blocks * q8_rows * sizeof(block_q8_1_mmq);
   const std::size_t aligned_q8 = (raw_q8 + 255) & ~std::size_t(255);
-  const std::size_t fixup = static_cast<std::size_t>(multiprocessors) *
-      16 * output_tile * sizeof(float);
-  if (aligned_q8 > std::numeric_limits<std::size_t>::max() - fixup) {
+  std::size_t preserved_q8 = 0;
+#if NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE
+  const std::size_t exact_blocks =
+      static_cast<std::size_t>(input_dim / QK8_1);
+  if (exact_blocks > std::numeric_limits<std::size_t>::max() /
+          (16 * sizeof(block_q8_1))) {
     return false;
   }
-  *q8_bytes = aligned_q8;
-  *total_bytes = aligned_q8 + fixup;
+  const std::size_t raw_preserved =
+      exact_blocks * 16 * sizeof(block_q8_1);
+  preserved_q8 = (raw_preserved + 255) & ~std::size_t(255);
+#endif
+  const std::size_t fixup = static_cast<std::size_t>(multiprocessors) *
+      16 * output_tile * sizeof(float);
+  if (preserved_q8 > std::numeric_limits<std::size_t>::max() - aligned_q8 ||
+      preserved_q8 + aligned_q8 >
+          std::numeric_limits<std::size_t>::max() - fixup) {
+    return false;
+  }
+  *q8_offset = preserved_q8;
+  *q8_bytes = preserved_q8 + aligned_q8;
+  *total_bytes = preserved_q8 + aligned_q8 + fixup;
   return true;
 }
 
@@ -1545,6 +2057,262 @@ cudaError_t launch_matching_mmvq_one_row(
       matching, matching_outputs, matching_count, q8, stream);
 }
 
+#if NFN_GLIMMER_MMVQ_TK_Q4
+__device__ __forceinline__ void tk_q4_scale_min(
+    int subgroup,
+    const std::uint8_t* __restrict__ packed,
+    std::uint8_t* scale,
+    std::uint8_t* minimum) {
+  if (subgroup < 4) {
+    *scale = packed[subgroup] & 63;
+    *minimum = packed[subgroup + 4] & 63;
+  } else {
+    *scale = (packed[subgroup + 4] & 0x0F) |
+        ((packed[subgroup - 4] >> 6) << 4);
+    *minimum = (packed[subgroup + 4] >> 4) |
+        ((packed[subgroup] >> 6) << 4);
+  }
+}
+
+template <typename RegisterTile, typename SharedTile>
+__device__ __forceinline__ void tk_load_int8_row_tile(
+    RegisterTile& destination,
+    const SharedTile& source) {
+  static_assert(RegisterTile::rows == 16 && RegisterTile::cols == 32);
+  static_assert(SharedTile::rows == 16 && SharedTile::cols == 32);
+  const int lane = threadIdx.x & 31;
+  const int row = lane & 15;
+  const int column = (lane >> 4) * 16;
+  const std::uint32_t shared_base = static_cast<std::uint32_t>(
+      __cvta_generic_to_shared(&source.data[0]));
+  const std::uint32_t address = source.idx(
+      shared_base, make_int2(row, column));
+  auto& values = destination.tiles[0][0].data;
+  asm volatile(
+      "ldmatrix.sync.aligned.m8n8.x4.shared::cta.b16 "
+      "{%0, %1, %2, %3}, [%4];\n"
+      : "=r"(*reinterpret_cast<std::uint32_t*>(&values[0])),
+        "=r"(*reinterpret_cast<std::uint32_t*>(&values[1])),
+        "=r"(*reinterpret_cast<std::uint32_t*>(&values[2])),
+        "=r"(*reinterpret_cast<std::uint32_t*>(&values[3]))
+      : "r"(address));
+}
+
+// Experimental verifier kernel modeled on ThunderKittens' warp-level INT8
+// ABt primitive. A warp shares each 16x32 Q8 activation tile across sixteen
+// Q4_K output channels, replacing the scalar DP4A fan-out with one exact
+// m16n16k32 integer MMA pair. Dequantization remains FP32 and is intentionally
+// kept outside the integer accumulator so candidate qualification can reject
+// any changed Glimmer/DFlash decisions before this path becomes a default.
+__launch_bounds__(32, 4) __global__ void
+linear_mmvq_multi_rows_tk_q4(
+    const block_q4_K* __restrict__ weights0,
+    const block_q4_K* __restrict__ weights1,
+    const block_q4_K* __restrict__ weights2,
+    const block_q4_K* __restrict__ weights3,
+    const block_q8_1* __restrict__ q8_rows,
+    float* __restrict__ output0,
+    float* __restrict__ output1,
+    float* __restrict__ output2,
+    float* __restrict__ output3,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim0,
+    std::int64_t output_dim1,
+    std::int64_t output_dim2,
+    std::int64_t output_dim3) {
+  constexpr int tile_rows = 16;
+  constexpr int tile_columns = 16;
+  constexpr int tile_k = 32;
+  const std::int64_t tiles0 = (output_dim0 + tile_columns - 1) / tile_columns;
+  const std::int64_t tiles1 = (output_dim1 + tile_columns - 1) / tile_columns;
+  const std::int64_t tiles2 = (output_dim2 + tile_columns - 1) / tile_columns;
+  std::int64_t tile = blockIdx.x;
+  const block_q4_K* weights = weights0;
+  float* output = output0;
+  std::int64_t output_dim = output_dim0;
+  if (tile >= tiles0) {
+    tile -= tiles0;
+    weights = weights1;
+    output = output1;
+    output_dim = output_dim1;
+  }
+  if (blockIdx.x >= tiles0 + tiles1) {
+    tile -= tiles1;
+    weights = weights2;
+    output = output2;
+    output_dim = output_dim2;
+  }
+  if (blockIdx.x >= tiles0 + tiles1 + tiles2) {
+    tile -= tiles2;
+    weights = weights3;
+    output = output3;
+    output_dim = output_dim3;
+  }
+  const std::int64_t output_column0 = tile * tile_columns;
+  if (weights == nullptr || output == nullptr || output_column0 >= output_dim) {
+    return;
+  }
+
+  __shared__ kittens::st_int8<tile_rows, tile_k, false> activation_tile;
+  __shared__ kittens::st_uint8<tile_columns, tile_k, false> weight_tile;
+  __shared__ float activation_scales[tile_rows];
+  __shared__ int activation_sums[tile_rows];
+  __shared__ float weight_scales[tile_columns];
+  __shared__ float weight_minimums[tile_columns];
+
+  float partial[8]{};
+  const int lane = threadIdx.x;
+  const int q8_blocks_per_row = static_cast<int>(input_dim / tile_k);
+  const int weight_blocks_per_row = static_cast<int>(input_dim / QK_K);
+  for (int weight_block = 0; weight_block < weight_blocks_per_row;
+       ++weight_block) {
+    float block_scaled[8]{};
+    float block_minimum[8]{};
+#pragma unroll
+    for (int subgroup = 0; subgroup < QK_K / tile_k; ++subgroup) {
+#pragma unroll
+      for (int index = lane; index < tile_rows * tile_k; index += 32) {
+        const int row = index / tile_k;
+        const int column = index % tile_k;
+        std::int8_t value = 0;
+        if (row < rows) {
+          const block_q8_1& q8 = q8_rows[
+              row * q8_blocks_per_row + weight_block * 8 + subgroup];
+          value = q8.qs[column];
+        }
+        activation_tile[make_int2(row, column)] = value;
+      }
+#pragma unroll
+      for (int index = lane; index < tile_columns * tile_k; index += 32) {
+        const int column = index / tile_k;
+        const int k = index % tile_k;
+        const std::int64_t output_column = output_column0 + column;
+        std::uint8_t value = 0;
+        if (output_column < output_dim) {
+          const block_q4_K& block = weights[
+              output_column * weight_blocks_per_row + weight_block];
+          const std::uint8_t packed =
+              block.qs[(subgroup / 2) * tile_k + k];
+          value = (subgroup & 1) == 0 ? packed & 0x0F : packed >> 4;
+        }
+        weight_tile[make_int2(column, k)] = value;
+      }
+      if (lane < tile_rows) {
+        if (lane < rows) {
+          const block_q8_1& q8 = q8_rows[
+              lane * q8_blocks_per_row + weight_block * 8 + subgroup];
+          activation_scales[lane] = __low2float(q8.ds);
+          const int* packed = reinterpret_cast<const int*>(q8.qs);
+          int sum = 0;
+#pragma unroll
+          for (int index = 0; index < tile_k / 4; ++index) {
+            sum = ggml_cuda_dp4a(0x01010101, packed[index], sum);
+          }
+          activation_sums[lane] = sum;
+        } else {
+          activation_scales[lane] = 0.0f;
+          activation_sums[lane] = 0;
+        }
+      }
+      if (lane < tile_columns) {
+        const std::int64_t output_column = output_column0 + lane;
+        if (output_column < output_dim) {
+          const block_q4_K& block = weights[
+              output_column * weight_blocks_per_row + weight_block];
+          std::uint8_t scale = 0;
+          std::uint8_t minimum = 0;
+          tk_q4_scale_min(subgroup, block.scales, &scale, &minimum);
+          weight_scales[lane] = static_cast<float>(scale);
+          weight_minimums[lane] = static_cast<float>(minimum);
+        } else {
+          weight_scales[lane] = 0.0f;
+          weight_minimums[lane] = 0.0f;
+        }
+      }
+      __syncwarp();
+      kittens::rt_int8<tile_rows, tile_k> activation_register;
+      kittens::rt_uint8<tile_columns, tile_k> weight_register;
+      kittens::rt_int<tile_rows, tile_columns> integer_register;
+      tk_load_int8_row_tile(activation_register, activation_tile);
+      tk_load_int8_row_tile(weight_register, weight_tile);
+      kittens::warp::zero(integer_register);
+      kittens::warp::mma_ABt(
+          integer_register, activation_register, weight_register,
+          integer_register);
+#pragma unroll
+      for (int item = 0; item < 8; ++item) {
+        const int fragment = item / 2;
+        const int component = item & 1;
+        const int row = lane / 4 + ((fragment & 1) ? 8 : 0);
+        const int column = 2 * (lane % 4) +
+            ((fragment & 2) ? 8 : 0) + component;
+        const int2 values = integer_register.tiles[0][0].data[fragment];
+        const int dot = component == 0 ? values.x : values.y;
+        const float d8 = activation_scales[row];
+        block_scaled[item] += d8 *
+            (dot * weight_scales[column]);
+        block_minimum[item] += d8 *
+            (activation_sums[row] * weight_minimums[column]);
+      }
+    }
+#pragma unroll
+    for (int item = 0; item < 8; ++item) {
+      const int index = lane + 32 * item;
+      const int column = index % tile_columns;
+      const std::int64_t output_column = output_column0 + column;
+      if (output_column < output_dim) {
+        const block_q4_K& block = weights[
+            output_column * weight_blocks_per_row + weight_block];
+        const float2 dm = __half22float2(block.dm);
+        partial[item] +=
+            dm.x * block_scaled[item] - dm.y * block_minimum[item];
+      }
+    }
+  }
+#pragma unroll
+  for (int item = 0; item < 8; ++item) {
+    const int fragment = item / 2;
+    const int component = item & 1;
+    const int row = lane / 4 + ((fragment & 1) ? 8 : 0);
+    const int column = 2 * (lane % 4) +
+        ((fragment & 2) ? 8 : 0) + component;
+    const std::int64_t output_column = output_column0 + column;
+    if (row < rows && output_column < output_dim) {
+      output[row * output_dim + output_column] = partial[item];
+    }
+  }
+}
+
+cudaError_t launch_matching_mmvq_rows_tk_q4(
+    const std::array<
+        const NfnNativeTilePackedWeightDescriptorV1*, kMaxOperations>& matching,
+    const std::array<float*, kMaxOperations>& matching_outputs,
+    std::int64_t input_dim,
+    const block_q8_1* q8,
+    std::int64_t rows,
+    cudaStream_t stream) {
+  const auto output_dim = [&](std::size_t index) {
+    return matching[index] == nullptr ? 0 : matching[index]->output_dim;
+  };
+  const auto weight = [&](std::size_t index) -> const block_q4_K* {
+    return matching[index] == nullptr
+        ? nullptr
+        : reinterpret_cast<const block_q4_K*>(matching[index]->data);
+  };
+  const std::int64_t output_tiles =
+      (output_dim(0) + 15) / 16 + (output_dim(1) + 15) / 16 +
+      (output_dim(2) + 15) / 16 + (output_dim(3) + 15) / 16;
+  linear_mmvq_multi_rows_tk_q4<<<
+      static_cast<unsigned int>(output_tiles), 32, 0, stream>>>(
+      weight(0), weight(1), weight(2), weight(3), q8,
+      matching_outputs[0], matching_outputs[1], matching_outputs[2],
+      matching_outputs[3], rows, input_dim, output_dim(0), output_dim(1),
+      output_dim(2), output_dim(3));
+  return cudaPeekAtLastError();
+}
+#endif
+
 template <ggml_type Type>
 cudaError_t launch_matching_mmvq_rows(
     const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
@@ -1568,6 +2336,15 @@ cudaError_t launch_matching_mmvq_rows(
   }
   if (matching_count == 0) return cudaSuccess;
   const std::int64_t input_dim = matching[0]->input_dim;
+#if NFN_GLIMMER_MMVQ_TK_Q4
+  if constexpr (Type == GGML_TYPE_Q4_K) {
+    static_assert(
+        NFN_GLIMMER_MMVQ_TRANSPOSE_Q8_ROWS == 0,
+        "the TK Q4 candidate requires row-major Q8 verifier storage");
+    return launch_matching_mmvq_rows_tk_q4(
+        matching, matching_outputs, input_dim, q8, rows, stream);
+  }
+#endif
   constexpr int qi = ggml_cuda_type_traits<Type>::qi;
   constexpr int vdr = mmvq_vdr<Type>();
   constexpr int warps_per_block = NFN_GLIMMER_MMVQ_WARPS;
@@ -1581,8 +2358,12 @@ cudaError_t launch_matching_mmvq_rows(
   const auto weight = [&](std::size_t index) -> const void* {
     return matching[index] == nullptr ? nullptr : matching[index]->data;
   };
+  constexpr int output_groups = mmvq_output_groups_per_block<Type>();
+  constexpr int output_channels = mmvq_output_channels_per_group<Type>();
   const dim3 threads(
-      32, warps_per_block, NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK);
+      32, warps_per_block,
+      NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK *
+          output_groups);
   constexpr int input_rows_per_block = mmvq_input_rows_per_block<Type>();
   const unsigned int input_row_blocks = static_cast<unsigned int>(
       (rows + input_rows_per_block * NFN_GLIMMER_MMVQ_ROW_GROUPS_PER_BLOCK - 1) /
@@ -1592,10 +2373,18 @@ cudaError_t launch_matching_mmvq_rows(
     constexpr int tail_rows_per_block = 5;
     if (small_k) {
       const std::int64_t blocks =
-          (output_dim(0) + warps_per_block - 1) / warps_per_block +
-          (output_dim(1) + warps_per_block - 1) / warps_per_block +
-          (output_dim(2) + warps_per_block - 1) / warps_per_block +
-          (output_dim(3) + warps_per_block - 1) / warps_per_block;
+          (output_dim(0) + warps_per_block *
+                  output_groups - 1) /
+              (warps_per_block * output_groups) +
+          (output_dim(1) + warps_per_block *
+                  output_groups - 1) /
+              (warps_per_block * output_groups) +
+          (output_dim(2) + warps_per_block *
+                  output_groups - 1) /
+              (warps_per_block * output_groups) +
+          (output_dim(3) + warps_per_block *
+                  output_groups - 1) /
+              (warps_per_block * output_groups);
       linear_mmvq_multi_rows<Type, true, tail_rows_per_block><<<
           dim3(static_cast<unsigned int>(blocks), 1, 1),
           threads, 0, stream>>>(
@@ -1604,8 +2393,12 @@ cudaError_t launch_matching_mmvq_rows(
           matching_outputs[3], rows, input_dim, output_dim(0), output_dim(1),
           output_dim(2), output_dim(3));
     } else {
+      constexpr int outputs_per_cta = output_groups * output_channels;
       const std::int64_t blocks =
-          output_dim(0) + output_dim(1) + output_dim(2) + output_dim(3);
+          (output_dim(0) + outputs_per_cta - 1) / outputs_per_cta +
+          (output_dim(1) + outputs_per_cta - 1) / outputs_per_cta +
+          (output_dim(2) + outputs_per_cta - 1) / outputs_per_cta +
+          (output_dim(3) + outputs_per_cta - 1) / outputs_per_cta;
       linear_mmvq_multi_rows<Type, false, tail_rows_per_block><<<
           dim3(static_cast<unsigned int>(blocks), 1, 1),
           threads, 0, stream>>>(
@@ -1619,10 +2412,18 @@ cudaError_t launch_matching_mmvq_rows(
 #endif
   if (small_k) {
     const std::int64_t blocks =
-        (output_dim(0) + warps_per_block - 1) / warps_per_block +
-        (output_dim(1) + warps_per_block - 1) / warps_per_block +
-        (output_dim(2) + warps_per_block - 1) / warps_per_block +
-        (output_dim(3) + warps_per_block - 1) / warps_per_block;
+        (output_dim(0) + warps_per_block *
+                output_groups - 1) /
+            (warps_per_block * output_groups) +
+        (output_dim(1) + warps_per_block *
+                output_groups - 1) /
+            (warps_per_block * output_groups) +
+        (output_dim(2) + warps_per_block *
+                output_groups - 1) /
+            (warps_per_block * output_groups) +
+        (output_dim(3) + warps_per_block *
+                output_groups - 1) /
+            (warps_per_block * output_groups);
     linear_mmvq_multi_rows<Type, true, input_rows_per_block><<<
         dim3(static_cast<unsigned int>(blocks), input_row_blocks, 1),
         threads, 0, stream>>>(
@@ -1631,8 +2432,12 @@ cudaError_t launch_matching_mmvq_rows(
         matching_outputs[3], rows, input_dim, output_dim(0), output_dim(1),
         output_dim(2), output_dim(3));
   } else {
+    constexpr int outputs_per_cta = output_groups * output_channels;
     const std::int64_t blocks =
-        output_dim(0) + output_dim(1) + output_dim(2) + output_dim(3);
+        (output_dim(0) + outputs_per_cta - 1) / outputs_per_cta +
+        (output_dim(1) + outputs_per_cta - 1) / outputs_per_cta +
+        (output_dim(2) + outputs_per_cta - 1) / outputs_per_cta +
+        (output_dim(3) + outputs_per_cta - 1) / outputs_per_cta;
     linear_mmvq_multi_rows<Type, false, input_rows_per_block><<<
         dim3(static_cast<unsigned int>(blocks), input_row_blocks, 1),
         threads, 0, stream>>>(
@@ -2048,6 +2853,202 @@ __device__ __forceinline__ void split_attention_key_bounds(
             query_position + descriptor.sliding_window);
 }
 
+#if NFN_GLIMMER_GROUPED_GQA_ATTENTION
+constexpr int kGroupedAttentionQueryHeads =
+    NFN_GLIMMER_GROUPED_GQA_HEADS;
+constexpr int kGroupedAttentionKeysPerTile = 8;
+
+// Exact FP32 grouped-GQA verifier megakernel. Four query heads that map to the
+// same KV head preserve their independent score reductions and online-softmax
+// order while sharing each staged K/V tile. This removes repeated cache reads
+// without changing the arithmetic path used by the strict scalar kernel.
+__global__ void dflash_block_attention_grouped_gqa_float32_v1_kernel(
+    NfnNativeTileDFlashBlockAttentionDescriptorV1 descriptor) {
+  __shared__ float key_tile[
+      kGroupedAttentionKeysPerTile][128];
+  __shared__ float value_tile[
+      kGroupedAttentionKeysPerTile][128];
+  __shared__ float scores[
+      kGroupedAttentionQueryHeads][kGroupedAttentionKeysPerTile];
+  __shared__ float weights[
+      kGroupedAttentionQueryHeads][kGroupedAttentionKeysPerTile];
+  __shared__ float maxima[kGroupedAttentionQueryHeads];
+  __shared__ float denominators[kGroupedAttentionQueryHeads];
+  __shared__ float alphas[kGroupedAttentionQueryHeads];
+
+  const std::int64_t groups_per_row =
+      descriptor.query_heads / kGroupedAttentionQueryHeads;
+  const std::int64_t query_row = blockIdx.x / groups_per_row;
+  const std::int64_t query_group = blockIdx.x % groups_per_row;
+  const std::int64_t query_head0 =
+      query_group * kGroupedAttentionQueryHeads;
+  if (query_row >= descriptor.query_rows) return;
+  const std::int64_t kv_head =
+      query_head0 * descriptor.kv_heads / descriptor.query_heads;
+  std::int64_t first_key_position = 0;
+  std::int64_t last_key_position = -1;
+  split_attention_key_bounds(
+      descriptor, query_row, &first_key_position, &last_key_position);
+  const bool causal =
+      (descriptor.flags & NFN_NATIVE_TILE_BLOCK_ATTENTION_CAUSAL) != 0;
+  const int warp = threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
+  const int output_index0 = threadIdx.x;
+  const int output_index1 = threadIdx.x + blockDim.x;
+  float accumulated0 = 0.0f;
+  float accumulated1 = 0.0f;
+  if (threadIdx.x < kGroupedAttentionQueryHeads) {
+    maxima[threadIdx.x] = -CUDART_INF_F;
+    denominators[threadIdx.x] = 0.0f;
+  }
+  __syncthreads();
+
+  for (std::int64_t tile_begin = first_key_position;
+       tile_begin <= last_key_position;
+       tile_begin += kGroupedAttentionKeysPerTile) {
+    for (int index = threadIdx.x;
+         index < kGroupedAttentionKeysPerTile * descriptor.head_dim;
+         index += blockDim.x) {
+      const int key = index / descriptor.head_dim;
+      const int component = index % descriptor.head_dim;
+      const std::int64_t key_position = tile_begin + key;
+      float key_value = 0.0f;
+      float value = 0.0f;
+      if (key_position <= last_key_position) {
+        const bool block_row =
+            key_position >= descriptor.context_length;
+        const std::int64_t source_row = block_row
+            ? key_position - descriptor.context_length
+            : key_position % descriptor.cache_capacity;
+        const std::int64_t source_index = block_row
+            ? (source_row * descriptor.kv_heads + kv_head) *
+                  descriptor.head_dim + component
+            : source_row * descriptor.cache_row_stride +
+                  kv_head * descriptor.head_dim + component;
+        key_value = block_row
+            ? descriptor.block_key[source_index]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.key_cache_bf16)[source_index]);
+        value = block_row
+            ? descriptor.block_value[source_index]
+            : __bfloat162float(
+                  reinterpret_cast<const __nv_bfloat16*>(
+                      descriptor.value_cache_bf16)[source_index]);
+        if (causal && block_row && source_row < query_row) {
+          key_value = __bfloat162float(__float2bfloat16(key_value));
+          value = __bfloat162float(__float2bfloat16(value));
+        }
+      }
+      key_tile[key][component] = key_value;
+      value_tile[key][component] = value;
+    }
+    __syncthreads();
+
+#pragma unroll
+    for (int pair = 0; pair < kGroupedAttentionKeysPerTile / 2; ++pair) {
+      const int local_head = warp / 2;
+      const int key = 2 * pair + warp % 2;
+      const std::int64_t query_head = query_head0 + local_head;
+      const float* query = descriptor.query +
+          (query_row * descriptor.query_heads + query_head) *
+              descriptor.head_dim;
+      float dot = 0.0f;
+#pragma unroll
+      for (int component = lane; component < 128; component += 32) {
+        dot = fmaf(query[component], key_tile[key][component], dot);
+      }
+      for (int offset = 16; offset > 0; offset /= 2) {
+        dot += __shfl_down_sync(0xffffffffU, dot, offset);
+      }
+      if (lane == 0) {
+        scores[local_head][key] =
+            tile_begin + key <= last_key_position
+            ? dot * descriptor.scale
+            : -CUDART_INF_F;
+      }
+    }
+    __syncthreads();
+
+    if (threadIdx.x < kGroupedAttentionQueryHeads) {
+      const int head = threadIdx.x;
+      float tile_maximum = -CUDART_INF_F;
+#pragma unroll
+      for (int key = 0; key < kGroupedAttentionKeysPerTile; ++key) {
+        tile_maximum = fmaxf(tile_maximum, scores[head][key]);
+      }
+      const float next_maximum = fmaxf(maxima[head], tile_maximum);
+      const float alpha = expf(maxima[head] - next_maximum);
+      float tile_denominator = 0.0f;
+#pragma unroll
+      for (int key = 0; key < kGroupedAttentionKeysPerTile; ++key) {
+        const float weight = scores[head][key] == -CUDART_INF_F
+            ? 0.0f
+            : expf(scores[head][key] - next_maximum);
+        weights[head][key] = weight;
+        tile_denominator += weight;
+      }
+      denominators[head] = denominators[head] * alpha + tile_denominator;
+      maxima[head] = next_maximum;
+      alphas[head] = alpha;
+    }
+    __syncthreads();
+
+    const auto update_value = [&](int output_index, float value) {
+      const int head = output_index / descriptor.head_dim;
+      const int component = output_index % descriptor.head_dim;
+      value *= alphas[head];
+#pragma unroll
+      for (int key = 0; key < kGroupedAttentionKeysPerTile; ++key) {
+        if (tile_begin + key > last_key_position) break;
+        value = fmaf(weights[head][key], value_tile[key][component], value);
+      }
+      return value;
+    };
+    accumulated0 = update_value(output_index0, accumulated0);
+    accumulated1 = update_value(output_index1, accumulated1);
+    __syncthreads();
+  }
+
+  const auto store_value = [&](int output_index, float value) {
+    const int head = output_index / descriptor.head_dim;
+    const int component = output_index % descriptor.head_dim;
+    descriptor.output[
+        (query_row * descriptor.query_heads + query_head0 + head) *
+            descriptor.head_dim + component] =
+        value / denominators[head];
+  };
+  store_value(output_index0, accumulated0);
+  store_value(output_index1, accumulated1);
+}
+
+bool validate_grouped_attention_descriptor(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor) {
+  return descriptor != nullptr &&
+      descriptor->struct_size >=
+          sizeof(NfnNativeTileDFlashBlockAttentionDescriptorV1) &&
+      descriptor->version == NFN_NATIVE_TILE_GLIMMER_INFERENCE_V1 &&
+      descriptor->reserved0 == 0 && descriptor->reserved1 == 0 &&
+      descriptor->query != nullptr && descriptor->block_key != nullptr &&
+      descriptor->block_value != nullptr &&
+      descriptor->key_cache_bf16 != nullptr &&
+      descriptor->value_cache_bf16 != nullptr &&
+      descriptor->output != nullptr && descriptor->query_rows > 0 &&
+      descriptor->query_rows <= 16 && descriptor->block_rows > 0 &&
+      descriptor->query_heads == 32 && descriptor->kv_heads > 0 &&
+      descriptor->query_heads % descriptor->kv_heads == 0 &&
+      (descriptor->query_heads / descriptor->kv_heads) %
+              kGroupedAttentionQueryHeads ==
+          0 && descriptor->head_dim == 128 &&
+      descriptor->context_length >= 0 && descriptor->sliding_window > 0 &&
+      descriptor->cache_capacity > 0 &&
+      descriptor->cache_row_stride >=
+          descriptor->kv_heads * descriptor->head_dim &&
+      isfinite(descriptor->scale) && descriptor->scale > 0.0f &&
+      descriptor->cuda_stream != nullptr;
+}
+#endif
+
 // Exact short-context attention split. The score CTA preserves the ordinary
 // kernel's one-warp-per-key FMA and shuffle tree. It exposes independent
 // eight-key tiles as CTAs so a five-row target tail is not limited to 160
@@ -2236,6 +3237,7 @@ cudaError_t quantize_input(
     const float* auxiliary,
     bool apply_swiglu,
     block_q8_1_mmq* q8,
+    block_q8_1* preserved_mmvq,
     std::int64_t rows,
     std::int64_t input_dim,
     cudaStream_t stream) {
@@ -2247,17 +3249,120 @@ cudaError_t quantize_input(
   if (auxiliary != nullptr && apply_swiglu) {
     quantize_q8_1_mmq<StoreSums, true, true>
         <<<grid, kQuantThreads, 0, stream>>>(
-            input, auxiliary, q8, rows, input_dim);
+            input, auxiliary, q8, preserved_mmvq, rows, input_dim);
   } else if (auxiliary != nullptr) {
     quantize_q8_1_mmq<StoreSums, true, false>
         <<<grid, kQuantThreads, 0, stream>>>(
-            input, auxiliary, q8, rows, input_dim);
+            input, auxiliary, q8, preserved_mmvq, rows, input_dim);
   } else {
     quantize_q8_1_mmq<StoreSums, false, false>
         <<<grid, kQuantThreads, 0, stream>>>(
-            input, nullptr, q8, rows, input_dim);
+            input, nullptr, q8, preserved_mmvq, rows, input_dim);
   }
   return cudaPeekAtLastError();
+}
+
+enum Mmq16CallFamily : std::uint32_t {
+  kMmq16AttentionInput = 1U << 0,
+  kMmq16AttentionOutput = 1U << 1,
+  kMmq16MlpUp = 1U << 2,
+  kMmq16MlpDown = 1U << 3,
+  kMmq16LmHead = 1U << 4,
+  kMmq16Other = 1U << 5,
+};
+
+std::uint32_t mmq16_call_family(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    std::int64_t operation_count) {
+  if (descriptors == nullptr || operation_count < 1 ||
+      descriptors[0] == nullptr) {
+    return kMmq16Other;
+  }
+
+  const std::int64_t input_dim = descriptors[0]->input_dim;
+  bool outputs_are_attention_widths = true;
+  bool outputs_are_mlp_width = true;
+  bool outputs_are_lm_head = true;
+  for (std::int64_t index = 0; index < operation_count; ++index) {
+    if (descriptors[index] == nullptr ||
+        descriptors[index]->input_dim != input_dim) {
+      return kMmq16Other;
+    }
+    const std::int64_t output_dim = descriptors[index]->output_dim;
+    outputs_are_attention_widths = outputs_are_attention_widths &&
+        (output_dim == 4096 || output_dim == 256 || output_dim == 1024);
+    outputs_are_mlp_width = outputs_are_mlp_width && output_dim == 19968;
+    outputs_are_lm_head = outputs_are_lm_head && output_dim == 202048;
+  }
+
+  if (input_dim == 6656 && outputs_are_attention_widths) {
+    return kMmq16AttentionInput;
+  }
+  if (input_dim == 4096) {
+    bool outputs_are_hidden = true;
+    for (std::int64_t index = 0; index < operation_count; ++index) {
+      outputs_are_hidden = outputs_are_hidden &&
+          descriptors[index]->output_dim == 6656;
+    }
+    if (outputs_are_hidden) return kMmq16AttentionOutput;
+  }
+  if (input_dim == 6656 && outputs_are_mlp_width) return kMmq16MlpUp;
+  if (input_dim == 19968) {
+    bool outputs_are_hidden = true;
+    for (std::int64_t index = 0; index < operation_count; ++index) {
+      outputs_are_hidden = outputs_are_hidden &&
+          descriptors[index]->output_dim == 6656;
+    }
+    if (outputs_are_hidden) return kMmq16MlpDown;
+  }
+  if (input_dim == 6656 && outputs_are_lm_head) return kMmq16LmHead;
+  return kMmq16Other;
+}
+
+bool should_route_mmvq_to_mmq(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    std::int64_t operation_count,
+    std::int64_t rows) {
+  const std::uint32_t family =
+      mmq16_call_family(descriptors, operation_count);
+  struct VerifierLayerCursor {
+    int current = -1;
+    int next = 0;
+    unsigned int block = 0;
+  };
+  static thread_local VerifierLayerCursor cursor;
+  if (rows == 16 && family == kMmq16AttentionInput) {
+    cursor.current = cursor.next;
+    cursor.next = (cursor.next + 1) % 52;
+  }
+
+  const unsigned int current_block = cursor.block;
+  const auto advance_block_cursor = [&]() {
+    if (family != kMmq16LmHead) return;
+    cursor.current = -1;
+    cursor.next = 0;
+    if (rows == 16) {
+      cursor.block = (cursor.block + 1) & 31U;
+    } else {
+      cursor.block = 0;
+    }
+  };
+  if (rows < NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS) {
+    advance_block_cursor();
+    return false;
+  }
+  const bool selected_family =
+      (static_cast<std::uint32_t>(NFN_GLIMMER_MMQ16_CALL_MASK) & family) != 0;
+  const bool selected_block = family == kMmq16LmHead ||
+      (static_cast<unsigned int>(NFN_GLIMMER_MMQ16_BLOCK_MASK) &
+       (1U << current_block)) != 0;
+  bool selected = selected_family && selected_block;
+  if (selected && family != kMmq16LmHead && family != kMmq16Other) {
+    selected = cursor.current >= NFN_GLIMMER_MMQ16_LAYER_BEGIN &&
+        cursor.current < NFN_GLIMMER_MMQ16_LAYER_END;
+  }
+  advance_block_cursor();
+  return selected;
 }
 
 int run_multi_linear(
@@ -2270,7 +3375,8 @@ int run_multi_linear(
     std::int64_t rows,
     void* workspace,
     std::int64_t workspace_nbytes,
-    void* cuda_stream) {
+    void* cuda_stream,
+    bool preserve_mmvq = false) {
   if (descriptors == nullptr || input == nullptr || outputs == nullptr ||
       operation_count < 1 || operation_count > kMaxOperations ||
       workspace == nullptr || workspace_nbytes <= 0) {
@@ -2291,11 +3397,13 @@ int run_multi_linear(
         operation_count, workspace, workspace_nbytes, cuda_stream);
   }
   int multiprocessors = 0;
+  std::size_t q8_offset = 0;
   std::size_t q8_bytes = 0;
   std::size_t required_bytes = 0;
   if (!query_multiprocessors(&multiprocessors) ||
       !workspace_layout(
-          rows, input_dim, multiprocessors, &q8_bytes, &required_bytes) ||
+          rows, input_dim, multiprocessors, &q8_offset, &q8_bytes,
+          &required_bytes) ||
       static_cast<std::uint64_t>(workspace_nbytes) < required_bytes) {
     return static_cast<int>(cudaErrorInvalidValue);
   }
@@ -2311,14 +3419,19 @@ int run_multi_linear(
   }
 
   const cudaStream_t stream = static_cast<cudaStream_t>(cuda_stream);
-  block_q8_1_mmq* q8 = static_cast<block_q8_1_mmq*>(workspace);
+  block_q8_1_mmq* q8 = reinterpret_cast<block_q8_1_mmq*>(
+      static_cast<std::uint8_t*>(workspace) + q8_offset);
+  block_q8_1* preserved_q8 = preserve_mmvq
+      ? static_cast<block_q8_1*>(workspace)
+      : nullptr;
   float* fixup = reinterpret_cast<float*>(
       static_cast<std::uint8_t*>(workspace) + q8_bytes);
   const std::size_t fixup_bytes = required_bytes - q8_bytes;
   cudaError_t status = cudaSuccess;
   if (has_q4_or_q5) {
     status = quantize_input<true>(
-        input, auxiliary, apply_swiglu, q8, rows, input_dim, stream);
+        input, auxiliary, apply_swiglu, q8, preserved_q8, rows, input_dim,
+        stream);
   }
   if (has_q4_or_q5) {
     if (status == cudaSuccess) {
@@ -2334,7 +3447,8 @@ int run_multi_linear(
   }
   if (status == cudaSuccess && has_q6) {
     status = quantize_input<false>(
-        input, auxiliary, apply_swiglu, q8, rows, input_dim, stream);
+        input, auxiliary, apply_swiglu, q8, preserved_q8, rows, input_dim,
+        stream);
     if (status == cudaSuccess) {
       status = launch_matching_operations<GGML_TYPE_Q6_K>(
           descriptors, outputs, operation_count, q8, rows, input_dim, fixup,
@@ -2344,11 +3458,132 @@ int run_multi_linear(
   return static_cast<int>(status);
 }
 
+int run_mmvq_via_mmq_preserving_workspace(
+    const NfnNativeTilePackedWeightDescriptorV1* const* descriptors,
+    const float* input,
+    const float* auxiliary,
+    bool apply_swiglu,
+    float* const* outputs,
+    std::int64_t operation_count,
+    std::int64_t rows,
+    void* workspace,
+    std::int64_t workspace_nbytes,
+    void* cuda_stream) {
+#if NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE && \
+    !NFN_GLIMMER_MMQ_FUSED_PRESERVE_QUANT
+  static_assert(
+      !NFN_GLIMMER_MMVQ_PRECOMPUTED_QSUM,
+      "the split dual-layout candidate does not reserve Q8 sum storage");
+  if (descriptors == nullptr || descriptors[0] == nullptr || input == nullptr ||
+      workspace == nullptr || rows != 16) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  const std::int64_t input_dim = descriptors[0]->input_dim;
+  constexpr int quant_threads = 256;
+  const dim3 quant_grid(
+      static_cast<unsigned int>(
+          (input_dim + quant_threads - 1) / quant_threads),
+      static_cast<unsigned int>(rows), 1);
+  const cudaStream_t stream = static_cast<cudaStream_t>(cuda_stream);
+  block_q8_1* preserved = static_cast<block_q8_1*>(workspace);
+  if (auxiliary != nullptr && apply_swiglu) {
+    quantize_q8_1_mmvq_rows<true, true><<<
+        quant_grid, quant_threads, 0, stream>>>(
+        input, auxiliary, preserved, nullptr, rows, input_dim);
+  } else if (auxiliary != nullptr) {
+    quantize_q8_1_mmvq_rows<true, false><<<
+        quant_grid, quant_threads, 0, stream>>>(
+        input, auxiliary, preserved, nullptr, rows, input_dim);
+  } else {
+    quantize_q8_1_mmvq_rows<false, false><<<
+        quant_grid, quant_threads, 0, stream>>>(
+        input, nullptr, preserved, nullptr, rows, input_dim);
+  }
+  const cudaError_t quant_status = cudaPeekAtLastError();
+  if (quant_status != cudaSuccess) return static_cast<int>(quant_status);
+  return run_multi_linear(
+      descriptors, input, auxiliary, apply_swiglu, outputs, operation_count,
+      rows, workspace, workspace_nbytes, cuda_stream, false);
+#else
+  return run_multi_linear(
+      descriptors, input, auxiliary, apply_swiglu, outputs, operation_count,
+      rows, workspace, workspace_nbytes, cuda_stream,
+      NFN_GLIMMER_MMQ_PRESERVE_MMVQ_WORKSPACE != 0);
+#endif
+}
+
+#if NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION > 0
+__device__ __forceinline__ float rounded_dflash_tap(float value) {
+#if NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION == 1
+  return __bfloat162float(__float2bfloat16_rn(value));
+#elif NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION == 2
+  return __half2float(__float2half_rn(value));
+#else
+  std::uint32_t bits = __float_as_uint(value);
+  const std::uint32_t exponent = bits & 0x7f800000U;
+  if (exponent != 0x7f800000U) {
+    const std::uint32_t tie = (bits >> 13) & 1U;
+    bits = (bits + 0x00000fffU + tie) & 0xffffe000U;
+  }
+  return __uint_as_float(bits);
+#endif
+}
+
+__global__ void pack_rounded_dflash_taps_kernel(
+    const float* __restrict__ tap_major,
+    float* __restrict__ row_major,
+    std::int64_t source_rows,
+    std::int64_t source_row_offset,
+    std::int64_t rows,
+    std::int64_t tap_count,
+    std::int64_t hidden_width) {
+  const std::int64_t index =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t count = rows * tap_count * hidden_width;
+  if (index >= count) return;
+  const std::int64_t hidden = index % hidden_width;
+  const std::int64_t row_tap = index / hidden_width;
+  const std::int64_t tap = row_tap % tap_count;
+  const std::int64_t row = row_tap / tap_count;
+  const float value = tap_major[
+      (tap * source_rows + source_row_offset + row) * hidden_width + hidden];
+  row_major[index] = rounded_dflash_tap(value);
+}
+#endif
+
 }  // namespace
 
 extern "C" int nfn_native_tile_k_quant_mmq_abi_version() {
   return NFN_NATIVE_TILE_K_QUANT_MMQ_V1;
 }
+
+#if NFN_GLIMMER_DFLASH_TAP_PACK_PRECISION > 0
+extern "C" int nfn_native_tile_glimmer_pack_target_taps_float32_v1(
+    const float* tap_major,
+    float* row_major,
+    std::int64_t source_rows,
+    std::int64_t source_row_offset,
+    std::int64_t rows,
+    std::int64_t tap_count,
+    std::int64_t hidden_width,
+    void* cuda_stream) {
+  if (tap_major == nullptr || row_major == nullptr || source_rows <= 0 ||
+      source_rows > 64 || source_row_offset < 0 || rows <= 0 || rows > 64 ||
+      source_row_offset + rows > source_rows || tap_count <= 0 ||
+      tap_count > 64 || hidden_width <= 0 || hidden_width > 65536 ||
+      cuda_stream == nullptr) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  const std::int64_t count = rows * tap_count * hidden_width;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((count + threads - 1) / threads);
+  pack_rounded_dflash_taps_kernel<<<
+      blocks, threads, 0, static_cast<cudaStream_t>(cuda_stream)>>>(
+      tap_major, row_major, source_rows, source_row_offset, rows, tap_count,
+      hidden_width);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+#endif
 
 extern "C" int
 nfn_native_tile_glimmer_dual_rms_add_capture_cooperative_batch_float32_v1(
@@ -2429,6 +3664,22 @@ nfn_native_tile_glimmer_dual_rms_add_capture_cooperative_batch_float32_v1(
       status == cudaSuccess ? cudaPeekAtLastError() : status);
 }
 
+#if NFN_GLIMMER_GROUPED_GQA_ATTENTION
+extern "C" int nfn_native_tile_dflash_block_attention_float32_v1(
+    const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor) {
+  if (!validate_grouped_attention_descriptor(descriptor)) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  const std::int64_t blocks = descriptor->query_rows *
+      (descriptor->query_heads / kGroupedAttentionQueryHeads);
+  dflash_block_attention_grouped_gqa_float32_v1_kernel<<<
+      static_cast<unsigned int>(blocks),
+      64 * kGroupedAttentionQueryHeads, 0,
+      static_cast<cudaStream_t>(descriptor->cuda_stream)>>>(*descriptor);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+#endif
+
 extern "C" int
 nfn_native_tile_dflash_block_attention_short_split_float32_v1(
     const NfnNativeTileDFlashBlockAttentionDescriptorV1* descriptor,
@@ -2492,11 +3743,13 @@ extern "C" std::int64_t nfn_native_tile_k_quant_mmq_workspace_bytes_v1(
     std::int64_t rows,
     std::int64_t input_dim) {
   int multiprocessors = 0;
+  std::size_t q8_offset = 0;
   std::size_t q8_bytes = 0;
   std::size_t total_bytes = 0;
   if (!query_multiprocessors(&multiprocessors) ||
       !workspace_layout(
-          rows, input_dim, multiprocessors, &q8_bytes, &total_bytes) ||
+          rows, input_dim, multiprocessors, &q8_offset, &q8_bytes,
+          &total_bytes) ||
       total_bytes > static_cast<std::size_t>(
           std::numeric_limits<std::int64_t>::max())) {
     return 0;
@@ -2561,8 +3814,8 @@ extern "C" int nfn_native_tile_k_quant_mmvq_multi_linear_float32_v1(
     void* workspace,
     std::int64_t workspace_nbytes,
     void* cuda_stream) {
-  if (rows >= NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS) {
-    return run_multi_linear(
+  if (should_route_mmvq_to_mmq(descriptors, operation_count, rows)) {
+    return run_mmvq_via_mmq_preserving_workspace(
         descriptors, input, nullptr, false, outputs, operation_count, rows,
         workspace, workspace_nbytes, cuda_stream);
   }
@@ -2601,8 +3854,8 @@ extern "C" int nfn_native_tile_k_quant_mmvq_multi_linear_gated_float32_v1(
     std::int64_t workspace_nbytes,
     void* cuda_stream) {
   if (gate == nullptr) return static_cast<int>(cudaErrorInvalidValue);
-  if (rows >= NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS) {
-    return run_multi_linear(
+  if (should_route_mmvq_to_mmq(descriptors, operation_count, rows)) {
+    return run_mmvq_via_mmq_preserving_workspace(
         descriptors, input, gate, false, outputs, operation_count, rows,
         workspace, workspace_nbytes, cuda_stream);
   }
@@ -2624,8 +3877,8 @@ extern "C" int nfn_native_tile_k_quant_mmvq_multi_linear_swiglu_float32_v1(
   if (gate == nullptr || up == nullptr) {
     return static_cast<int>(cudaErrorInvalidValue);
   }
-  if (rows >= NFN_GLIMMER_MMVQ_USE_MMQ_MIN_ROWS) {
-    return run_multi_linear(
+  if (should_route_mmvq_to_mmq(descriptors, operation_count, rows)) {
+    return run_mmvq_via_mmq_preserving_workspace(
         descriptors, gate, up, true, outputs, operation_count, rows,
         workspace, workspace_nbytes, cuda_stream);
   }

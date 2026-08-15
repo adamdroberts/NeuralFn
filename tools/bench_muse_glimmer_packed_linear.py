@@ -590,6 +590,14 @@ def main() -> int:
         help="Treat --baseline as the pinned experimental llama MMQ provider.",
     )
     parser.add_argument(
+        "--baseline-native-mmq",
+        action="store_true",
+        help=(
+            "Treat --baseline as the versioned NeuralFn K-quant MMQ/MMVQ ABI. "
+            "This enables exact multi-row kernel-to-kernel tuning."
+        ),
+    )
+    parser.add_argument(
         "--candidate-llama-provider",
         action="store_true",
         help=(
@@ -633,6 +641,8 @@ def main() -> int:
         parser.error("the native MMVQ candidate requires exactly one row")
     if args.candidate_llama_provider and args.rows < 2:
         parser.error("the experimental llama MMQ provider requires at least two rows")
+    if args.baseline_llama_provider and args.baseline_native_mmq:
+        parser.error("baseline provider modes are mutually exclusive")
 
     encoding_id, _block_bytes = ENCODINGS[args.encoding]
     packed, row_stride = _packed_bytes(args.encoding, args.output_dim, args.input_dim)
@@ -663,6 +673,8 @@ def main() -> int:
     baseline_provider_context = baseline_provider_destroy = None
     standalone_workspace = None
     standalone_workspace_bytes = 0
+    baseline_workspace = None
+    baseline_workspace_bytes = 0
     try:
         runtime.upload(device_packed, packed_host, len(packed))
         runtime.upload(
@@ -691,6 +703,14 @@ def main() -> int:
                 baseline_provider_destroy,
                 baseline,
             ) = _llama_mmq_provider(args.baseline.resolve(strict=True), args.cuda_device)
+        elif args.baseline_native_mmq:
+            baseline_library, baseline_workspace_size_fn, baseline = _native_mmq(
+                args.baseline.resolve(strict=True)
+            )
+            baseline_workspace_bytes = baseline_workspace_size_fn(
+                args.rows, args.input_dim
+            )
+            baseline_workspace = runtime.malloc(baseline_workspace_bytes)
         else:
             baseline_library, baseline = _linear(args.baseline.resolve(strict=True))
         if args.candidate_llama_provider:
@@ -748,6 +768,25 @@ def main() -> int:
                     descriptor.cuda_stream,
                 ),
                 "baseline llama MMQ parity launch",
+            )
+        elif args.baseline_native_mmq:
+            descriptor_pointer = ctypes.pointer(descriptor)
+            descriptors = (ctypes.POINTER(PackedWeightDescriptor) * 1)(
+                descriptor_pointer
+            )
+            outputs = (ctypes.c_void_p * 1)(device_output)
+            runtime.check(
+                baseline(
+                    descriptors,
+                    device_input,
+                    outputs,
+                    1,
+                    args.rows,
+                    baseline_workspace,
+                    baseline_workspace_bytes,
+                    descriptor.cuda_stream,
+                ),
+                "baseline native MMVQ parity launch",
             )
         else:
             runtime.check(
@@ -882,6 +921,20 @@ def main() -> int:
                 args.warmups,
                 args.repetitions,
             )
+        elif args.baseline_native_mmq:
+            baseline_result = _time_native_mmq(
+                "baseline-native-mmvq",
+                baseline,
+                descriptor,
+                device_input,
+                device_output,
+                baseline_workspace,
+                baseline_workspace_bytes,
+                args.rows,
+                runtime,
+                args.warmups,
+                args.repetitions,
+            )
         else:
             baseline_result = _time(
                 "baseline",
@@ -981,9 +1034,9 @@ def main() -> int:
         speedup = baseline_result.median_ms / candidate_result.median_ms
         print(
             f"{args.encoding} {args.rows}x{args.input_dim}->{args.output_dim}: "
-            f"baseline={baseline_result.median_ms:.3f} ms, "
-            f"candidate={candidate_result.median_ms:.3f} ms, "
-            f"speedup={speedup:.3f}x, max_abs_error={max_abs_error:.3g}"
+            f"baseline={baseline_result.median_ms:.6f} ms, "
+            f"candidate={candidate_result.median_ms:.6f} ms, "
+            f"speedup={speedup:.6f}x, max_abs_error={max_abs_error:.3g}"
         )
     finally:
         # Retain CDLL references until every launch has synchronized.
@@ -995,6 +1048,8 @@ def main() -> int:
             baseline_provider_destroy(baseline_provider_context)
         if standalone_workspace is not None:
             runtime.free(standalone_workspace)
+        if baseline_workspace is not None:
+            runtime.free(baseline_workspace)
         del baseline_library, candidate_library
         if q8_sums is not None:
             runtime.free(q8_sums)

@@ -155,18 +155,49 @@ is still open. See the precise implementation matrix, measurements, and kernel
 boundary in
 [`docs/glimmer-support-todo.md`](docs/glimmer-support-todo.md).
 
-A source-bound 2026-08-15 K-Quant-17GB exact-zero-temperature benchmark on
-that same card uses the full 52-layer Muse-Glimmer-30B as the target—no tiny or
-surrogate target—and measures **78.608 target-only tok/s** and **271.244 DFlash
-tok/s median** (one warmup plus ten measured 32-token trials from the same
-41-token ATEM prompt). The DFlash mean was 271.792 tok/s, with samples from
-269.303 to 274.820 tok/s. DFlash accepted 28 of 34 proposals per trial and is
-a 3.451x speedup over target-only. Both paths produced canonical token hash
-`63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1`,
-reported zero CPU model rows, and sampled peak CUDA deltas of 18,949,865,472
-and 20,654,850,048 bytes. The accepted target path captures a complete greedy
-token as one CUDA graph replay, groups packed projections, and hands the
-second wide RMSNorm's exact Q8 activation directly to MMVQ.
+The latest source-bound K-Quant-17GB+DFlash search exceeds the 300-tok/s
+target on that same RTX 5090 while executing the complete 52-layer
+Muse-Glimmer-30B target. The retained exact combination measured **317.022
+tok/s median** over ten trials (316.869 mean, 315.214–318.853), and a paired
+seven-trial comparison measured 317.461 versus 316.353 tok/s for its production
+control. A clean source-default rebuild measured 316.687 median / 317.030 mean
+(315.868–319.865) and sampled 20,656,160,768 bytes of peak CUDA use. Every run
+used the same 41-token ATEM prompt and 32-token greedy decode, returned canonical
+hash `63baebaa0742852d37abf85e81c815430267789bdbb79591eb56a1e1a50b74b1`,
+accepted 28/34 DFlash proposals in three blocks, processed 37 target rows, and
+reported all 52 layers with zero CPU model rows.
+
+The retained packed-MMVQ shape computes two adjacent output channels per
+cooperative group, uses two output groups for Q4_K/Q6_K and one for Q5_K,
+keeps eight verifier rows per block, selects the interleaved DP4A schedule,
+loads reused Q8 activations through the read-only cache, predecodes Q6_K
+weights, and streams packed weights with `.cg`. Its exact single-run peak was
+321.238 tok/s. A 321.760-tok/s screening peak from Q5 groups=2 plus a
+128-register cap was rejected when its ten-run confirmation fell to 316.247.
+The checked-in 272-candidate matrix records every combination; attempts
+222–271 are 50 consecutive full-model candidates without a confirmed gain
+after the final improvement at attempt 221, with attempt 272 as an extra
+confirmation. Reproduce/rank it with
+[`tools/bench_muse_glimmer_kernel_matrix.py`](tools/bench_muse_glimmer_kernel_matrix.py)
+and the checked-in
+[`tools/muse_glimmer_kernel_matrix.json`](tools/muse_glimmer_kernel_matrix.json).
+
+The GPT-2-evo ThunderKittens attention swap was audited directly. Its packed,
+square BF16 MHA contract does not match Glimmer's Q32/KV2 or DFlash's
+Q32/KV8 unequal-length geometry, and attention was only about 3.8% of the
+profile while packed verification linears dominated. Two experimental TK Q4
+paths regressed sharply, so they were not retained. This workload's analogous
+large gain came from exact multi-output packed MMVQ, not from forcing an
+incompatible attention kernel. Megakernels remain enabled only where matched
+on/off measurements already prove a benefit.
+
+The earlier source-bound benchmark measured **78.608 target-only tok/s** and
+**271.244 DFlash tok/s median** before the multi-output MMVQ work. That
+historical DFlash run averaged 271.792 tok/s (269.303–274.820), accepted 28 of
+34 proposals, produced the same canonical hash, and reported zero CPU model
+rows. It remains the matched control for the earlier target graph, cooperative
+RMS, and packed-weight-hoist A/Bs below rather than the current throughput
+ceiling.
 
 The megakernels were retained from measured controls, not from launch count
 alone. Setting `NFN_GLIMMER_MMQ_MEGAKERNELS=0` in the **same binary** kept the
@@ -182,7 +213,7 @@ rows, memory, and zero-CPU counters. `NFN_GLIMMER_COOPERATIVE_BATCH_RMS=0` is
 the matched development control. Packed-weight block hoisting also remains
 enabled after an earlier exact compile-time A/B measured 158.779 tok/s off and
 235.657 tok/s on. The fresh source-built 40-kernel sidecar
-`d15e946e16b1ef5b643a4556f8f719e49efa1466ad12c4957dbcaaa73953e994`
+`ef9a8877679d69825ee3c7782e407d07f4bf7bfe19a065b2be7f30a0860767e8`
 passed memcheck, synccheck, initcheck, and racecheck with zero errors/hazards.
 
 The earlier 256.69-tok/s DFlash result used an approximate verifier route and
@@ -190,12 +221,14 @@ changed the canonical token hash, so it is not a production result. Exact
 DFlash speed depends heavily on acceptance: another prompt measured 73.60
 tok/s with 22 of 74 proposals accepted. Meta publishes 74.9/233.4 tok/s for an
 undisclosed RTX 5090 workload; the new exact NeuralFn numbers are numerically
-4.95% and 16.21% higher, but this is not a matched reproduction of Meta's
-undisclosed prompt and policy. A directly reproduced pinned llama.cpp build
+4.95% target-only and 35.83% higher for the latest DFlash verifier, but this is
+not a matched reproduction of Meta's undisclosed prompt and policy. A directly
+reproduced pinned llama.cpp build
 10349 (`62bf73d`) on the same 41-token prompt and 32-token greedy decode reached
-77.8 target-only and 225.7 DFlash tok/s. NeuralFn is 1.04% and 20.18% faster in
-that matched local comparison. No reproducible pinned ExecuTorch Glimmer
-artifact/command was available, so no ExecuTorch win is claimed.
+77.8 target-only and 225.7 DFlash tok/s. NeuralFn is 1.04% faster target-only
+and 40.46% faster with the latest verifier in that matched local comparison.
+No reproducible pinned ExecuTorch Glimmer artifact/command was available, so
+no ExecuTorch win is claimed.
 
 The release gate is executable with
 [`tools/qualify_muse_glimmer_gpu.py`](tools/qualify_muse_glimmer_gpu.py). It
