@@ -11,6 +11,82 @@ does not claim the raw checkpoint. This path imports neither `nfn_impl` nor
 Torch. It loads one `NativeInferenceModel`, creates one process-local
 `NativeInferenceSession`, and never falls back to a subprocess.
 
+## Zero-argument chat launcher
+
+On an interactive terminal, bare `nfn infer` opens a native-first launcher
+rather than the legacy graph-only picker. Every discovered resident artifact
+is labeled with its model, available weight profile, runtime class, context,
+and whether DFlash can be selected automatically. Choosing one is equivalent
+to passing its manifest with `--chat-mode transcript --temperature 1.0
+--top-p 0.95 --top-k 64`; the resident Rich TUI starts with the quality-first
+weight and optional-DFlash `auto` policy plus the Muse Glimmer model-card
+sampling policy.
+
+The launcher searches these bounded roots:
+
+- paths in `NEURALFN_INFER_ARTIFACT_PATHS`, separated by `os.pathsep`;
+- `NEURALFN_ARTIFACTS_DIR` when configured;
+- the current directory and its `artifacts/` child;
+- `~/NeuralFn/artifacts`; and
+- the first `tmp/` directory beside a sufficiently deep workspace ancestor,
+  such as `/var/mnt/disk2/tmp` for a workspace on `/var/mnt/disk2`.
+
+It walks at most three levels and 2,048 directories per root, ignores common
+VCS/build/dependency and pytest scratch trees, de-duplicates manifests, and
+shows at most the 24 newest valid choices. A manifest is listed only when it
+declares resident inference and at least one checkpoint path resolves to an
+existing file contained by the artifact root. Full schema, hash, capability,
+kernel, compatibility, and VRAM validation still occurs fail-closed when the
+user selects it; discovery itself does not allocate or hash multi-gigabyte
+weights.
+
+The menu always retains three recovery paths: **Open native chat...** accepts
+an exact artifact directory or manifest, **Scan another folder...** replaces
+the list with matches under that folder, and **Legacy graph inference...**
+opens the compatibility JSON-plus-weights picker. Bare non-TTY `nfn infer`
+does not start the interactive launcher, so scripts retain their existing
+one-shot argument requirements.
+
+## Zero-argument local server
+
+Start the same discovered native model as an OpenAI-compatible local server:
+
+```bash
+nfn infer serve
+```
+
+The literal `serve` subcommand selects the newest runnable manifest from the
+launcher roots above, uses automatic CUDA runtime and free-VRAM weight
+selection, and loads authenticated `dflash` and `mmproj` companions when they
+are present. It binds `127.0.0.1:8000` with no API key, admits one request at a
+time with no waiting queue, caps omitted request output at 512 tokens, and uses
+`temperature=1.0`, `top_p=0.95`, and `top_k=64`. Those one-session defaults are
+intentional: model, target/DFlash cache, tentative verification buffers, and
+workspace are all included in the load budget.
+
+Discovery is only selection; the normal manifest, digest, tokenizer,
+capability, kernel, compatibility, and measured-memory gates still run before
+Uvicorn binds. Automatic selection may choose a higher-fidelity variant when
+it fits, but a forced `--weight-precision k-quant-17gb` is accepted on a 32 GB
+GPU and never rejected simply because more memory is available. Override only
+what differs:
+
+```bash
+nfn infer serve --checkpoint ARTIFACT --port 9001 --session-limit 2
+```
+
+Increasing `--session-limit` or `--queue-capacity` increases the cache
+reservation and may change which precision fits. The compatibility form
+`nfn infer --checkpoint ARTIFACT --serve` remains supported. Non-loopback
+binding retains the existing API-key requirement.
+
+Muse Glimmer output is ATEM protocol, not plain assistant text. Buffered Chat
+Completions parse the completed envelope and return only `to=user`. Streaming
+Chat Completions hold ATEM fragments until that channel split is known, then
+emit only visible text; private `to=self` reasoning is never sent to the
+client. If the token limit ends inside reasoning, visible content is empty.
+Other renderer profiles retain immediate committed-token streaming.
+
 An exact `gpt2_moa` artifact is created by migrating its source-bound sibling
 `model_XXXXXXXX.moa.json`, not by binding the dense-v5 `.bin` alone. The
 metadata must name that `.bin` and its empty `DONE_XXXXXXXX`, match the supplied
@@ -108,7 +184,7 @@ nfn infer \
   --weight-precision auto \
   --speculative-decoding auto \
   --companion-checkpoint dflash \
-  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops_strict.so \
   --prompt "Explain the local/global attention schedule." \
   --native-info
 ```
@@ -125,6 +201,18 @@ an upper bound on physical VRAM: explicitly selecting `k-quant-17gb` on a
 32-GB or larger device is valid when the authenticated target, requested
 companions, caches, workspace, and reserve fit. CPU `auto` uses the
 authenticated primary and does not query VRAM.
+
+If `--cuda-runtime-lib` is omitted, the resident resolver honors
+`NFN_CUDA_RUNTIME_LIB`, checks toolkit and dynamic-loader directories, Python
+CUDA 13/12 package layouts, and bounded workspace-scratch package layouts, then
+tries `libcudart.so.13`, the unversioned soname, CUDA 12, and CUDA 11. This is
+separate from the kernel driver: a working `nvidia-smi` proves the device and
+NVML driver path, but does not put libcudart in the process loader path. Once a
+wheel runtime is found, adjacent CUDA BLAS libraries are loaded globally before
+the strict Tile sidecar. Automatic Tile resolution prefers
+`libnfn_native_train_tile_ops_strict.so` from the active scripts directory,
+package, or repository build before considering the ordinary training library.
+An explicit runtime or Tile path remains a strict pin and fails closed.
 
 DFlash requires the lossless full/hybrid target cache. `auto` may omit an
 unavailable assistant only before model/session mutation; `required` fails.
@@ -211,9 +299,11 @@ chat turn rather than a repeated-token capacity fixture. It records the exact
 rendered prompt token IDs and digest, model-load time, new/reused prefill
 tokens, separate prefill and decode times, target/DFlash steps and acceptance,
 generated IDs/text, resident counters, and sampled free/total VRAM. Use
-`--compute-mode strict` for exact-zero strict model computation or
-`--compute-mode throughput` for deterministic top-k-one positive-temperature
-execution. Always report the selected mode; the two are not interchangeable.
+`--compute-mode strict` for exact-zero strict model computation,
+`--compute-mode throughput` for a deterministic top-k-one positive-temperature
+control, or `--compute-mode model-card` for the production `temperature=1.0,
+top_p=0.95, top_k=64` sampling policy. Always report the selected mode; these
+policies are not interchangeable.
 
 ```bash
 python tools/bench_muse_glimmer_native_chat.py \
@@ -423,6 +513,27 @@ The resident CLI accepts:
 - `--tile-ops-lib PATH`, optional `--cuda-runtime-lib PATH_OR_SONAME`, and
   `--cuda-device INDEX`
 - `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`, and `--seed`
+
+The resident CLI defaults to the Muse Glimmer model-card values:
+`--temperature 1.0 --top-p 0.95 --top-k 64`. Explicit overrides remain
+available and are honored without silently changing the requested policy.
+Greedy measurements are diagnostic controls only; they are not the default
+chat semantics or a substitute for qualifying sampled DFlash performance.
+
+The TUI assistant-panel metric is `tok/s (N total/R reasoning)`. `N` counts
+every committed output token used in the throughput denominator. `R` counts
+the generated token IDs whose decoded bytes fall inside private ATEM
+`to=self` message content; ATEM opener/terminator tokens remain in `N` but are
+not labeled as reasoning. Private reasoning text remains hidden and is not
+stored in transcript history.
+
+Positive-temperature DFlash defaults to a four-token target-verification cap;
+greedy DFlash retains the canonical 15 proposals. Proposal truncation is a
+lossless speculative-decoding scheduling choice, not a sampling-policy rewrite:
+accepted tokens and rejection corrections still use the pinned raw-assistant
+`q`, processed-target `p`, and positive residual. For controlled A/B work,
+`NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP=1..15` pins another sampled cap;
+missing or invalid values resolve to four.
 
 `auto` is the default and resolves only through joint artifact/binding proof.
 For a bound dense-v5 or canonical LLaMA artifact with the current resident ABI,

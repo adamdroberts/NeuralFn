@@ -472,6 +472,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint artifacts/glimmer-kquant --runtime native-cuda --weight-precision auto --companion-checkpoint dflash --speculative-decoding auto --prompt "Hello"
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
+          nfn infer serve
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2-native --serve
 
         Interactive inference defaults to transcript mode. Use
@@ -937,7 +938,11 @@ def _lightweight_muse_glimmer_lora_migrate_main(
 
 
 def _is_native_serve_request(argv: list[str]) -> bool:
-    return bool(argv and argv[0] == "infer" and _has_any(argv, "--serve"))
+    return bool(
+        argv
+        and argv[0] == "infer"
+        and (_has_any(argv, "--serve") or argv[1:2] == ["serve"])
+    )
 
 
 def _read_native_ir_manifest_candidate(candidate: Path) -> dict | None:
@@ -1013,6 +1018,396 @@ def _resolve_native_ir_manifest(argv: list[str]) -> Path | None:
 
 def _is_native_ir_infer_request(argv: list[str]) -> bool:
     return _resolve_native_ir_manifest(argv) is not None
+
+
+_NATIVE_INFER_MANIFEST_NAME = "native-execution-manifest.json"
+_NATIVE_INFER_SEARCH_ENV = "NEURALFN_INFER_ARTIFACT_PATHS"
+_NATIVE_INFER_SKIPPED_DIRECTORIES = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "node_modules",
+}
+
+
+def _is_native_infer_launcher_request(
+    argv: list[str],
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> bool:
+    """Return whether a bare interactive infer command needs the artifact launcher."""
+
+    if argv != ["infer"]:
+        return False
+    input_tty = sys.stdin.isatty() if stdin_isatty is None else bool(stdin_isatty)
+    output_tty = sys.stdout.isatty() if stdout_isatty is None else bool(stdout_isatty)
+    return input_tty and output_tty
+
+
+def _native_infer_default_search_roots(
+    *,
+    cwd: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Return bounded artifact roots, including scratch beside a mounted workspace."""
+
+    working_dir = (cwd or Path.cwd()).expanduser()
+    environment = os.environ if environ is None else environ
+    candidates: list[Path] = []
+    configured_paths = str(environment.get(_NATIVE_INFER_SEARCH_ENV, "") or "")
+    if configured_paths:
+        candidates.extend(
+            Path(raw).expanduser()
+            for raw in configured_paths.split(os.pathsep)
+            if raw.strip()
+        )
+    configured_artifacts = str(environment.get("NEURALFN_ARTIFACTS_DIR", "") or "").strip()
+    if configured_artifacts:
+        candidates.append(Path(configured_artifacts).expanduser())
+    candidates.extend(
+        (
+            working_dir,
+            working_dir / "artifacts",
+            Path.home() / "NeuralFn" / "artifacts",
+        )
+    )
+
+    # Workstations commonly keep a strict/immutable OS volume and put large
+    # checkpoints in a sibling scratch tree on the workspace mount.  Only
+    # inspect a bounded `tmp` directory on a sufficiently deep ancestor; this
+    # finds /var/mnt/<volume>/tmp without walking /var/tmp or the filesystem.
+    for ancestor in working_dir.parents:
+        if len(ancestor.parts) < 4:
+            continue
+        scratch = ancestor / "tmp"
+        if scratch.is_dir():
+            candidates.append(scratch)
+            break
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            key = str(candidate.resolve())
+        except OSError:
+            key = str(candidate.absolute())
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(candidate)
+    return tuple(roots)
+
+
+def _native_infer_manifest_candidates(
+    root: Path,
+    *,
+    max_depth: int = 3,
+    max_directories: int = 2_048,
+):
+    """Yield Native Execution manifests without an unbounded filesystem walk."""
+
+    requested = root.expanduser()
+    if requested.is_file():
+        if requested.name == _NATIVE_INFER_MANIFEST_NAME:
+            yield requested
+        return
+    if not requested.is_dir():
+        return
+
+    queue: list[tuple[Path, int]] = [(requested, 0)]
+    visited = 0
+    while queue and visited < max_directories:
+        directory, depth = queue.pop(0)
+        visited += 1
+        manifest = directory / _NATIVE_INFER_MANIFEST_NAME
+        if manifest.is_file():
+            yield manifest
+            # An artifact is a leaf for launcher discovery. Companion files do
+            # not contain independently runnable target manifests.
+            continue
+        if depth >= max_depth:
+            continue
+        try:
+            children = sorted(directory.iterdir(), key=lambda path: path.name.lower())
+        except OSError:
+            continue
+        for child in children:
+            name = child.name.lower()
+            if (
+                name in _NATIVE_INFER_SKIPPED_DIRECTORIES
+                or name.startswith("nfn-pytest")
+                or name.startswith("pytest-")
+            ):
+                continue
+            try:
+                is_directory = child.is_dir() and not child.is_symlink()
+            except OSError:
+                continue
+            if is_directory:
+                queue.append((child, depth + 1))
+
+
+def _native_infer_descriptor_file(
+    manifest_path: Path,
+    descriptor: object,
+) -> Path | None:
+    if not isinstance(descriptor, dict):
+        return None
+    raw_path = descriptor.get("artifact_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return None
+    relative = Path(raw_path)
+    if relative.is_absolute():
+        return None
+    try:
+        artifact_root = manifest_path.parent.resolve()
+        candidate = (artifact_root / relative).resolve(strict=True)
+        candidate.relative_to(artifact_root)
+    except (OSError, ValueError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def _native_infer_manifest_summary(manifest_path: Path) -> dict[str, object] | None:
+    payload = _read_native_ir_manifest_candidate(manifest_path)
+    if payload is None:
+        return None
+    capabilities = payload.get("capabilities")
+    if not isinstance(capabilities, dict) or capabilities.get("resident_inference") is not True:
+        return None
+
+    descriptors: list[tuple[str, object]] = [("primary", payload.get("checkpoint"))]
+    variants = payload.get("checkpoint_variants")
+    if isinstance(variants, dict):
+        descriptors.extend((str(name), descriptor) for name, descriptor in variants.items())
+    runnable_variants = [
+        name
+        for name, descriptor in descriptors
+        if _native_infer_descriptor_file(manifest_path, descriptor) is not None
+    ]
+    if not runnable_variants:
+        return None
+
+    model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+    raw_name = next(
+        (
+            str(model.get(field)).strip()
+            for field in ("name", "model_type", "architecture", "family")
+            if model.get(field)
+        ),
+        manifest_path.parent.name,
+    )
+    normalized_name = raw_name.lower().replace("-", "_")
+    display_name = "Muse Glimmer" if "muse_glimmer" in normalized_name else raw_name
+
+    precision_names = [name for name in runnable_variants if name != "primary"]
+    if not precision_names:
+        checkpoint = payload.get("checkpoint")
+        if isinstance(checkpoint, dict) and checkpoint.get("weight_precision"):
+            precision_names.append(str(checkpoint["weight_precision"]))
+
+    companions = payload.get("companion_checkpoints")
+    available_companions: list[str] = []
+    if isinstance(companions, dict):
+        available_companions = sorted(
+            str(name)
+            for name, descriptor in companions.items()
+            if _native_infer_descriptor_file(manifest_path, descriptor) is not None
+        )
+    limits = payload.get("context_limits")
+    context = limits.get("max_context_tokens") if isinstance(limits, dict) else None
+    try:
+        modified = manifest_path.stat().st_mtime
+    except OSError:
+        modified = 0.0
+    return {
+        "manifest": manifest_path,
+        "display_name": display_name,
+        "precisions": tuple(precision_names),
+        "companions": tuple(available_companions),
+        "context": context,
+        "whole_model_cuda": bool(
+            isinstance(capabilities, dict) and capabilities.get("whole_model_cuda")
+        ),
+        "modified": modified,
+    }
+
+
+def _discover_native_infer_artifacts(
+    search_roots: tuple[Path, ...] | list[Path] | None = None,
+    *,
+    cwd: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> list[dict[str, object]]:
+    roots = (
+        tuple(search_roots)
+        if search_roots is not None
+        else _native_infer_default_search_roots(cwd=cwd, environ=environ)
+    )
+    summaries: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for root in roots:
+        for manifest in _native_infer_manifest_candidates(Path(root)):
+            try:
+                key = str(manifest.resolve())
+            except OSError:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            summary = _native_infer_manifest_summary(manifest)
+            if summary is not None:
+                summaries.append(summary)
+    return sorted(
+        summaries,
+        key=lambda item: (float(item.get("modified", 0.0)), str(item["manifest"])),
+        reverse=True,
+    )
+
+
+def _native_infer_custom_artifact_choice(raw: str) -> dict[str, str]:
+    requested = str(raw or "").strip()
+    if not requested:
+        raise ValueError("Enter an artifact directory or native-execution-manifest.json path")
+    manifest = _resolve_native_ir_manifest(["infer", "--checkpoint", requested])
+    if manifest is None or _native_infer_manifest_summary(manifest) is None:
+        raise ValueError(
+            "Path is not a runnable Native Execution artifact with a contained checkpoint"
+        )
+    return {"launcher_kind": "native", "checkpoint": str(manifest)}
+
+
+def _native_infer_custom_search_choice(raw: str) -> dict[str, str]:
+    requested = Path(str(raw or "").strip()).expanduser()
+    if not requested.is_dir():
+        raise ValueError("Search path must be an existing directory")
+    if not _discover_native_infer_artifacts([requested]):
+        raise ValueError("No runnable Native Execution artifacts were found below that directory")
+    return {"launcher_kind": "scan", "search_root": str(requested)}
+
+
+def _native_infer_launcher_options(summaries: list[dict[str, object]]):
+    from nfn_impl import OptionChoice
+
+    options = []
+    for summary in summaries[:24]:
+        manifest = Path(summary["manifest"])
+        precisions = tuple(summary.get("precisions", ()))
+        companions = tuple(summary.get("companions", ()))
+        precision_text = ", ".join(str(value) for value in precisions) or "primary"
+        runtime_text = "native CUDA" if summary.get("whole_model_cuda") else "resident"
+        context = summary.get("context")
+        context_text = f"ctx {int(context):,}" if isinstance(context, int) else "ctx ?"
+        dflash_text = "; DFlash auto" if "dflash" in companions else ""
+        options.append(
+            OptionChoice(
+                f"{summary['display_name']} ({precision_text})",
+                f"{runtime_text} transcript chat; model-card sampling; "
+                f"{context_text}{dflash_text}; {manifest.parent}",
+                {"launcher_kind": "native", "checkpoint": str(manifest)},
+                recommended=not options,
+            )
+        )
+    options.extend(
+        (
+            OptionChoice(
+                "Open native chat...",
+                "Enter an artifact directory or manifest and open the multi-turn resident chat TUI.",
+                {"launcher_kind": "native"},
+                recommended=not options,
+                custom_prompt="Native artifact directory or manifest",
+                parser=_native_infer_custom_artifact_choice,
+            ),
+            OptionChoice(
+                "Scan another folder...",
+                "Find resident Native Execution artifacts below a folder, then choose one.",
+                {"launcher_kind": "scan"},
+                custom_prompt="Folder to scan",
+                parser=_native_infer_custom_search_choice,
+            ),
+            OptionChoice(
+                "Legacy graph inference...",
+                "Open the older graph JSON plus weights launcher.",
+                {"launcher_kind": "legacy"},
+            ),
+        )
+    )
+    return options
+
+
+def _choose_native_infer_launch(
+    summaries: list[dict[str, object]],
+) -> dict[str, object]:
+    from nfn_impl import Question, run_curses_questionnaire
+
+    question = Question(
+        "launcher",
+        "Choose a resident model to start multi-turn chat.",
+        lambda _state: _native_infer_launcher_options(summaries),
+        lambda _state, _explicit: True,
+    )
+    return dict(run_curses_questionnaire("nfn infer", [question], {}))
+
+
+def _native_infer_launcher_main(
+    argv: list[str] | None = None,
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    if not _is_native_infer_launcher_request(
+        tokens,
+        stdin_isatty=stdin_isatty,
+        stdout_isatty=stdout_isatty,
+    ):
+        return 2
+    summaries = _discover_native_infer_artifacts()
+    try:
+        while True:
+            choice = _choose_native_infer_launch(summaries)
+            kind = str(choice.get("launcher_kind") or "")
+            if kind == "scan":
+                search_root = Path(str(choice.get("search_root") or "")).expanduser()
+                summaries = _discover_native_infer_artifacts([search_root])
+                continue
+            if kind == "legacy":
+                impl = _load_full_impl()
+                return int(
+                    impl.main(
+                        ["infer"],
+                        stdin_isatty=True,
+                        stdout_isatty=True,
+                    )
+                )
+            if kind == "native":
+                checkpoint = str(choice.get("checkpoint") or "").strip()
+                if not checkpoint:
+                    return 2
+                return _native_ir_infer_main(
+                    [
+                        "infer",
+                        "--checkpoint",
+                        checkpoint,
+                        "--chat-mode",
+                        "transcript",
+                        "--temperature",
+                        "1.0",
+                        "--top-k",
+                        "64",
+                        "--top-p",
+                        "0.95",
+                    ],
+                    stdin_isatty=True,
+                    stdout_isatty=True,
+                )
+            return 2
+    except KeyboardInterrupt:
+        return 130
 
 
 def _legacy_infer_inputs(argv: list[str]) -> tuple[str | None, str | None] | None:
@@ -1239,9 +1634,24 @@ def _native_ir_infer_main(
             "can reach their user-directed answer)."
         ),
     )
-    parser.add_argument("--temperature", type=float, default=0.8)
-    parser.add_argument("--top-k", type=int, default=32)
-    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=1.0,
+        help="Sampling temperature (default: 1.0, the Muse Glimmer model-card value).",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=64,
+        help="Sampling candidate count (default: 64, the Muse Glimmer model-card value).",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.95,
+        help="Nucleus probability (default: 0.95, the Muse Glimmer model-card value).",
+    )
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--native-info", action="store_true")
     try:
@@ -1353,8 +1763,10 @@ def _native_serve_main(argv: list[str] | None = None) -> int:
     import argparse
 
     tokens = list(sys.argv[1:] if argv is None else argv)
+    if tokens[1:2] == ["serve"]:
+        tokens = [tokens[0], "--serve", *tokens[2:]]
     parser = argparse.ArgumentParser(
-        prog="nfn infer --serve",
+        prog="nfn infer serve",
         description=(
             "Serve one proven resident Native Execution artifact through a lean, "
             "bounded OpenAI-compatible API."
@@ -1366,9 +1778,12 @@ def _native_serve_main(argv: list[str] | None = None) -> int:
         "--checkpoint",
         "--native-checkpoint",
         dest="checkpoint",
-        required=True,
+        required=False,
         metavar="ARTIFACT",
-        help="Native artifact directory or native-execution-manifest.json path.",
+        help=(
+            "Native artifact directory or manifest. If omitted, use the newest "
+            "runnable artifact discovered by the native inference launcher."
+        ),
     )
     parser.add_argument("--runtime", choices=("auto", "cpu", "native-cuda"), default="auto")
     parser.add_argument(
@@ -1480,6 +1895,34 @@ def _native_serve_main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        discovered_summary = None
+        if args.checkpoint is None:
+            summaries = _discover_native_infer_artifacts()
+            if not summaries:
+                raise FileNotFoundError(
+                    "No runnable native inference artifact was discovered. Set "
+                    "NEURALFN_INFER_ARTIFACT_PATHS or pass --checkpoint once."
+                )
+            discovered_summary = summaries[0]
+            args.checkpoint = str(discovered_summary["manifest"])
+            if not args.companion_checkpoint:
+                available = set(discovered_summary.get("companions", ()))
+                args.companion_checkpoint = [
+                    name for name in ("dflash", "mmproj") if name in available
+                ]
+            if "--queue-capacity" not in tokens:
+                args.queue_capacity = 0
+            if "--session-limit" not in tokens:
+                args.session_limit = 1
+            if "--max-output-tokens" not in tokens:
+                args.max_output_tokens = 512
+            companion_text = ",".join(args.companion_checkpoint) or "none"
+            print(
+                "Native serve auto-selected "
+                f"{args.checkpoint} (companions={companion_text}, "
+                f"precision={args.weight_precision}).",
+                file=sys.stderr,
+            )
         config = NativeServeConfig(
             artifact=Path(args.checkpoint),
             host=args.host,
@@ -4568,6 +5011,16 @@ def main(
         return _blocked_legacy_infer_main(tokens)
     if _is_native_serve_request(tokens):
         return _native_serve_main(tokens)
+    if _is_native_infer_launcher_request(
+        tokens,
+        stdin_isatty=stdin_isatty,
+        stdout_isatty=stdout_isatty,
+    ):
+        return _native_infer_launcher_main(
+            tokens,
+            stdin_isatty=stdin_isatty,
+            stdout_isatty=stdout_isatty,
+        )
     if _is_native_ir_infer_request(tokens):
         return _native_ir_infer_main(
             tokens,
@@ -4621,6 +5074,8 @@ if __name__ == "__main__":
         main = _blocked_legacy_infer_main
     elif _is_native_serve_request(sys.argv[1:]):
         main = _native_serve_main
+    elif _is_native_infer_launcher_request(sys.argv[1:]):
+        main = _native_infer_launcher_main
     elif _is_native_ir_infer_request(sys.argv[1:]):
         main = _native_ir_infer_main
     elif _legacy_infer_inputs(sys.argv[1:]) is not None:
@@ -4664,6 +5119,8 @@ if __name__ == "__main__":
     if _is_blocked_legacy_infer_request(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_native_serve_request(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_native_infer_launcher_request(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_native_ir_infer_request(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))

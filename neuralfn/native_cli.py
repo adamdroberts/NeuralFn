@@ -52,9 +52,9 @@ class NativeArtifactCLIConfig:
     system_prompt: str = ""
     chat_template: str = "auto"
     max_new_tokens: int = 64
-    temperature: float = 0.8
-    top_k: int | None = 32
-    top_p: float = 1.0
+    temperature: float = 1.0
+    top_k: int | None = 64
+    top_p: float = 0.95
     seed: int = 1337
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     model_load: NativeModelLoadConfig = field(default_factory=NativeModelLoadConfig)
@@ -236,7 +236,6 @@ def run_native_artifact_cli(
                         "/clear, /help, /exit",
                         file=output,
                     )
-
             def decode_prefilled(prompt_token_ids: Sequence[int]):
                 if len(prompt_token_ids) + config.max_new_tokens > context_limit:
                     raise NativeChatConfigurationError(
@@ -260,6 +259,8 @@ def run_native_artifact_cli(
                     decoded,
                     renderer,
                     delimiters=delimiters,
+                    token_ids=result.token_ids,
+                    codec=text_codec,
                 )
                 return (
                     response,

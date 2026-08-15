@@ -47,10 +47,12 @@ from .native_inference import (
     NativeModelLoadConfig,
 )
 from .native_chat import (
+    MUSE_GLIMMER_ATEM_PROFILE,
     NativeChatConfigurationError,
     NativeChatMessage,
     NativeTextCodec,
     load_native_text_codec,
+    parse_native_assistant_response,
     resolve_native_chat_renderer,
 )
 from ._native_prefix_cache import NativePrefixCache
@@ -837,7 +839,7 @@ class NativeServingRuntime:
         if max_new_tokens is None:
             max_new_tokens = legacy_max
         if max_new_tokens is None:
-            max_new_tokens = min(16, self.max_output_tokens)
+            max_new_tokens = self.max_output_tokens
         if (
             isinstance(max_new_tokens, bool)
             or not isinstance(max_new_tokens, int)
@@ -858,8 +860,9 @@ class NativeServingRuntime:
         try:
             generation = GenerationConfig(
                 max_new_tokens=max_new_tokens,
-                temperature=payload.get("temperature", 0.8),
-                top_p=payload.get("top_p", 1.0),
+                temperature=payload.get("temperature", 1.0),
+                top_k=64,
+                top_p=payload.get("top_p", 0.95),
                 seed=payload.get("seed"),
             )
         except (TypeError, ValueError) as exc:
@@ -934,7 +937,14 @@ class NativeServingRuntime:
             if cancel_event is not None and cancel_event.is_set():
                 session.cancel()
             result = session.decode(request.generation, on_token=committed)
-            return _CompletedChat(native=result, text=self.codec.decode(result.token_ids))
+            raw_text = self.codec.decode(result.token_ids)
+            parsed = parse_native_assistant_response(
+                raw_text,
+                self.renderer,  # type: ignore[arg-type]
+                token_ids=result.token_ids,
+                codec=self.codec,  # type: ignore[arg-type]
+            )
+            return _CompletedChat(native=result, text=parsed.visible_text)
 
     def close(self) -> None:
         first_error: BaseException | None = None
@@ -1961,8 +1971,14 @@ def create_native_inference_app(
             events: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
             cancel_event = threading.Event()
             decoder = runtime.codec.incremental_decoder()
+            buffers_atem = runtime.renderer.name == MUSE_GLIMMER_ATEM_PROFILE
 
             def committed(event: GenerationEvent) -> None:
+                if buffers_atem:
+                    # ATEM can begin with a private `to=self` message. Do not
+                    # expose any continuation bytes until the completed
+                    # envelope has been parsed into its user-directed channel.
+                    return
                 fragment = decoder.push(event.token_id)
                 if fragment:
                     queued = asyncio.run_coroutine_threadsafe(
@@ -1980,9 +1996,13 @@ def create_native_inference_app(
                             cancel_event=cancel_event,
                         )
                     )
-                    tail = decoder.finish()
-                    if tail:
-                        await events.put(("token", tail))
+                    if buffers_atem:
+                        if completed.text:
+                            await events.put(("token", completed.text))
+                    else:
+                        tail = decoder.finish()
+                        if tail:
+                            await events.put(("token", tail))
                     await events.put(("done", completed))
                 except Exception as exc:
                     await events.put(("error", exc))

@@ -29,6 +29,9 @@ def test_rich_native_tui_renders_banner_turn_metrics_and_hidden_reasoning() -> N
     config = NativeArtifactCLIConfig(
         artifact=Path("/models/glimmer"),
         max_new_tokens=512,
+        temperature=1.0,
+        top_k=64,
+        top_p=0.95,
         model_load=NativeModelLoadConfig(
             runtime="native-cuda",
             weight_precision="k-quant-17gb",
@@ -58,6 +61,7 @@ def test_rich_native_tui_renders_banner_turn_metrics_and_hidden_reasoning() -> N
         response=NativeAssistantResponse(
             visible_text="I am doing well.",
             reasoning_text="private",
+            reasoning_tokens=2,
             used_channel_protocol=True,
             final_channel_complete=True,
         ),
@@ -82,8 +86,12 @@ def test_rich_native_tui_renders_banner_turn_metrics_and_hidden_reasoning() -> N
     assert "How are you?" in rendered
     assert "I am doing well." in rendered
     assert "30.0 tok/s" in rendered
-    assert "DFlash 12/15 accepted" in rendered
-    assert "ATEM reasoning hidden" in rendered
+    assert "3 total/2 reasoning" in rendered
+    assert "DFlash 12/15" in rendered
+    assert "reasoning hidden" in rendered
+    assert "sampled" in rendered
+    assert "top_k=64" in rendered
+    assert "top_p=0.95" in rendered
     assert "private" not in rendered
     assert "\x1b[" in rendered
 
@@ -98,6 +106,7 @@ def test_rich_native_tui_explains_missing_final_without_showing_raw_text() -> No
         response=NativeAssistantResponse(
             visible_text="",
             reasoning_text="do not display",
+            reasoning_tokens=3,
             raw_text=" to=self<|message|>do not display",
             used_channel_protocol=True,
             final_channel_complete=False,

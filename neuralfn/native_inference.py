@@ -24,6 +24,7 @@ import importlib
 import json
 import math
 from pathlib import Path
+import sys
 import threading
 from typing import Any, Callable, Mapping, Sequence
 
@@ -67,6 +68,14 @@ _WEIGHT_FIDELITY_ORDER = (
 _MODEL_RUNTIMES = frozenset({"auto", "cpu", "native-cuda"})
 _SPECULATIVE_MODES = frozenset({"off", "auto", "required"})
 _GIB = 1 << 30
+_CUDA_RUNTIME_NAMES = (
+    "libcudart.so.13",
+    "libcudart.so",
+    "libcudart.so.12",
+    "libcudart.so.11.0",
+)
+_PRELOADED_CUDA_LIBRARIES: dict[str, Any] = {}
+_PRELOADED_CUDA_LIBRARIES_LOCK = threading.Lock()
 
 
 class NativeInferenceError(RuntimeError):
@@ -350,8 +359,13 @@ def _resolve_model_tile_ops_library(config: NativeModelLoadConfig) -> str:
         if environment:
             raw_candidates.append(environment)
         package_dir = Path(__file__).resolve().parent
+        scripts_dir = Path(sys.executable).resolve().parent
         raw_candidates.extend(
             (
+                scripts_dir / "libnfn_native_train_tile_ops_strict.so",
+                package_dir / "libnfn_native_train_tile_ops_strict.so",
+                package_dir.parent / "build" / "libnfn_native_train_tile_ops_strict.so",
+                scripts_dir / "libnfn_native_train_tile_ops.so",
                 package_dir / "libnfn_native_train_tile_ops.so",
                 package_dir.parent / "build" / "libnfn_native_train_tile_ops.so",
             )
@@ -957,17 +971,163 @@ def _binding_whole_model_cuda(manifest: Mapping[str, Any], binding: Any) -> bool
     return artifact_value and binding_value
 
 
-def _query_cuda_memory(config: NativeModelLoadConfig) -> tuple[int, int]:
-    candidates = (
-        (config.cuda_runtime_lib,)
-        if config.cuda_runtime_lib is not None
-        else ("libcudart.so", "libcudart.so.12", "libcudart.so.11.0")
+def _mounted_workspace_scratch_roots(anchors: Sequence[Path]) -> tuple[Path, ...]:
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for anchor in anchors:
+        for ancestor in anchor.expanduser().resolve().parents:
+            if len(ancestor.parts) < 4:
+                continue
+            scratch = ancestor / "tmp"
+            if not scratch.is_dir():
+                continue
+            key = str(scratch.resolve())
+            if key not in seen:
+                roots.append(scratch)
+                seen.add(key)
+            break
+    return tuple(roots)
+
+
+def _cuda_library_directories(
+    *,
+    environ: Mapping[str, str] | None = None,
+    search_paths: Sequence[str | Path] | None = None,
+    anchors: Sequence[Path] | None = None,
+) -> tuple[Path, ...]:
+    """Find bounded CUDA library roots, including pip and workspace scratch installs."""
+
+    environment = os.environ if environ is None else environ
+    candidates: list[Path] = []
+    for variable in ("CUDA_HOME", "CUDA_PATH"):
+        raw = str(environment.get(variable, "") or "").strip()
+        if raw:
+            root = Path(raw).expanduser()
+            candidates.extend((root / "lib64", root / "targets" / "x86_64-linux" / "lib"))
+    for raw in str(environment.get("LD_LIBRARY_PATH", "") or "").split(os.pathsep):
+        if raw.strip():
+            candidates.append(Path(raw).expanduser())
+    candidates.extend(
+        (
+            Path("/usr/local/cuda/lib64"),
+            Path("/usr/local/cuda/targets/x86_64-linux/lib"),
+            Path("/opt/cuda/lib64"),
+        )
     )
+
+    python_roots = (
+        tuple(Path(value).expanduser() for value in search_paths)
+        if search_paths is not None
+        else tuple(Path(value) for value in sys.path if value)
+    )
+    for root in python_roots:
+        candidates.extend(
+            (
+                root / "nvidia" / "cu13" / "lib",
+                root / "nvidia" / "cu12" / "lib",
+                root / "nvidia" / "cuda_runtime" / "lib",
+            )
+        )
+
+    scratch_anchors = (
+        tuple(anchors)
+        if anchors is not None
+        else (Path.cwd(), Path(__file__).resolve())
+    )
+    for scratch in _mounted_workspace_scratch_roots(scratch_anchors):
+        try:
+            scratch_stat = scratch.stat()
+            effective_uid = getattr(os, "geteuid", lambda: scratch_stat.st_uid)()
+            if (
+                scratch_stat.st_uid not in {0, effective_uid}
+                or scratch_stat.st_mode & 0o022
+            ):
+                continue
+            children = sorted(
+                (
+                    path
+                    for path in scratch.iterdir()
+                    if path.is_dir() and not path.is_symlink()
+                ),
+                key=lambda path: path.name.lower(),
+            )[:512]
+        except OSError:
+            continue
+        for child in children:
+            if child.name.startswith(("nfn-pytest", "pytest-")):
+                continue
+            candidates.extend(
+                (
+                    child / "nvidia" / "cu13" / "lib",
+                    child / "nvidia" / "cu12" / "lib",
+                    child / "nvidia" / "cuda_runtime" / "lib",
+                )
+            )
+            try:
+                python_sites = child.glob("lib/python*/site-packages")
+                for site in python_sites:
+                    candidates.extend(
+                        (
+                            site / "nvidia" / "cu13" / "lib",
+                            site / "nvidia" / "cu12" / "lib",
+                            site / "nvidia" / "cuda_runtime" / "lib",
+                        )
+                    )
+            except OSError:
+                continue
+
+    directories: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            if not candidate.is_dir():
+                continue
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        directories.append(resolved)
+    return tuple(directories)
+
+
+def _cuda_runtime_candidates(
+    config: NativeModelLoadConfig,
+    *,
+    environ: Mapping[str, str] | None = None,
+    search_paths: Sequence[str | Path] | None = None,
+    anchors: Sequence[Path] | None = None,
+) -> tuple[str, ...]:
+    if config.cuda_runtime_lib is not None:
+        return (config.cuda_runtime_lib,)
+    environment = os.environ if environ is None else environ
+    candidates: list[str] = []
+    configured = str(environment.get("NFN_CUDA_RUNTIME_LIB", "") or "").strip()
+    if configured:
+        candidates.append(str(Path(configured).expanduser()))
+    for directory in _cuda_library_directories(
+        environ=environment,
+        search_paths=search_paths,
+        anchors=anchors,
+    ):
+        candidates.extend(str(directory / name) for name in _CUDA_RUNTIME_NAMES)
+    candidates.extend(_CUDA_RUNTIME_NAMES)
+    return tuple(dict.fromkeys(candidates))
+
+
+def _load_cuda_runtime(
+    config: NativeModelLoadConfig,
+) -> tuple[Any, str, tuple[str, ...]]:
+    candidates = _cuda_runtime_candidates(config)
     library = None
+    selected = ""
     last_error: OSError | None = None
     for library_name in candidates:
         try:
             library = ctypes.CDLL(library_name)
+            selected = library_name
             break
         except OSError as exc:
             last_error = exc
@@ -976,6 +1136,35 @@ def _query_cuda_memory(config: NativeModelLoadConfig) -> tuple[int, int]:
             "CUDA runtime could not be loaded for free-memory selection: "
             + ", ".join(candidates)
         ) from last_error
+    return library, selected, candidates
+
+
+def _preload_cuda_sidecar_dependencies(cuda_runtime_lib: str) -> None:
+    """Make CUDA BLAS sonames beside a resolved pip runtime visible to dlopen."""
+
+    runtime_path = Path(cuda_runtime_lib)
+    if not runtime_path.is_absolute():
+        return
+    library_dir = runtime_path.parent
+    mode = getattr(ctypes, "RTLD_GLOBAL", os.RTLD_GLOBAL)
+    with _PRELOADED_CUDA_LIBRARIES_LOCK:
+        for name in ("libcublasLt.so.13", "libcublas.so.13"):
+            candidate = library_dir / name
+            if not candidate.is_file():
+                continue
+            key = str(candidate.resolve())
+            if key in _PRELOADED_CUDA_LIBRARIES:
+                continue
+            try:
+                _PRELOADED_CUDA_LIBRARIES[key] = ctypes.CDLL(key, mode=mode)
+            except OSError as exc:
+                raise NativeInferenceCapabilityError(
+                    f"CUDA sidecar dependency could not be loaded: {key}: {exc}"
+                ) from exc
+
+
+def _query_cuda_memory(config: NativeModelLoadConfig) -> tuple[int, int]:
+    library, _selected, _candidates = _load_cuda_runtime(config)
     try:
         set_device = library.cudaSetDevice
         mem_get_info = library.cudaMemGetInfo
@@ -1896,13 +2085,15 @@ class NativeInferenceModel:
                     "Whole-model CUDA selection requires load_model_with_options"
                 )
             tile_ops_lib = _resolve_model_tile_ops_library(model_load)
+            _runtime, cuda_runtime_lib, _runtime_candidates = _load_cuda_runtime(model_load)
+            _preload_cuda_sidecar_dependencies(cuda_runtime_lib)
             handle = load_with_options(
                 str(artifact_root),
                 effective_manifest,
                 {
                     "cuda_device": model_load.cuda_device,
                     "tile_ops_lib": tile_ops_lib,
-                    "cuda_runtime_lib": model_load.cuda_runtime_lib,
+                    "cuda_runtime_lib": cuda_runtime_lib,
                     "weight_precision": weight_selection["effective_weight_precision"],
                     "selection_proof": weight_selection,
                 },

@@ -66,13 +66,56 @@ nfn infer \
   --weight-precision auto \
   --speculative-decoding auto \
   --companion-checkpoint dflash \
-  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops.so \
+  --tile-ops-lib /absolute/path/libnfn_native_train_tile_ops_strict.so \
+  --temperature 1.0 \
+  --top-p 0.95 \
+  --top-k 64 \
   --prompt "Hello from Glimmer" \
   --native-info
 ```
 
 `--strict-tile-ops-lib PATH` is an equivalent explicit spelling of
 `--tile-ops-lib PATH` for the whole-model CUDA sidecar.
+
+For the shortest interactive path, run `nfn infer` with no model flags. The
+launcher lists runnable resident Native Execution artifacts first instead of
+dropping directly into the legacy graph picker. Choosing one opens the
+multi-turn transcript TUI immediately; weight precision, CUDA admission, and
+an available DFlash assistant retain their measured `auto` policies. Native
+CLI chat defaults to the Muse Glimmer model-card sampling policy
+(`--temperature 1.0 --top-p 0.95 --top-k 64`). The menu
+also provides **Open native chat...**, **Scan another folder...**, and an
+explicit **Legacy graph inference...** fallback.
+
+Each assistant panel reports raw decode throughput as
+`tok/s (total generated tokens/reasoning tokens)`. The reasoning value counts
+the exact generated token IDs inside private ATEM `to=self` message content;
+that text remains hidden and is never added to transcript history.
+
+Sampled DFlash verifies at most four proposals per block by default; the
+assistant still executes its canonical 16-position window, while the shorter
+lossless verifier window avoids spending the 52-layer target on proposals that
+the sampled path rarely accepts. Set
+`NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP=1..15` before launch only for an
+explicit performance/compatibility comparison. Greedy DFlash keeps all 15
+proposals.
+
+Discovery is bounded to the current directory, its `artifacts/` directory,
+`NEURALFN_ARTIFACTS_DIR`, `~/NeuralFn/artifacts`, and a `tmp/` directory beside
+the mounted workspace tree (for example `/var/mnt/disk2/tmp`). Add other roots
+with the platform path-list environment variable
+`NEURALFN_INFER_ARTIFACT_PATHS`; the launcher only presents manifests with an
+existing contained checkpoint. It does not allocate model weights until a
+choice is made.
+
+With no `--cuda-runtime-lib`, resident CUDA now probes CUDA 13 first and also
+finds runtime wheels under Python paths or bounded workspace scratch installs;
+`NFN_CUDA_RUNTIME_LIB` and an explicit flag remain authoritative. This covers
+driver-only system installs where `nvidia-smi` works but `libcudart.so` is not
+registered with the dynamic linker. The model loader prefers the installed or
+repository `libnfn_native_train_tile_ops_strict.so` over the ordinary training
+library and preloads adjacent CUDA BLAS dependencies when the runtime came from
+a wheel directory.
 
 Omit `--prompt` on an interactive terminal to open the colorful resident chat
 TUI. It keeps one process-local multi-turn transcript, retains the system
@@ -87,6 +130,9 @@ nfn infer \
   --companion-checkpoint dflash \
   --speculative-decoding auto \
   --chat-mode transcript \
+  --temperature 1.0 \
+  --top-p 0.95 \
+  --top-k 64 \
   --system-prompt "Be concise."
 ```
 
@@ -809,23 +855,44 @@ a legacy `.pt` validates and preserves the graph/tensor bundle, but its generic
 require a separately compatible resident native checkpoint.
 
 The first standalone serving surface is available for separately proven
-resident artifacts:
+resident artifacts. On a configured workstation, the normal local launch is:
 
 ```bash
 pip install -e '.[serve]'
-nfn infer \
-  --checkpoint artifacts/model-native \
-  --serve \
-  --chat-template plain_roles \
-  --state-db ./native-inference-state.sqlite3 \
-  --prefix-cache-capacity 64
+nfn infer serve
 ```
 
-It validates the artifact, tokenizer, chat renderer, context limit, resident
+The zero-argument server uses the same bounded discovery as the native chat
+launcher, selects the newest runnable artifact, chooses weight precision from
+current free VRAM, and enables authenticated DFlash and mmproj companions when
+the artifact supplies them. Its conservative local defaults are one active
+session, no waiting queue, a 512-token completion cap, and the Muse Glimmer
+model-card sampling policy (`temperature=1.0`, `top_p=0.95`, `top_k=64`). This
+keeps the default 131,072-token Glimmer cache inside the measured model-load
+budget on a 32 GB card. It never rejects K-Quant-17GB merely because a larger
+card is present; `auto` chooses the highest-fidelity variant that fits, while
+`--weight-precision k-quant-17gb` pins that exact variant. Use explicit flags
+only to override discovery or capacity, for example:
+
+```bash
+nfn infer serve \
+  --checkpoint artifacts/model-native \
+  --port 9001 \
+  --queue-capacity 2 \
+  --session-limit 3
+```
+
+The compatibility spelling `nfn infer --checkpoint ARTIFACT --serve` remains
+supported. The server validates the artifact, tokenizer, chat renderer,
+context limit, resident
 ABI/binding, cache request, and remote-auth policy before opening
 `127.0.0.1:8000`. The isolated app exposes `/health`, `/v1/models`, and
 bounded `/v1/chat/completions`; real committed-token SSE ends with
-`data: [DONE]`. Chat is text by default, while a jointly proven CPU Muse
+`data: [DONE]`. Muse Glimmer responses pass through the same fail-closed ATEM
+channel parser as the TUI: non-streaming responses expose only `to=user`, and
+SSE buffers the ATEM turn until private `to=self` reasoning can be separated.
+A completion truncated inside reasoning therefore returns no content rather
+than leaking the private channel. Chat is text by default, while a jointly proven CPU Muse
 Glimmer vision artifact may accept base64 image data URLs. Supplying
 `--state-db` additionally enables text Responses,
 Responses input-token/item resources, scoped `previous_response_id` lineage,

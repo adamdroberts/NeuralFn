@@ -7,11 +7,14 @@ from typing import Any, Mapping
 
 import pytest
 
+import neuralfn.native_inference as native_inference
 from neuralfn.native_cli import NativeArtifactCLIConfig
 from neuralfn.native_inference import (
     NativeInferenceCapabilityError,
     NativeModelLoadConfig,
+    _cuda_runtime_candidates,
     _load_manifest_with_path_pin,
+    _resolve_model_tile_ops_library,
     _select_checkpoint_variant,
     _variant_runtime_bytes,
 )
@@ -128,6 +131,51 @@ def test_model_cuda_device_is_independent_from_tile_cache_config() -> None:
     # Constructing the model policy no longer requires putting this model-only
     # device into KVCacheConfig's Tile-only fields.
     assert NativeArtifactCLIConfig(Path("artifact"), model_load=load).kv_cache.cuda_device == 0
+
+
+def test_cuda13_runtime_discovery_covers_workspace_scratch_and_explicit_pin(
+    tmp_path: Path,
+) -> None:
+    volume = tmp_path / "volume"
+    workspace = volume / "dev" / "project"
+    workspace.mkdir(parents=True)
+    runtime_dir = volume / "tmp" / "cuda-wheel" / "nvidia" / "cu13" / "lib"
+    runtime_dir.mkdir(parents=True)
+    runtime = runtime_dir / "libcudart.so.13"
+    runtime.write_bytes(b"fixture")
+
+    candidates = _cuda_runtime_candidates(
+        NativeModelLoadConfig(),
+        environ={},
+        search_paths=(),
+        anchors=(workspace,),
+    )
+
+    assert str(runtime) in candidates
+    assert "libcudart.so.13" in candidates
+    assert candidates.index(str(runtime)) < candidates.index("libcudart.so.13")
+    assert _cuda_runtime_candidates(
+        NativeModelLoadConfig(cuda_runtime_lib="/pinned/libcudart.so.13"),
+        environ={"NFN_CUDA_RUNTIME_LIB": "/ignored/libcudart.so.13"},
+        search_paths=(),
+        anchors=(workspace,),
+    ) == ("/pinned/libcudart.so.13",)
+
+
+def test_model_tile_ops_resolver_prefers_installed_strict_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts = tmp_path / "bin"
+    scripts.mkdir()
+    python = scripts / "python"
+    python.write_bytes(b"fixture")
+    strict = scripts / "libnfn_native_train_tile_ops_strict.so"
+    strict.write_bytes(b"strict-fixture")
+    monkeypatch.setattr(native_inference.sys, "executable", str(python))
+    monkeypatch.delenv("NFN_NATIVE_TILE_OPS_LIB", raising=False)
+
+    assert _resolve_model_tile_ops_library(NativeModelLoadConfig()) == str(strict.resolve())
 
 
 def test_cpu_auto_selects_authenticated_primary_without_vram_probe(tmp_path: Path) -> None:

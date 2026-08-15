@@ -2,6 +2,79 @@
 
 ## Unreleased
 
+- Added `nfn infer serve` as the zero-configuration local serving path. It uses
+  the native chat launcher's bounded artifact discovery, selects the newest
+  runnable manifest, leaves runtime and weight precision on free-VRAM-aware
+  `auto`, and automatically loads authenticated DFlash/mmproj companions. The
+  shortcut binds loopback with one active session, no waiting queue, and a
+  512-token output cap so Glimmer's model and full-context cache have a
+  conservative 32 GB budget; every setting remains individually overridable.
+  Explicit `k-quant-17gb` remains a valid strict pin on higher-VRAM devices,
+  and the legacy `nfn infer --checkpoint ARTIFACT --serve` spelling remains
+  compatible. Chat requests that omit a completion limit now use the configured
+  server cap rather than an internal 16-token preview, and omitted sampling
+  fields use the Glimmer model-card defaults (`temperature=1.0`, `top_p=0.95`,
+  `top_k=64`). Glimmer Chat Completions now apply the TUI's fail-closed ATEM
+  parser as well: buffered responses return only `to=user`, while SSE buffers
+  the protocol turn before emitting visible text, so a token-limit truncation
+  inside `to=self` cannot leak private reasoning. Non-ATEM models retain live
+  token streaming. Verified with 70 focused native serving/CLI tests, including
+  literal-subcommand dispatch, discovery/default plumbing, and request-default
+  plus buffered/streamed ATEM privacy coverage.
+- Added exact ATEM reasoning-token accounting to the native chat response
+  parser and Rich inference TUI. Assistant panels now show
+  `tok/s (N total/R reasoning)`: total remains the raw committed-token
+  throughput denominator, while reasoning counts token IDs inside private
+  `to=self` content and excludes channel control tokens. Hidden reasoning is
+  still neither displayed nor persisted. Glimmer benchmark JSON now records
+  `reasoning_tokens` per trial.
+- Corrected resident `nfn infer`, the native-first TUI launcher, and
+  `NativeArtifactCLIConfig` to use the Muse Glimmer model-card sampling defaults
+  (`temperature=1.0`, `top_p=0.95`, `top_k=64`). Explicit overrides remain
+  exact and are never silently rewritten to greedy. The Rich banner labels the
+  effective policy as `greedy` or `sampled`. Performance investigation recorded
+  a 285.163 tok/s strict-greedy 32-token diagnostic and a 283.336 tok/s
+  positive-temperature/top-k-one control with identical output, while a real
+  sampled chat turn exposed low DFlash acceptance (56/345) and 9.4 tok/s. The
+  latter is now tracked as a sampled-path optimization/correctness blocker;
+  greedy controls are not accepted as the product performance result. The
+  benchmark now has a `--compute-mode model-card` mode that records sampled
+  throughput and acceptance directly. Sampled DFlash now follows the pinned
+  candidate contract (processed proposal sampling with raw assistant-softmax
+  `q` for acceptance), partially sorts only the requested top-k, and stores
+  processed/rejection distributions sparsely. Positive-temperature DFlash
+  verifies four proposals per block by default, with
+  `NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP=1..15` as an explicit A/B override;
+  greedy retains 15. On the same 128-token RTX 5090 prompt this raised native
+  model-card sampling from 9.952 to 109.118 tok/s, versus 105.5 tok/s from the
+  pinned llama.cpp oracle. The 270 tok/s sampled-chat gate remains open pending
+  a device-side sampler; this result is not presented as completion.
+- Replaced the bare interactive `nfn infer` dead-end graph picker with a
+  native-first chat launcher. It discovers runnable resident manifests from
+  configured/default artifact roots, the working tree, and bounded scratch
+  storage adjacent to a mounted workspace (including the local
+  `/var/mnt/disk2/tmp` layout), labels choices with precision/runtime/context
+  and automatic DFlash availability, and opens the selected artifact directly
+  in multi-turn transcript mode. The launcher also has exact native-path and
+  folder-scan actions plus an explicit legacy graph fallback; non-TTY and
+  flag-driven inference behavior is unchanged. Added
+  `NEURALFN_INFER_ARTIFACT_PATHS` for additional path-list roots. Discovery is
+  bounded, skips dependency/test trees, requires a contained checkpoint, and
+  defers full authentication, capability, kernel, VRAM, and allocation work to
+  the existing fail-closed resident loader. Fixed the selected-model boundary
+  as well: default CUDA discovery now includes CUDA 13, honors
+  `NFN_CUDA_RUNTIME_LIB`, finds pip/toolkit runtimes in bounded Python and
+  workspace-scratch roots, reuses the resolved absolute runtime for model
+  load, and preloads adjacent cuBLAS dependencies. Default Tile resolution now
+  prefers the installed/package/build strict inference sidecar instead of a
+  stale ordinary training library. Verification passed all 45 focused native
+  CLI/chat/weight-selection tests, including discovery, missing-checkpoint
+  rejection, TTY dispatch, scan refresh, transcript routing, CUDA 13 scratch
+  discovery, explicit runtime pinning, and strict-sidecar preference. An
+  installed-`nfn` PTY smoke measured 33,708,376,064 total and over 31.6 billion
+  free CUDA bytes, selected the local Muse Glimmer K-Quant-17GB target with the
+  source-matched strict sidecar, loaded full cache plus DFlash, displayed the
+  131,072-token multi-turn `You` prompt, and exited cleanly with `/exit`.
 - Raised exact K-Quant-17GB+DFlash throughput above the 300-tok/s target on an
   RTX 5090 by changing the multirow packed verifier, not by weakening model or
   arithmetic gates. Each cooperative MMVQ group now computes two adjacent

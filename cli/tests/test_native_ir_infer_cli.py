@@ -281,6 +281,139 @@ def test_manifest_artifact_dispatch_precedes_legacy_bin_detection(
     assert calls[0][1] == {"stdin_isatty": False, "stdout_isatty": False}
 
 
+def test_bare_infer_launcher_discovers_workspace_scratch_artifact(tmp_path: Path) -> None:
+    volume = tmp_path / "volume"
+    workspace = volume / "dev" / "project"
+    workspace.mkdir(parents=True)
+    catalog = volume / "tmp" / "catalog"
+    catalog.mkdir(parents=True)
+    artifact = _artifact(catalog, model_name="Muse Glimmer", family="muse_glimmer")
+    module = _load_nfn_module()
+
+    summaries = module._discover_native_infer_artifacts(cwd=workspace, environ={})
+
+    assert any(item["manifest"] == artifact / "native-execution-manifest.json" for item in summaries)
+    summary = next(
+        item for item in summaries if item["manifest"] == artifact / "native-execution-manifest.json"
+    )
+    assert summary["display_name"] == "Muse Glimmer"
+
+
+def test_native_infer_launcher_ignores_manifest_without_contained_checkpoint(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path)
+    (artifact / "model.bin").unlink()
+    module = _load_nfn_module()
+
+    assert module._discover_native_infer_artifacts([tmp_path]) == []
+    with pytest.raises(ValueError, match="not a runnable Native Execution artifact"):
+        module._native_infer_custom_artifact_choice(str(artifact))
+
+
+def test_native_infer_launcher_options_lead_with_resident_chat_and_keep_legacy_fallback(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path, model_name="Muse Glimmer", family="muse_glimmer")
+    manifest_path = artifact / "native-execution-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["capabilities"]["whole_model_cuda"] = True
+    payload["checkpoint_variants"] = {
+        "k-quant-17gb": {"artifact_path": "model.bin"},
+    }
+    payload["companion_checkpoints"] = {
+        "dflash": {"artifact_path": "dflash.gguf"},
+    }
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    (artifact / "dflash.gguf").write_bytes(b"dflash")
+    module = _load_nfn_module()
+    summary = module._native_infer_manifest_summary(manifest_path)
+    assert summary is not None
+
+    options = module._native_infer_launcher_options([summary])
+
+    assert options[0].label == "Muse Glimmer (k-quant-17gb)"
+    assert "multi-turn" in options[-3].description
+    assert "DFlash auto" in options[0].description
+    assert "model-card sampling" in options[0].description
+    assert options[-1].label == "Legacy graph inference..."
+
+
+def test_bare_tty_infer_dispatches_selected_native_artifact_to_transcript_chat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _artifact(tmp_path)
+    manifest = artifact / "native-execution-manifest.json"
+    module = _load_nfn_module()
+    calls = []
+    monkeypatch.setattr(module, "_discover_native_infer_artifacts", lambda: [])
+    monkeypatch.setattr(
+        module,
+        "_choose_native_infer_launch",
+        lambda _summaries: {"launcher_kind": "native", "checkpoint": str(manifest)},
+    )
+    monkeypatch.setattr(
+        module,
+        "_native_ir_infer_main",
+        lambda argv, **kwargs: calls.append((argv, kwargs)) or 29,
+    )
+
+    result = module.main(["infer"], stdin_isatty=True, stdout_isatty=True)
+
+    assert result == 29
+    assert calls == [
+        (
+            [
+                "infer",
+                "--checkpoint",
+                str(manifest),
+                "--chat-mode",
+                "transcript",
+                "--temperature",
+                "1.0",
+                "--top-k",
+                "64",
+                "--top-p",
+                "0.95",
+            ],
+            {"stdin_isatty": True, "stdout_isatty": True},
+        )
+    ]
+    assert module._is_native_infer_launcher_request(
+        ["infer"], stdin_isatty=False, stdout_isatty=True
+    ) is False
+
+
+def test_native_infer_launcher_scan_refreshes_choices_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _artifact(tmp_path)
+    manifest = artifact / "native-execution-manifest.json"
+    module = _load_nfn_module()
+    discovered = [{"manifest": manifest}]
+    choices = iter(
+        [
+            {"launcher_kind": "scan", "search_root": str(tmp_path)},
+            {"launcher_kind": "native", "checkpoint": str(manifest)},
+        ]
+    )
+    searches = []
+    monkeypatch.setattr(
+        module,
+        "_discover_native_infer_artifacts",
+        lambda roots=None: searches.append(roots) or ([] if roots is None else discovered),
+    )
+    monkeypatch.setattr(module, "_choose_native_infer_launch", lambda _items: next(choices))
+    monkeypatch.setattr(module, "_native_ir_infer_main", lambda _argv, **_kwargs: 0)
+
+    assert module._native_infer_launcher_main(
+        ["infer"], stdin_isatty=True, stdout_isatty=True
+    ) == 0
+    assert searches == [None, [tmp_path]]
+
+
 def test_checkpoint_file_dispatch_requires_exact_contained_manifest_binding(
     tmp_path: Path,
 ) -> None:
@@ -354,6 +487,38 @@ def test_non_tty_native_artifact_inference_is_one_resident_one_shot(
     assert reused == 0
     assert "<|user|>\nhello" in CharacterCodec().decode(prompt)
     assert model.session.generations[0].stop_token_ids == (999,)
+
+
+def test_interactive_dflash_preserves_model_card_sampling_without_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _artifact(tmp_path)
+    model = FakeModel(artifact / "native-execution-manifest.json", [])
+    model.stats = lambda: {
+        "backend": "native-cuda-resident",
+        "effective_cache": "full",
+        "effective_speculative_decoding": "dflash",
+    }
+    _install_fake_loader(monkeypatch, model)
+    stderr = io.StringIO()
+
+    assert run_native_artifact_cli(
+        NativeArtifactCLIConfig(
+            artifact=artifact,
+            temperature=1.0,
+            top_k=64,
+            top_p=0.95,
+            seed=17,
+        ),
+        interactive=True,
+        codec=CharacterCodec(),
+        input_fn=lambda _prompt: "/exit",
+        stdout=io.StringIO(),
+        stderr=stderr,
+    ) == 0
+
+    assert stderr.getvalue() == ""
 
 
 def test_raw_prompt_tokens_bypass_chat_rendering(
@@ -629,6 +794,9 @@ def test_native_cli_flag_plumbing_uses_tty_default_and_cache_profile(
     assert config.model_load.cuda_runtime_lib == "libcudart.so.13"
     assert config.model_load.cuda_device == 2
     assert config.max_new_tokens == 12
+    assert config.temperature == 1.0
+    assert config.top_k == 64
+    assert config.top_p == 0.95
 
 
 def test_native_cli_default_allows_atem_reasoning_to_reach_final_channel(

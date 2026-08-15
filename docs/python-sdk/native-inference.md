@@ -108,7 +108,11 @@ bisections. These are execution details, not new checkpoint encodings.
 Presentation code must not treat a decoded Glimmer continuation as plain
 assistant text. `neuralfn.native_chat.parse_native_assistant_response()`
 returns a `NativeAssistantResponse` with `visible_text`, separately held
-`reasoning_text`, raw text, and channel-completion flags. For the ATEM renderer
+`reasoning_text`, optional exact `reasoning_tokens`, raw text, and
+channel-completion flags. Pass the generated `token_ids` and their `codec` to
+`parse_native_assistant_response()` when exact token accounting is required.
+The count includes token IDs overlapping private `to=self` content and excludes
+its protocol opener/terminator. For the ATEM renderer
 it exposes only `to=user` text as display/transcript-safe; malformed control
 fragments and private-only truncation fail closed. The process-local CLI uses
 that parser before appending history.
@@ -299,7 +303,7 @@ load = NativeModelLoadConfig(
     runtime="native-cuda",
     weight_precision="auto",  # bf16 > Dynamic > 17GB among fitting profiles
     cuda_device=0,
-    tile_ops_lib="/absolute/path/libnfn_native_train_tile_ops.so",
+    tile_ops_lib="/absolute/path/libnfn_native_train_tile_ops_strict.so",
     context_tokens=32_768,
     session_count=1,
     companion_checkpoints=("dflash",),
@@ -330,6 +334,22 @@ pin and never downgrades; a 32-GB device may explicitly load
 `k-quant-17gb` when the measured byte budget fits. CPU `auto` selects the
 authenticated primary and does not reuse the CUDA VRAM policy. Weight
 precision, activation storage, and `KVCacheConfig` are independent.
+
+`cuda_runtime_lib=None` performs CUDA 13-first discovery through
+`NFN_CUDA_RUNTIME_LIB`, toolkit/loader roots, Python CUDA 13/12 package layouts,
+bounded workspace scratch package layouts, and generic sonames. The selected
+absolute wheel path is reused for model load after `cudaMemGetInfo`, and
+adjacent cuBLAS libraries are preloaded for the strict inference sidecar.
+`tile_ops_lib=None` prefers the active-environment, package, or repository
+`libnfn_native_train_tile_ops_strict.so` before the ordinary training library.
+Explicit paths remain authoritative and do not silently downgrade.
+
+`NativeArtifactCLIConfig` uses the Muse Glimmer model-card chat defaults:
+`temperature=1.0`, `top_p=0.95`, and `top_k=64`. Callers can override any of
+them explicitly; the resident driver does not rewrite sampled requests to
+greedy decoding. Positive-temperature DFlash verifies four proposals per block
+by default; `NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP=1..15` is the native
+runtime diagnostic override. Greedy DFlash retains all 15 proposals.
 
 Packed Glimmer CUDA statistics additionally expose
 `cuda_q8_activation_quantizations`, `cuda_q8_packed_linears`,
@@ -686,10 +706,29 @@ not yet been rewritten as wrappers over this engine.
 
 `neuralfn.native_serve` builds a separate FastAPI application around this SDK;
 it never imports the editor backend or falls back to one-shot subprocess
-generation. Install `.[serve]`, then use `nfn infer --checkpoint ARTIFACT
---serve`. `NativeServingRuntime.load()` validates the manifest tokenizer, chat
+generation. Install `.[serve]`, then use `nfn infer serve`. That zero-argument
+CLI form discovers the newest runnable resident artifact, enables its
+authenticated DFlash/mmproj companions, uses automatic VRAM-based weight
+selection, and applies conservative local defaults: `queue_capacity=0`,
+`session_limit=1`, and `max_output_tokens=512`. Pass
+`--checkpoint ARTIFACT` or other serve flags only when overriding those
+defaults; `nfn infer --checkpoint ARTIFACT --serve` remains compatible.
+`NativeServingRuntime.load()` validates the manifest tokenizer, chat
 template, context limit, resident ABI, binding, and requested cache before
 Uvicorn can bind.
+
+When a Chat Completions request omits both `max_tokens` and
+`max_completion_tokens`, the runtime uses its configured `max_output_tokens`
+cap instead of an internal 16-token preview. Omitted sampling fields use the
+Muse Glimmer model-card policy: `temperature=1.0`, `top_p=0.95`, and
+`top_k=64`. The OpenAI-compatible request surface currently exposes
+temperature and top-p overrides; top-k remains the server's model policy.
+Muse Glimmer Chat Completions are passed through
+`parse_native_assistant_response()` before exposure. The non-streaming payload
+contains only the ATEM `to=user` channel. Streaming buffers that model's ATEM
+turn and emits its visible channel after parsing, preventing a partial
+`to=self` reasoning message from crossing the API boundary; other chat
+renderers keep immediate token streaming.
 
 Resident Responses prefix reuse is opt-in and entry-count bounded:
 

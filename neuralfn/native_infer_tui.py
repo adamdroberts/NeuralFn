@@ -137,9 +137,12 @@ class RichNativeInferenceUI:
         grid.add_row(":abc: Chat", escape(str(payload["renderer_name"])))
         grid.add_row(":straight_ruler: Context", f"{int(payload['context_limit']):,} tokens")
         grid.add_row(":compass: Mode", f"[infer.accent]{escape(str(payload['mode']))}[/]")
+        decode_policy = (
+            "greedy" if config.temperature == 0.0 or config.top_k == 1 else "sampled"
+        )
         grid.add_row(
-            ":control_knobs: Sampling",
-            f"top_k={config.top_k}  top_p={config.top_p:g}  "
+            ":control_knobs: Decode",
+            f"{decode_policy}  top_k={config.top_k}  top_p={config.top_p:g}  "
             f"temp={config.temperature:g}  max_new={config.max_new_tokens}",
         )
         self.console.print(
@@ -187,17 +190,24 @@ class RichNativeInferenceUI:
             )
         completion_tokens = int(getattr(result, "completion_tokens", 0) or 0)
         decode_rate = completion_tokens / decode_seconds if decode_seconds > 0 else 0.0
+        reasoning_tokens = getattr(response, "reasoning_tokens", None)
+        if reasoning_tokens is None and not response.reasoning_text:
+            reasoning_tokens = 0
+        reasoning_label = (
+            str(int(reasoning_tokens)) if reasoning_tokens is not None else "unknown"
+        )
         reused = int(prefill_stats.get("prefix_reused", 0) or 0)
         prefilled = int(prefill_stats.get("prefilled_tokens", 0) or 0)
         proposed = int(getattr(result, "speculative_proposed_tokens", 0) or 0)
         accepted = int(getattr(result, "speculative_accepted_tokens", 0) or 0)
         speculative = ""
         if proposed:
-            speculative = f" · DFlash {accepted}/{proposed} accepted"
-        hidden = " · ATEM reasoning hidden" if response.reasoning_text else ""
+            speculative = f" · DFlash {accepted}/{proposed}"
+        hidden = " · reasoning hidden" if response.reasoning_text else ""
         subtitle = (
-            f"[infer.metric]{decode_rate:.1f} tok/s[/] · decode {decode_seconds:.2f}s · "
-            f"prefill {prefilled} new/{reused} reused in {prefill_seconds:.2f}s"
+            f"[infer.metric]{decode_rate:.1f} tok/s[/] "
+            f"[dim]({completion_tokens} total/{reasoning_label} reasoning)[/dim] · "
+            f"dec {decode_seconds:.2f}s · pre {prefilled}/{reused} {prefill_seconds:.2f}s"
             f"{speculative}{hidden}"
         )
         self.console.print(

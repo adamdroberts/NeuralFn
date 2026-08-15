@@ -120,6 +120,10 @@ class NativeAssistantResponse:
     raw_text: str = ""
     used_channel_protocol: bool = False
     final_channel_complete: bool = True
+    # Generated token IDs whose decoded bytes belong to ATEM ``to=self``
+    # message content. ``None`` means the parser was not given token IDs and a
+    # codec, so an exact count was unavailable.
+    reasoning_tokens: int | None = None
 
 
 class NativeTextCodec:
@@ -1067,6 +1071,8 @@ def parse_native_assistant_response(
     renderer: NativeChatRenderer,
     *,
     delimiters: Sequence[str] = (),
+    token_ids: Sequence[int] | None = None,
+    codec: NativeTextCodec | None = None,
 ) -> NativeAssistantResponse:
     """Decode one model continuation without leaking renderer control channels.
 
@@ -1082,6 +1088,7 @@ def parse_native_assistant_response(
     if renderer.name != MUSE_GLIMMER_ATEM_PROFILE:
         return NativeAssistantResponse(
             visible_text=strip_native_text_delimiters(raw, delimiters),
+            reasoning_tokens=0,
             raw_text=raw,
         )
 
@@ -1094,17 +1101,20 @@ def parse_native_assistant_response(
         if _ATEM_SUSPICIOUS_CONTROL_RE.search(raw):
             return NativeAssistantResponse(
                 visible_text="",
+                reasoning_tokens=0,
                 raw_text=raw,
                 used_channel_protocol=True,
                 final_channel_complete=False,
             )
         return NativeAssistantResponse(
             visible_text=strip_native_text_delimiters(raw, delimiters),
+            reasoning_tokens=0,
             raw_text=raw,
         )
 
     user_segments: list[str] = []
     reasoning_segments: list[str] = []
+    reasoning_spans: list[tuple[int, int]] = []
     final_channel_complete = False
     for index, match in enumerate(matches):
         channel = match.group(1)
@@ -1115,6 +1125,7 @@ def parse_native_assistant_response(
         if channel == "self":
             if content:
                 reasoning_segments.append(content)
+                reasoning_spans.append((match.end(), content_end))
             continue
         if content:
             user_segments.append(content)
@@ -1125,9 +1136,41 @@ def parse_native_assistant_response(
             ending is not None and ending.group(1) in {"eot", "end_of_text"}
         )
 
+    reasoning_tokens: int | None = None
+    if not reasoning_spans:
+        reasoning_tokens = 0
+    elif token_ids is not None and codec is not None:
+        try:
+            token_chunks = [codec.token_bytes(int(token_id)) for token_id in token_ids]
+            encoded = b"".join(token_chunks)
+            if encoded.decode("utf-8", errors="replace") == raw:
+                byte_spans = [
+                    (
+                        len(raw[:start].encode("utf-8")),
+                        len(raw[:end].encode("utf-8")),
+                    )
+                    for start, end in reasoning_spans
+                ]
+                offset = 0
+                count = 0
+                for chunk in token_chunks:
+                    next_offset = offset + len(chunk)
+                    if any(
+                        next_offset > span_start and offset < span_end
+                        for span_start, span_end in byte_spans
+                    ):
+                        count += 1
+                    offset = next_offset
+                reasoning_tokens = count
+        except (KeyError, RuntimeError, UnicodeError, ValueError):
+            # Token accounting is presentation telemetry. A codec mismatch
+            # must not turn an otherwise valid response into a failed request.
+            reasoning_tokens = None
+
     return NativeAssistantResponse(
         visible_text="\n\n".join(user_segments).rstrip(),
         reasoning_text="\n\n".join(reasoning_segments).rstrip(),
+        reasoning_tokens=reasoning_tokens,
         raw_text=raw,
         used_channel_protocol=True,
         final_channel_complete=final_channel_complete if user_segments else False,

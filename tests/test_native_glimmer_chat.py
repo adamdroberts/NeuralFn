@@ -15,11 +15,25 @@ from neuralfn.native_chat import (
     MuseGlimmerATEMRenderer,
     NativeChatConfigurationError,
     NativeChatMessage,
+    NativeTextCodec,
     load_native_text_codec,
     native_stop_token_ids,
     parse_native_assistant_response,
     resolve_native_chat_renderer,
 )
+
+
+class _CharacterCodec(NativeTextCodec):
+    name = "character-test-codec"
+
+    def encode(self, text: str) -> tuple[int, ...]:
+        return tuple(ord(character) for character in text)
+
+    def decode(self, token_ids) -> str:
+        return "".join(chr(int(token_id)) for token_id in token_ids)
+
+    def token_bytes(self, token_id: int) -> bytes:
+        return chr(int(token_id)).encode("utf-8")
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,15 +142,22 @@ def test_glimmer_stop_contract_excludes_eom() -> None:
 
 def test_glimmer_atem_response_exposes_only_user_channel() -> None:
     renderer = MuseGlimmerATEMRenderer(current_date="2026-08-12")
-    decoded = parse_native_assistant_response(
+    raw = (
         "junk before protocol\n"
         " to=self<|message|>private chain of thought<|eom|>"
-        "<|start|>assistant to=user<|message|>Hello!<|eot|>",
+        "<|start|>assistant to=user<|message|>Hello!<|eot|>"
+    )
+    codec = _CharacterCodec()
+    decoded = parse_native_assistant_response(
+        raw,
         renderer,
+        token_ids=codec.encode(raw),
+        codec=codec,
     )
 
     assert decoded.visible_text == "Hello!"
     assert decoded.reasoning_text == "private chain of thought"
+    assert decoded.reasoning_tokens == len("private chain of thought")
     assert decoded.used_channel_protocol is True
     assert decoded.final_channel_complete is True
     assert "junk before protocol" not in decoded.visible_text

@@ -27,7 +27,7 @@ def test_native_serve_help_is_available_without_loading_editor_runtime() -> None
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "nfn infer --serve" in completed.stdout
+    assert "nfn infer serve" in completed.stdout
     assert "--checkpoint ARTIFACT" in completed.stdout
     assert "--host HOST" in completed.stdout
     assert "--queue-capacity N" in completed.stdout
@@ -41,6 +41,42 @@ def test_native_serve_help_is_available_without_loading_editor_runtime() -> None
     assert "--state-db PATH" in completed.stdout
     assert "--prefix-cache-capacity N" in completed.stdout
     assert "--allow-unauthenticated-remote" in completed.stdout
+
+
+def test_native_serve_subcommand_discovers_artifact_and_safe_local_defaults(
+    monkeypatch,
+) -> None:
+    module = _load_cli_module()
+    captured = []
+    manifest = Path("/models/glimmer/native-execution-manifest.json")
+    monkeypatch.setattr(
+        module,
+        "_discover_native_infer_artifacts",
+        lambda: [
+            {
+                "manifest": manifest,
+                "companions": ("dflash", "lora", "mmproj"),
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "neuralfn.native_serve.run_native_inference_server",
+        lambda config: captured.append(config),
+    )
+
+    assert module.main(["infer", "serve"]) == 0
+    assert len(captured) == 1
+    config = captured[0]
+    assert config.artifact == manifest
+    assert config.host == "127.0.0.1"
+    assert config.port == 8000
+    assert config.queue_capacity == 0
+    assert config.session_limit == 1
+    assert config.max_output_tokens == 512
+    assert config.model_load.weight_precision == "auto"
+    assert config.model_load.speculative_decoding == "auto"
+    assert config.model_load.companion_checkpoints == ("dflash", "mmproj")
+    assert config.model_load.session_count == 1
 
 
 def test_native_serve_cli_plumbs_validated_config_without_starting_graph_runtime(
@@ -222,3 +258,12 @@ def test_native_serve_dispatch_precedes_native_checkpoint_one_shot_detection(
 
     assert result == 17
     assert calls == [["infer", "--checkpoint", "artifact", "--serve"]]
+
+
+def test_native_serve_subcommand_dispatches_before_legacy_inference(monkeypatch) -> None:
+    module = _load_cli_module()
+    calls = []
+    monkeypatch.setattr(module, "_native_serve_main", lambda argv: calls.append(argv) or 19)
+
+    assert module.main(["infer", "serve"]) == 19
+    assert calls == [["infer", "serve"]]

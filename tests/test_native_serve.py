@@ -28,12 +28,14 @@ from neuralfn.native_serve import (
     NativeServeConfig,
     NativeServingConfigurationError,
     NativeServingRuntime,
+    _NativeChatRendererAdapter,
     _PlainRolesRenderer,
     _TextCodec,
     create_native_inference_app,
     resolve_bearer_auth,
     run_native_inference_server,
 )
+from neuralfn.native_chat import MuseGlimmerATEMRenderer
 from neuralfn.native_state import NativeStateStore, api_key_fingerprint
 
 
@@ -65,6 +67,22 @@ class MediaCodec(FakeCodec):
     def encode(self, text: str) -> tuple[int, ...]:
         assert "<|image_start|>" in text and "<|image_end|>" in text
         return (1, *(200_092 for _ in range(text.count("<|patch|>"))), 3)
+
+
+class ATEMCodec(_TextCodec):
+    name = "atem-test-codec"
+
+    def encode(self, _text: str) -> tuple[int, ...]:
+        return (1, 2, 3)
+
+    def decode(self, token_ids: Sequence[int]) -> str:
+        return b"".join(self.token_bytes(token) for token in token_ids).decode("utf-8")
+
+    def token_bytes(self, token_id: int) -> bytes:
+        return {
+            10: b" to=self<|message|>private reasoning<|eom|>",
+            11: b"<|start|>assistant to=user<|message|>ready<|eot|>",
+        }[token_id]
 
 
 class FakeSession:
@@ -544,6 +562,21 @@ def _runtime(model: FakeModel | None = None, *, context_limit: int = 64) -> Nati
     )
 
 
+def _atem_runtime() -> NativeServingRuntime:
+    return NativeServingRuntime(
+        model=FakeModel(),  # type: ignore[arg-type]
+        manifest={"schema": "neuralfn.native_execution_manifest", "version": 1},
+        codec=ATEMCodec(),
+        renderer=_NativeChatRendererAdapter(
+            MuseGlimmerATEMRenderer(current_date="2026-08-15")
+        ),
+        served_model_name="nfn-test",
+        context_limit=64,
+        max_output_tokens=8,
+        created=1_700_000_000,
+    )
+
+
 def _stateful_runtime(
     path: Path,
     model: FakeModel | None = None,
@@ -639,6 +672,21 @@ def _chat_payload(**updates: Any) -> dict[str, Any]:
     }
     payload.update(updates)
     return payload
+
+
+def test_chat_omitted_sampling_fields_use_glimmer_model_card_defaults() -> None:
+    runtime = _runtime()
+    prepared = runtime.prepare_chat(
+        {
+            "model": "nfn-test",
+            "messages": [{"role": "user", "content": "Hello"}],
+        }
+    )
+
+    assert prepared.generation.max_new_tokens == runtime.max_output_tokens
+    assert prepared.generation.temperature == 1.0
+    assert prepared.generation.top_p == 0.95
+    assert prepared.generation.top_k == 64
 
 
 def _structured_text_format() -> dict[str, Any]:
@@ -744,6 +792,55 @@ def test_health_models_and_non_streaming_chat_are_openai_shaped() -> None:
     assert runtime.model.prefills == [(1, 2, 3)]
     assert runtime.model.session_creates == runtime.model.session_closes == 1
     assert runtime.model.model_closes == 1
+
+
+def test_glimmer_chat_never_returns_private_atem_reasoning() -> None:
+    app = create_native_inference_app(_atem_runtime(), queue_capacity=0)
+
+    async def scenario(client: httpx.AsyncClient) -> None:
+        completed = await client.post("/v1/chat/completions", json=_chat_payload())
+        assert completed.status_code == 200, completed.text
+        assert completed.json()["choices"][0]["message"]["content"] == "ready"
+        assert "private reasoning" not in completed.text
+
+        truncated = await client.post(
+            "/v1/chat/completions",
+            json=_chat_payload(max_completion_tokens=1),
+        )
+        assert truncated.status_code == 200, truncated.text
+        assert truncated.json()["choices"][0]["message"]["content"] == ""
+        assert "private reasoning" not in truncated.text
+
+    anyio.run(_with_client, app, scenario)
+
+
+def test_glimmer_stream_buffers_atem_and_emits_only_user_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def connected(_request) -> bool:
+        return False
+
+    monkeypatch.setattr("starlette.requests.Request.is_disconnected", connected)
+    app = create_native_inference_app(_atem_runtime(), queue_capacity=0)
+
+    async def scenario(client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/v1/chat/completions",
+            json=_chat_payload(stream=True),
+        )
+        assert response.status_code == 200, response.text
+        assert "private reasoning" not in response.text
+        data_lines = [line[6:] for line in response.text.splitlines() if line.startswith("data: ")]
+        chunks = [json.loads(line) for line in data_lines[:-1]]
+        visible = [
+            chunk["choices"][0]["delta"].get("content", "")
+            for chunk in chunks
+            if chunk["choices"]
+        ]
+        assert "".join(visible) == "ready"
+        assert data_lines[-1] == "[DONE]"
+
+    anyio.run(_with_client, app, scenario)
 
 
 def test_failed_native_session_is_disposed_and_next_request_uses_fresh_session() -> None:

@@ -157,11 +157,12 @@ def main() -> int:
     parser.add_argument("--dflash", action="store_true")
     parser.add_argument(
         "--compute-mode",
-        choices=("strict", "throughput"),
+        choices=("strict", "throughput", "model-card"),
         default="strict",
         help=(
             "strict uses exact-zero temperature; throughput uses temperature=1/top-k=1 "
-            "to benchmark deterministic greedy selection through the Q8 activation K-quant path"
+            "for a deterministic K-quant control; model-card uses temperature=1, "
+            "top-p=.95, and top-k=64"
         ),
     )
     parser.add_argument(
@@ -207,11 +208,12 @@ def main() -> int:
         reserved_output_tokens=args.max_new_tokens,
     )
     strict_compute = args.compute_mode == "strict"
+    model_card_sampling = args.compute_mode == "model-card"
     generation = GenerationConfig(
         max_new_tokens=args.max_new_tokens,
         temperature=0.0 if strict_compute else 1.0,
-        top_k=None if strict_compute else 1,
-        top_p=1.0,
+        top_k=64 if model_card_sampling else (None if strict_compute else 1),
+        top_p=0.95 if model_card_sampling else 1.0,
         seed=1337,
         stop_token_ids=native_stop_token_ids(manifest),
     )
@@ -268,6 +270,8 @@ def main() -> int:
                     decoded,
                     renderer,
                     delimiters=native_text_stop_delimiters(manifest, renderer),
+                    token_ids=result.token_ids,
+                    codec=codec,
                 )
                 prefill_times.append(prefill_seconds)
                 decode_times.append(decode_seconds)
@@ -282,6 +286,7 @@ def main() -> int:
                         "finish_reason": result.finish_reason,
                         "visible_text": response.visible_text,
                         "atem_reasoning_hidden": bool(response.reasoning_text),
+                        "reasoning_tokens": response.reasoning_tokens,
                         "prefill": prefill,
                         "speculative_proposed_tokens": result.speculative_proposed_tokens,
                         "speculative_accepted_tokens": result.speculative_accepted_tokens,
@@ -292,7 +297,7 @@ def main() -> int:
                     }
                 )
             model_stats_final = model.stats()
-    if any(output != outputs[0] for output in outputs[1:]):
+    if args.compute_mode != "model-card" and any(output != outputs[0] for output in outputs[1:]):
         raise RuntimeError("deterministic greedy output changed across benchmark repetitions")
     report = {
         "schema": "neuralfn.muse_glimmer_native_chat_benchmark",

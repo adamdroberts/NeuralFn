@@ -306,8 +306,11 @@ Greedy DFlash no longer copies both 15×202,048 assistant and target logit
 matrices to the host merely to find their maxima. The shared CUDA target head
 runs the deterministic device argmax for assistant proposals, current target
 state, and all verification/bonus rows, returning at most 16 IDs and selected
-values. The sampled path deliberately keeps full logits because exact p/q
-acceptance and rejection-residual sampling require the complete vocabulary.
+values. The sampled path still transfers full logits: processed `p` and the
+positive residual are sparse after top-k/top-p, but exact acceptance needs the
+raw assistant-softmax normalizer and raw `q` values at target-support tokens.
+The retained host implementation avoids dense probability buffers; the next
+kernel must keep those reductions and gathers on device as well.
 
 Ordinary greedy target-only decoding now uses that same device argmax for its
 current vocabulary row. The one-token target path also writes each layer's K/V
@@ -448,6 +451,28 @@ over eight blocks while reproducing the ordinary FP32 bits. Multirow MMVQ now
 adds the exact two-output grouping, read-only Q8 loads, and Q6 predecode listed
 above. The retained result is 317.022 tok/s over ten trials; its paired
 seven-trial measurement is 317.461 versus 316.353 for the production control.
+The installed native chat path was rechecked after wiring the TUI launcher: a
+fresh 32-token strict-greedy diagnostic with the same canonical hash measured
+285.163 tok/s, while positive temperature with `top_k=1` measured 283.336
+tok/s and returned the identical token sequence. A real sampled chat turn with
+the former `temperature=0.8, top_k=32` settings showed only 56/345 accepted
+proposals and 9.4 tok/s, exposing that the full-distribution sampled DFlash path
+still requires optimization and longer-run acceptance/correctness gates. This
+must be fixed without changing chat semantics: Native CLI/TUI defaults are the
+model-card `temperature=1.0, top_p=0.95, top_k=64`, and greedy results remain
+diagnostic controls rather than the product performance claim.
+The sampled path now matches the pinned DFlash acceptance contract: draft
+tokens are sampled from processed logits, while acceptance uses raw assistant
+softmax `q` against processed target `p`. Exact top-k selection uses a partial
+sort instead of sorting all 202,048 IDs, and processed/residual distributions
+retain only their at-most-64-token support. On the same 128-token RTX 5090
+prompt, full-block model-card sampling improved from 9.952 to 52.958 tok/s;
+the retained four-proposal scheduling cap plus sparse host distributions
+reached 109.118 tok/s. The pinned llama.cpp `62bf73d` oracle measured 105.5
+tok/s on the same artifacts and model-card settings. This is an improvement,
+not closure: the 270 tok/s sampled-chat gate remains open and requires the
+device-side top-k/top-p, raw-q acceptance, and positive-residual sampler listed
+below so 202,048-wide distributions never return to the host.
 The prior same-binary RMS control (264.724 off versus 271.244 on) and packed
 weight hoist control (158.779 off versus 235.657 on) remain valid historical
 evidence. Wider Q5 row groups, FFN-specific row tiling, all-row attention

@@ -195,6 +195,44 @@ not transition sampling. Explicit TurboQuant remains unsupported.
 
 ## Interactive inference state
 
+Running bare `nfn infer` on a TTY opens a native-first model launcher. It lists
+runnable resident manifests from the current directory, local/default artifact
+stores, configured search paths, and bounded scratch storage beside a mounted
+workspace. A selected resident artifact enters multi-turn transcript chat
+directly with runtime, weight precision, and DFlash on their normal `auto`
+policies and the Muse Glimmer model-card defaults (`temperature=1.0`,
+`top_p=0.95`, `top_k=64`). **Open native chat...** accepts an artifact directory or manifest;
+**Scan another folder...** searches a user-selected root; and **Legacy graph
+inference...** retains the older JSON-plus-weights picker without mixing those
+artifacts into the resident list.
+
+Set `NEURALFN_INFER_ARTIFACT_PATHS` to an `os.pathsep`-separated list of extra
+artifact directories, manifests, or catalog roots. Discovery is depth- and
+directory-bounded, ignores common build/test dependency trees, requires an
+existing checkpoint contained by the artifact root, and loads no model weights
+until selection. Bare non-TTY invocation does not open this launcher.
+
+For whole-model CUDA, automatic runtime resolution honors an explicit
+`--cuda-runtime-lib`, then `NFN_CUDA_RUNTIME_LIB`, CUDA toolkit/loader paths,
+Python CUDA 13/12 package layouts, and bounded workspace scratch package
+layouts before generic CUDA 13/12/11 sonames. This lets VRAM selection use
+`cudaMemGetInfo` even when the NVIDIA driver and `nvidia-smi` are installed but
+libcudart is not in `ldconfig`. Automatic Tile resolution prefers the installed
+or repository strict inference sidecar before the ordinary training library;
+wheel-adjacent cuBLAS dependencies are preloaded before that sidecar is opened.
+
+Flag-driven resident inference uses the same model-card sampling defaults.
+Explicit sampling overrides are preserved exactly and are never silently
+rewritten to greedy decoding.
+
+For positive-temperature DFlash, native chat caps verification at four draft
+tokens per block by default. This remains lossless speculative sampling and
+does not alter the requested temperature/top-p/top-k distribution; it only
+avoids verifying the low-yield tail of the fixed assistant window. The
+diagnostic `NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP=1..15` override can pin a
+different cap. Temperature-zero/top-k-one greedy DFlash continues to propose
+the full 15 tokens.
+
 TTY graph inference defaults to a process-local transcript. The initial
 `--prompt` becomes the first user turn; later turns reuse prior role messages.
 Use `--chat-mode stateless` or `/mode stateless` to keep turns independent.
@@ -233,18 +271,25 @@ cache only when they are one of the supported dense topologies.
 
 ## Native artifact serving
 
-Install the lean server extra and serve one resident native artifact:
+Install the lean server extra and start the discovered resident artifact with
+one command:
 
 ```bash
 pip install -e '.[serve]'
-nfn infer \
-  --checkpoint artifacts/model-native \
-  --serve \
-  --chat-template plain_roles \
-  --state-db ./native-inference-state.sqlite3 \
-  --prefix-cache-capacity 64
+nfn infer serve
 ```
 
+This literal subcommand shares the native chat launcher's bounded artifact
+discovery. It selects the newest runnable manifest, leaves runtime and weight
+precision on `auto`, loads available authenticated DFlash and mmproj
+companions, and starts on `127.0.0.1:8000`. The shortcut reserves one active
+session, no queued waiter, 512 completion tokens, and the Glimmer model-card
+sampling defaults. Override only the settings you need, such as
+`nfn infer serve --checkpoint ARTIFACT --port 9001`. An explicit
+`--weight-precision k-quant-17gb` is a strict pin and remains valid on a 32 GB
+GPU; more available VRAM is never a rejection condition.
+
+The older `nfn infer --checkpoint ARTIFACT --serve` spelling remains an alias.
 The server validates auth policy, Native Execution Manifest v1, tokenizer,
 chat renderer, context limit, resident ABI/binding, checkpoint, and cache
 capabilities before Uvicorn opens `127.0.0.1:8000`. It exposes `/health`,
@@ -254,6 +299,10 @@ worker. `--session-limit` separately bounds the running request plus queued
 request-session reservations and defaults to `queue_capacity + 1`; either
 limit rejects excess work immediately with a distinct HTTP 429 code. Streamed
 Chat Completions contain committed-token SSE chunks and end in `data: [DONE]`.
+For Muse Glimmer, the server fail-closes through the ATEM parser before
+exposing output. It strips private `to=self` reasoning from buffered responses;
+SSE buffers the ATEM envelope and then emits only the user-directed channel.
+Non-ATEM models retain token-by-token streaming.
 
 `--state-db PATH` opts into the private WAL-backed Responses/Conversations
 store. It enables text Responses create/retrieve/delete, input items and token

@@ -253,18 +253,31 @@ std::int64_t argmax_token(const std::vector<float>& logits) {
         logits.begin(), std::max_element(logits.begin(), logits.end())));
 }
 
+struct SparseProbabilities {
+    std::vector<std::int64_t> token_ids;
+    std::vector<double> values;
+
+    double probability(std::int64_t token_id) const noexcept {
+        const auto found = std::find(token_ids.begin(), token_ids.end(), token_id);
+        return found == token_ids.end()
+            ? 0.0
+            : values[static_cast<std::size_t>(std::distance(token_ids.begin(), found))];
+    }
+};
+
 std::int64_t sample_probabilities(
-    const std::vector<double>& probabilities,
+    const SparseProbabilities& probabilities,
     std::mt19937_64& rng) {
-    if (probabilities.empty()) {
+    if (probabilities.token_ids.empty() ||
+        probabilities.token_ids.size() != probabilities.values.size()) {
         throw std::runtime_error("speculative sampling distribution is empty");
     }
     std::discrete_distribution<std::size_t> distribution(
-        probabilities.begin(), probabilities.end());
-    return static_cast<std::int64_t>(distribution(rng));
+        probabilities.values.begin(), probabilities.values.end());
+    return probabilities.token_ids[distribution(rng)];
 }
 
-std::vector<double> processed_probabilities(
+SparseProbabilities processed_probabilities(
     const std::vector<float>& logits,
     const GenerationConfig& config) {
     if (logits.empty() || !std::isfinite(config.temperature) || !(config.temperature > 0.0) ||
@@ -274,13 +287,17 @@ std::vector<double> processed_probabilities(
     }
     std::vector<std::int64_t> candidates(logits.size());
     std::iota(candidates.begin(), candidates.end(), 0);
-    std::sort(candidates.begin(), candidates.end(), [&](std::int64_t left, std::int64_t right) {
+    const auto descending_logits = [&](std::int64_t left, std::int64_t right) {
         const float lhs = logits[static_cast<std::size_t>(left)];
         const float rhs = logits[static_cast<std::size_t>(right)];
         return lhs == rhs ? left < right : lhs > rhs;
-    });
+    };
     if (config.top_k > 0 && config.top_k < static_cast<std::int64_t>(candidates.size())) {
-        candidates.resize(static_cast<std::size_t>(config.top_k));
+        const auto retained = candidates.begin() + config.top_k;
+        std::partial_sort(candidates.begin(), retained, candidates.end(), descending_logits);
+        candidates.erase(retained, candidates.end());
+    } else {
+        std::sort(candidates.begin(), candidates.end(), descending_logits);
     }
     const double maximum = logits[static_cast<std::size_t>(candidates.front())];
     std::vector<double> candidate_weights;
@@ -309,12 +326,69 @@ std::vector<double> processed_probabilities(
     candidates.resize(retained);
     candidate_weights.resize(retained);
     total = std::accumulate(candidate_weights.begin(), candidate_weights.end(), 0.0);
-    std::vector<double> probabilities(logits.size(), 0.0);
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        probabilities[static_cast<std::size_t>(candidates[index])] =
-            candidate_weights[index] / total;
+    for (double& value : candidate_weights) value /= total;
+    std::vector<std::size_t> token_order(candidates.size());
+    std::iota(token_order.begin(), token_order.end(), 0);
+    std::sort(token_order.begin(), token_order.end(), [&](std::size_t left, std::size_t right) {
+        return candidates[left] < candidates[right];
+    });
+    std::vector<std::int64_t> ordered_tokens;
+    std::vector<double> ordered_weights;
+    ordered_tokens.reserve(candidates.size());
+    ordered_weights.reserve(candidate_weights.size());
+    for (std::size_t index : token_order) {
+        ordered_tokens.push_back(candidates[index]);
+        ordered_weights.push_back(candidate_weights[index]);
     }
-    return probabilities;
+    return SparseProbabilities{std::move(ordered_tokens), std::move(ordered_weights)};
+}
+
+struct RawProbabilitySummary {
+    double maximum = 0.0;
+    double total = 0.0;
+
+    double probability(const float* logits, std::int64_t token_id) const noexcept {
+        return std::exp(std::max(
+            -745.0,
+            static_cast<double>(logits[static_cast<std::size_t>(token_id)]) - maximum)) /
+            total;
+    }
+};
+
+RawProbabilitySummary raw_probability_summary(const std::vector<float>& logits) {
+    if (logits.empty()) {
+        throw std::runtime_error("speculative raw sampling distribution is empty");
+    }
+    const float maximum = *std::max_element(logits.begin(), logits.end());
+    if (!std::isfinite(maximum)) {
+        throw std::runtime_error("speculative raw logits are invalid");
+    }
+    RawProbabilitySummary summary;
+    summary.maximum = static_cast<double>(maximum);
+    double total = 0.0;
+    for (std::size_t index = 0; index < logits.size(); ++index) {
+        const double value = std::exp(std::max(
+            -745.0,
+            static_cast<double>(logits[index]) - static_cast<double>(maximum)));
+        total += value;
+    }
+    if (!(total > 0.0) || !std::isfinite(total)) {
+        throw std::runtime_error("speculative raw probabilities are invalid");
+    }
+    summary.total = total;
+    return summary;
+}
+
+std::int64_t sampled_proposal_cap() noexcept {
+    const char* value = std::getenv("NFN_GLIMMER_DFLASH_SAMPLED_PROPOSAL_CAP");
+    if (value == nullptr || *value == '\0') return 4;
+    char* end = nullptr;
+    errno = 0;
+    const long long parsed = std::strtoll(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0' || parsed < 1 || parsed > 15) {
+        return 4;
+    }
+    return static_cast<std::int64_t>(parsed);
 }
 
 class Cursor final {
@@ -2605,9 +2679,12 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             return result;
         }
 
-        const std::int64_t proposal_count = std::min<std::int64_t>(
+        std::int64_t proposal_count = std::min<std::int64_t>(
             {assistant_model_->proposal_tokens(), max_tokens_remaining,
              model_->max_seq_len() - original_length});
+        if (!greedy) {
+            proposal_count = std::min(proposal_count, sampled_proposal_cap());
+        }
         auto proposal = assistant_session_->propose(
             tokens_.back(), proposal_count, cancelled_, !greedy, fast_k_quant);
         if (static_cast<std::int64_t>(proposal.token_ids.size()) != proposal_count ||
@@ -2615,15 +2692,21 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
                 (greedy ? 0 : proposal_count * model_->vocab_size())) {
             throw std::runtime_error("DFlash assistant returned a malformed proposal block");
         }
-        std::vector<std::vector<double>> q_probabilities;
+        std::vector<RawProbabilitySummary> q_probabilities;
         if (!greedy) {
             q_probabilities.reserve(static_cast<std::size_t>(proposal_count));
             for (std::int64_t row = 0; row < proposal_count; ++row) {
                 const float* first = proposal.logits.data() + row * model_->vocab_size();
                 std::vector<float> row_logits(first, first + model_->vocab_size());
-                q_probabilities.push_back(processed_probabilities(row_logits, config));
+                // Match the pinned Transformers DFlash candidate generator:
+                // sample the proposed token after temperature/top-k/top-p
+                // processing, but retain raw assistant softmax q for the
+                // speculative p/q acceptance and rejection residual.
+                SparseProbabilities candidate_probabilities =
+                    processed_probabilities(row_logits, config);
                 proposal.token_ids[static_cast<std::size_t>(row)] =
-                    sample_probabilities(q_probabilities.back(), rng_);
+                    sample_probabilities(candidate_probabilities, rng_);
+                q_probabilities.push_back(raw_probability_summary(row_logits));
             }
         }
 
@@ -2706,7 +2789,7 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
         }
         std::int64_t accepted = 0;
         bool accepted_stop = false;
-        std::vector<std::vector<double>> p_probabilities;
+        std::vector<SparseProbabilities> p_probabilities;
         if (!greedy) p_probabilities.reserve(static_cast<std::size_t>(proposal_count + 1));
         std::uniform_real_distribution<double> uniform(0.0, 1.0);
         for (; accepted < proposal_count; ++accepted) {
@@ -2720,9 +2803,11 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
             } else {
                 p_probabilities.push_back(processed_probabilities(
                     target_logits[static_cast<std::size_t>(accepted)], config));
+                const float* q_logits = proposal.logits.data() +
+                    accepted * model_->vocab_size();
                 const double q = q_probabilities[static_cast<std::size_t>(accepted)]
-                    [static_cast<std::size_t>(candidate)];
-                const double p = p_probabilities.back()[static_cast<std::size_t>(candidate)];
+                    .probability(q_logits, candidate);
+                const double p = p_probabilities.back().probability(candidate);
                 if (!(q > 0.0) || !std::isfinite(p) || !std::isfinite(q)) {
                     throw std::runtime_error("DFlash p/q probability is invalid");
                 }
@@ -2767,22 +2852,28 @@ SpeculativeStepResult GlimmerSession::decode_speculative_block(
                     if (static_cast<std::int64_t>(p_probabilities.size()) <= accepted) {
                         p_probabilities.push_back(processed_probabilities(p_logits, config));
                     }
-                    std::vector<double> residual(static_cast<std::size_t>(model_->vocab_size()));
+                    SparseProbabilities residual;
+                    residual.token_ids =
+                        p_probabilities[static_cast<std::size_t>(accepted)].token_ids;
+                    residual.values.resize(residual.token_ids.size());
                     double total = 0.0;
-                    for (std::int64_t token = 0; token < model_->vocab_size(); ++token) {
+                    const float* q_logits = proposal.logits.data() +
+                        accepted * model_->vocab_size();
+                    for (std::size_t index = 0; index < residual.token_ids.size(); ++index) {
+                        const std::int64_t token = residual.token_ids[index];
                         const double value = std::max(
                             0.0,
                             p_probabilities[static_cast<std::size_t>(accepted)]
-                                [static_cast<std::size_t>(token)] -
+                                .values[index] -
                             q_probabilities[static_cast<std::size_t>(accepted)]
-                                [static_cast<std::size_t>(token)]);
-                        residual[static_cast<std::size_t>(token)] = value;
+                                .probability(q_logits, token));
+                        residual.values[index] = value;
                         total += value;
                     }
                     if (!(total > 0.0) || !std::isfinite(total)) {
                         throw std::runtime_error("DFlash rejection residual distribution is empty");
                     }
-                    for (double& value : residual) value /= total;
+                    for (double& value : residual.values) value /= total;
                     correction.token_id = sample_probabilities(residual, rng_);
                     correction.selected_logit =
                         p_logits[static_cast<std::size_t>(correction.token_id)];
