@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ReactFlow,
   Controls,
+  applyNodeChanges,
   type Connection,
   type EdgeChange,
   type Node,
@@ -15,6 +16,11 @@ import { ParticleNeuronNode } from "./ParticleNeuronNode";
 import ParticleEdge from "./ParticleEdge";
 import WebGLCyberScene, { type WebGLNodeAnchor } from "./WebGLCyberScene";
 import {
+  FullGraphZonesLayer,
+  SubgraphExpansionOverlay,
+  useSubgraphExpansion,
+} from "./SubgraphExpansionOverlay";
+import {
   type ParticleSwarmGeometry,
   resolveNodeArchetype,
 } from "./nodeArchetypes";
@@ -25,6 +31,11 @@ import {
   useGraphStore,
   type NeuronNodeData,
 } from "../store/graphStore";
+import {
+  buildFullExpandedGraph,
+  type GraphPathSegment,
+  type SubgraphZone,
+} from "../store/graphUtils";
 import {
   PARTICLE_PALETTES,
   type ParticleColorPalette,
@@ -155,10 +166,12 @@ function hexToRgbTuple(hex: string): [number, number, number] {
 export default function ParticleGraphCanvas() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const { screenToFlowPosition, fitView, setCenter, getViewport } = useReactFlow();
+  const { screenToFlowPosition, fitView, setCenter, getViewport, setViewport } =
+    useReactFlow();
 
-  const nodes = useGraphStore(selectFlowNodes);
-  const edges = useGraphStore(selectFlowEdges);
+  const activeNodes = useGraphStore(selectFlowNodes);
+  const activeEdges = useGraphStore(selectFlowEdges);
+  const rootGraph = useGraphStore((state) => state.rootGraph);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const applyActiveNodeChanges = useGraphStore((state) => state.applyActiveNodeChanges);
   const applyActiveEdgeChanges = useGraphStore((state) => state.applyActiveEdgeChanges);
@@ -183,12 +196,40 @@ export default function ParticleGraphCanvas() {
   const setHoloPerspective3D = useSettingsStore((state) => state.setHoloPerspective3D);
   const motionIntensity = useSettingsStore((state) => state.motionIntensity);
   const hudTelemetryOverlay = useSettingsStore((state) => state.hudTelemetryOverlay);
+  const viewFullGraph = useSettingsStore((state) => state.viewFullGraph);
+  const setViewFullGraph = useSettingsStore((state) => state.setViewFullGraph);
+  const toggleViewFullGraph = useSettingsStore((state) => state.toggleViewFullGraph);
   const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
   const pulseSequence = useSettingsStore((state) => state.pulseSequence);
   const triggerPulse = useSettingsStore((state) => state.triggerPulse);
   const setParticleGraphEditorEnabled = useSettingsStore(
     (state) => state.setParticleGraphEditorEnabled,
   );
+
+  // Full Graph Mode expansion
+  const fullExpanded = useMemo(
+    () => (viewFullGraph ? buildFullExpandedGraph(rootGraph, []) : null),
+    [viewFullGraph, rootGraph],
+  );
+  const [fullGraphNodes, setFullGraphNodes] = useState<Node<NeuronNodeData>[]>([]);
+
+  useEffect(() => {
+    if (!fullExpanded) {
+      setFullGraphNodes([]);
+      return;
+    }
+    setFullGraphNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      return fullExpanded.nodes.map((n) => {
+        const existing = prevById.get(n.id);
+        return {
+          ...n,
+          measured: existing?.measured ?? n.measured,
+          selected: n.id === selectedNodeId,
+        };
+      });
+    });
+  }, [fullExpanded, selectedNodeId]);
 
   const palette = PARTICLE_PALETTES[colorPalette];
 
@@ -219,31 +260,6 @@ export default function ParticleGraphCanvas() {
   );
   const [warpOverlayAlpha, setWarpOverlayAlpha] = useState(0);
 
-  // Refs for live simulation data
-  const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
-  const edgesRef = useRef(edges);
-  edgesRef.current = edges;
-  const paletteRef = useRef(palette);
-  paletteRef.current = palette;
-  const visualModeRef = useRef(visualMode);
-  visualModeRef.current = visualMode;
-  const isTrainingRef = useRef(isTraining);
-  isTrainingRef.current = isTraining;
-  const motionIntensityRef = useRef(motionIntensity);
-  motionIntensityRef.current = motionIntensity;
-  const hudOverlayRef = useRef(hudTelemetryOverlay);
-  hudOverlayRef.current = hudTelemetryOverlay;
-
-  const ambientParticlesRef = useRef<AmbientParticle[]>([]);
-  const orbitalParticlesRef = useRef<OrbitalParticle[]>([]);
-  const edgePhotonsRef = useRef<EdgePhoton[]>([]);
-  const burstParticlesRef = useRef<BurstParticle[]>([]);
-  const shockwavesRef = useRef<ShockwaveRing[]>([]);
-  const warpTimerRef = useRef<number>(1.0); // 1.0 -> 0.0 during transition
-  const prevNodeCountRef = useRef<number>(nodes.length);
-  const prevEdgeCountRef = useRef<number>(edges.length);
-
   // Target particle counts based on density setting
   const densityConfig = useMemo(() => {
     if (particleDensity === "balanced") {
@@ -256,6 +272,16 @@ export default function ParticleGraphCanvas() {
   }, [particleDensity]);
   const densityConfigRef = useRef(densityConfig);
   densityConfigRef.current = densityConfig;
+
+  const paletteRef = useRef(palette);
+  paletteRef.current = palette;
+
+  const ambientParticlesRef = useRef<AmbientParticle[]>([]);
+  const orbitalParticlesRef = useRef<OrbitalParticle[]>([]);
+  const edgePhotonsRef = useRef<EdgePhoton[]>([]);
+  const burstParticlesRef = useRef<BurstParticle[]>([]);
+  const shockwavesRef = useRef<ShockwaveRing[]>([]);
+  const warpTimerRef = useRef<number>(1.0); // 1.0 -> 0.0 during transition
 
   // Helper to spawn a supernova particle burst + shockwave in flow coordinates
   const spawnFlowBurst = useCallback(
@@ -306,7 +332,78 @@ export default function ParticleGraphCanvas() {
     [],
   );
 
-  // Trigger full-graph warp / coalescence when subgraph path changes or visualMode changes
+  const syncViewportFromAnim = useCallback((vp: Viewport) => {
+    viewportRef.current = vp;
+    setViewportState(vp);
+  }, []);
+
+  // Subgraph Click Expansion & Breadcrumb Collapse Animation Controller
+  const {
+    expansionState,
+    isExpanding,
+    expansionMode,
+    triggerSubgraphExpansion,
+  } = useSubgraphExpansion({
+    containerRef,
+    rootGraph,
+    currentPath,
+    activeNodes,
+    activeEdges,
+    viewFullGraph,
+    openSubgraph,
+    setViewport,
+    getViewport,
+    onViewportSync: syncViewportFromAnim,
+    onSpawnBurst: spawnFlowBurst,
+  });
+  const isExpandingRef = useRef(isExpanding);
+  isExpandingRef.current = isExpanding;
+  const expansionModeRef = useRef(expansionMode);
+  expansionModeRef.current = expansionMode;
+
+  // Compute displayed nodes and edges across Full Graph Mode, Subgraph Expansion Animation, or Standard Mode
+  const nodes = useMemo(() => {
+    if (viewFullGraph && fullExpanded) {
+      return fullGraphNodes.length > 0 ? fullGraphNodes : fullExpanded.nodes;
+    }
+    if (expansionState) {
+      const measuredMap = new Map(activeNodes.map((n) => [n.id, n.measured]));
+      return expansionState.animatedNodes.map((n) => ({
+        ...n,
+        measured: measuredMap.get(n.id) ?? n.measured,
+      }));
+    }
+    return activeNodes;
+  }, [viewFullGraph, fullExpanded, fullGraphNodes, expansionState, activeNodes]);
+
+  const edges = useMemo(() => {
+    if (viewFullGraph && fullExpanded) {
+      return fullExpanded.edges;
+    }
+    if (expansionState) {
+      return expansionState.animatedEdges;
+    }
+    return activeEdges;
+  }, [viewFullGraph, fullExpanded, expansionState, activeEdges]);
+
+  // Refs for live simulation data
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+  const visualModeRef = useRef(visualMode);
+  visualModeRef.current = visualMode;
+  const isTrainingRef = useRef(isTraining);
+  isTrainingRef.current = isTraining;
+  const motionIntensityRef = useRef(motionIntensity);
+  motionIntensityRef.current = motionIntensity;
+  const hudOverlayRef = useRef(hudTelemetryOverlay);
+  hudOverlayRef.current = hudTelemetryOverlay;
+
+  const prevNodeCountRef = useRef<number>(nodes.length);
+  const prevEdgeCountRef = useRef<number>(edges.length);
+
+  // Trigger full-graph warp / coalescence when subgraph path changes, fullGraph toggles, or visualMode changes
   const pathKey = useMemo(
     () =>
       currentPath
@@ -319,53 +416,44 @@ export default function ParticleGraphCanvas() {
 
   useEffect(() => {
     warpTimerRef.current = 1.0;
-    setWarpOverlayAlpha(1);
+    setWarpOverlayAlpha(isExpandingRef.current ? 0.35 : 1);
     setTransitionStatus(
-      currentPath.length > 0
+      viewFullGraph
+        ? "FULL ARCHITECTURE VIEW // ALL SUBGRAPHS EXPANDED"
+        : expansionModeRef.current === "collapse"
+        ? "SUBGRAPH COLLAPSING // RETURNING TO PARENT"
+        : isExpandingRef.current
+        ? "SUBGRAPH EXPANDING // MATERIALIZING COMPONENTS"
+        : currentPath.length > 0
         ? `SUB-CORE WARP // DEPTH ${currentPath.length}`
         : "HOLO-MATRIX SYNCHRONIZED",
     );
 
-    // Give existing orbital particles a tangential vortex swirl impulse so they morph dramatically
-    const orbitals = orbitalParticlesRef.current;
-    let centerX = 320;
-    let centerY = 220;
-    if (nodesRef.current.length > 0) {
-      let sx = 0;
-      let sy = 0;
-      for (const n of nodesRef.current) {
-        sx += n.position.x + 85;
-        sy += n.position.y + 42;
-      }
-      centerX = sx / nodesRef.current.length;
-      centerY = sy / nodesRef.current.length;
-    }
-
-    const impulseScale = motionIntensityRef.current === "cinematic" ? 14 : 6;
-    for (const p of orbitals) {
-      const dx = p.x - centerX;
-      const dy = p.y - centerY;
-      const dist = Math.hypot(dx, dy) || 1;
-      // Tangential + outward impulse
-      p.vx += (-dy / dist) * impulseScale + (Math.random() - 0.5) * 6;
-      p.vy += (dx / dist) * impulseScale + (Math.random() - 0.5) * 6;
-    }
-
-    spawnFlowBurst(centerX, centerY, paletteRef.current.primaryRgb, 80, 420);
+    // Clear old graph orbital particles & edge photons when switching subgraphs so particles
+    // never fly in from out-of-bounds coordinates outside the canvas; new particles spawn
+    // directly with each node as it is summoned from the portal.
+    orbitalParticlesRef.current.length = 0;
+    edgePhotonsRef.current.length = 0;
 
     const fadeTimer = window.setTimeout(() => {
       setWarpOverlayAlpha(0);
     }, 420);
     const statusTimer = window.setTimeout(() => {
-      setTransitionStatus("MATRIX LOCKED // 60 FPS");
-      fitView({ duration: 550, padding: 0.22 }).catch(() => undefined);
+      setTransitionStatus(
+        viewFullGraph ? "FULL GRAPH // LOCKED" : "MATRIX LOCKED // 60 FPS",
+      );
+      if (!isExpandingRef.current) {
+        fitView({ duration: 550, padding: viewFullGraph ? 0.14 : 0.22 }).catch(
+          () => undefined,
+        );
+      }
     }, 650);
 
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(statusTimer);
     };
-  }, [pathKey, visualMode, spawnFlowBurst, fitView]);
+  }, [pathKey, visualMode, viewFullGraph, spawnFlowBurst, fitView]);
 
   // Pulse wave trigger (from HUD button or settings)
   useEffect(() => {
@@ -533,7 +621,7 @@ export default function ParticleGraphCanvas() {
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
 
-      // 2. Holographic Perspective Grid & Cyber Core Schematic
+      // 2. Holographic Perspective Grid & Telemetry Schematic
       const gridStep = Math.max(24, 52 * vpZoom);
       const offsetX = ((vpX % gridStep) + gridStep) % gridStep;
       const offsetY = ((vpY % gridStep) + gridStep) % gridStep;
@@ -551,7 +639,7 @@ export default function ParticleGraphCanvas() {
       }
       ctx.stroke();
 
-      // Background Cyber Core Telemetry Rings
+      // Background Cyber Telemetry Rings
       if (hudOverlayRef.current) {
         const arcCx = width * 0.5 + (vpX - width * 0.35) * 0.08;
         const arcCy = height * 0.5 + (vpY - height * 0.35) * 0.08;
@@ -676,6 +764,9 @@ export default function ParticleGraphCanvas() {
       // 4. Build Node Anchors in Flow Coordinates with Semantic Archetype Geometry
       const nodeMap = new Map<string, NodeAnchor>();
       for (const n of currentNodes) {
+        if (Number(n.style?.opacity ?? 1) <= 0.05) {
+          continue;
+        }
         const archetype = resolveNodeArchetype(
           n.data.label,
           n.data.neuronDef,
@@ -716,14 +807,12 @@ export default function ParticleGraphCanvas() {
         const countsByNode = new Map<string, number>();
         for (const id of activeNodeIds) countsByNode.set(id, 0);
 
-        // Reassign orphaned particles to existing nodes so they smoothly fly over and morph!
-        let reassignIdx = 0;
+        // Remove particles belonging to despawned nodes so they never fly in from outside the canvas
         for (let i = orbitals.length - 1; i >= 0; i--) {
           const p = orbitals[i];
           if (!nodeMap.has(p.nodeId)) {
-            const targetId = activeNodeIds[reassignIdx % activeNodeIds.length];
-            reassignIdx++;
-            p.nodeId = targetId;
+            orbitals.splice(i, 1);
+            continue;
           }
           const currentCount = countsByNode.get(p.nodeId) ?? 0;
           if (currentCount >= targetPerNode) {
@@ -733,7 +822,7 @@ export default function ParticleGraphCanvas() {
           }
         }
 
-        // Spawn missing orbital particles for nodes that need more
+        // Spawn missing orbital particles directly inside each node's core as it is summoned
         for (const id of activeNodeIds) {
           const anchor = nodeMap.get(id)!;
           let count = countsByNode.get(id) ?? 0;
@@ -743,10 +832,10 @@ export default function ParticleGraphCanvas() {
             orbitals.push({
               id: particleIdCounter++,
               nodeId: id,
-              x: anchor.x + (Math.random() - 0.5) * 260,
-              y: anchor.y + (Math.random() - 0.5) * 260,
-              vx: (Math.random() - 0.5) * 4,
-              vy: (Math.random() - 0.5) * 4,
+              x: anchor.x + (Math.random() - 0.5) * 14,
+              y: anchor.y + (Math.random() - 0.5) * 14,
+              vx: (Math.random() - 0.5) * 1.2,
+              vy: (Math.random() - 0.5) * 1.2,
               prevX: anchor.x,
               prevY: anchor.y,
               theta,
@@ -1174,39 +1263,100 @@ export default function ParticleGraphCanvas() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      if (viewFullGraph) {
+        setFullGraphNodes((prev) =>
+          applyNodeChanges(changes, prev) as Node<NeuronNodeData>[],
+        );
+        return;
+      }
+      if (isExpandingRef.current) {
+        // Allow dimension measurement updates while ignoring transient animated positions
+        const dimOnly = changes.filter((c) => c.type === "dimensions");
+        if (dimOnly.length > 0) {
+          applyActiveNodeChanges(dimOnly);
+        }
+        return;
+      }
       applyActiveNodeChanges(changes);
     },
-    [applyActiveNodeChanges],
+    [applyActiveNodeChanges, viewFullGraph],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (viewFullGraph || isExpandingRef.current) {
+        return;
+      }
       applyActiveEdgeChanges(changes);
     },
-    [applyActiveEdgeChanges],
+    [applyActiveEdgeChanges, viewFullGraph],
   );
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
+      if (viewFullGraph) {
+        return;
+      }
       connectActiveGraph(connection);
     },
-    [connectActiveGraph],
+    [connectActiveGraph, viewFullGraph],
   );
 
   const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
+    (event: React.MouseEvent, node: Node<NeuronNodeData>) => {
       selectNode(node.id);
+      if (
+        !viewFullGraph &&
+        !event.shiftKey &&
+        node.data.neuronDef.kind === "subgraph" &&
+        node.data.neuronDef.subgraph
+      ) {
+        triggerSubgraphExpansion(node);
+      }
     },
-    [selectNode],
+    [selectNode, triggerSubgraphExpansion, viewFullGraph],
   );
 
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node<NeuronNodeData>) => {
-      if (node.data.neuronDef.kind === "subgraph") {
-        openSubgraph(node.id);
+      if (
+        !viewFullGraph &&
+        !isExpandingRef.current &&
+        node.data.neuronDef.kind === "subgraph" &&
+        node.data.neuronDef.subgraph
+      ) {
+        triggerSubgraphExpansion(node);
       }
     },
-    [openSubgraph],
+    [triggerSubgraphExpansion, viewFullGraph],
+  );
+
+  const handleIsolateZone = useCallback(
+    (path: GraphPathSegment[]) => {
+      setViewFullGraph(false);
+      setPath(path);
+    },
+    [setPath, setViewFullGraph],
+  );
+
+  const handleFitZone = useCallback(
+    (zone: SubgraphZone) => {
+      const container = containerRef.current;
+      const rect = container?.getBoundingClientRect();
+      const cw = Math.max(480, rect?.width ?? 960);
+      const ch = Math.max(360, rect?.height ?? 640);
+      const targetZoom = Math.min(
+        1.2,
+        Math.max(
+          0.18,
+          Math.min((cw * 0.78) / zone.width, (ch * 0.74) / zone.height),
+        ),
+      );
+      const cx = zone.x + zone.width * 0.5;
+      const cy = zone.y + zone.height * 0.5;
+      setCenter(cx, cy, { zoom: targetZoom, duration: 520 });
+    },
+    [setCenter],
   );
 
   const onPaneClick = useCallback(() => {
@@ -1229,25 +1379,27 @@ export default function ParticleGraphCanvas() {
 
   // Build WebGL 3D node anchors for the GPU wireframe/shader scene
   const webglNodes = useMemo<WebGLNodeAnchor[]>(() => {
-    return nodes.map((n, idx) => {
-      const archetype = resolveNodeArchetype(
-        n.data.label,
-        n.data.neuronDef,
-        n.data.isInput,
-        n.data.isOutput,
-      );
-      const w = n.measured?.width ?? archetype.minWidth;
-      const h = n.measured?.height ?? 100;
-      return {
-        id: n.id,
-        x: n.position.x + w * 0.5,
-        y: n.position.y + h * 0.5,
-        rgb: [...archetype.primaryRgb] as [number, number, number],
-        secondaryRgb: [...archetype.secondaryRgb] as [number, number, number],
-        selected: Boolean(n.selected),
-        seed: idx * 1.37,
-      };
-    });
+    return nodes
+      .filter((n) => Number(n.style?.opacity ?? 1) > 0.05)
+      .map((n, idx) => {
+        const archetype = resolveNodeArchetype(
+          n.data.label,
+          n.data.neuronDef,
+          n.data.isInput,
+          n.data.isOutput,
+        );
+        const w = n.measured?.width ?? archetype.minWidth;
+        const h = n.measured?.height ?? 100;
+        return {
+          id: n.id,
+          x: n.position.x + w * 0.5,
+          y: n.position.y + h * 0.5,
+          rgb: [...archetype.primaryRgb] as [number, number, number],
+          secondaryRgb: [...archetype.secondaryRgb] as [number, number, number],
+          selected: Boolean(n.selected),
+          seed: idx * 1.37,
+        };
+      });
   }, [nodes]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -1372,6 +1524,21 @@ export default function ParticleGraphCanvas() {
         }}
       />
 
+      {/* 3b. Full Graph Mode Nested Subgraph Zones Layer */}
+      <FullGraphZonesLayer
+        zones={viewFullGraph && fullExpanded ? fullExpanded.zones : []}
+        viewport={viewportState}
+        cyberMode={true}
+        onIsolateZone={handleIsolateZone}
+        onFitZone={handleFitZone}
+      />
+
+      {/* 3c. Animated Subgraph Expansion Chassis Overlay */}
+      <SubgraphExpansionOverlay
+        expansionState={expansionState}
+        cyberMode={true}
+      />
+
       {/* 4. Interactive React Flow Layer with 3D Holo-Perspective Support */}
       <div
         className="relative z-10 h-full w-full transition-transform duration-300 ease-out"
@@ -1395,6 +1562,7 @@ export default function ParticleGraphCanvas() {
           onMoveEnd={onMoveEnd}
           nodeTypes={particleNodeTypes}
           edgeTypes={particleEdgeTypes}
+          nodeDragThreshold={5}
           fitView
           style={{ background: "transparent" }}
           className="!bg-transparent"
@@ -1428,6 +1596,14 @@ export default function ParticleGraphCanvas() {
               <span style={{ color: palette.primary }}>CYBER 3D // WEBGL ENGINE</span>
               <span className="text-gray-600">|</span>
               <span className="text-amber-300">{transitionStatus}</span>
+              {viewFullGraph && (
+                <>
+                  <span className="text-gray-600">|</span>
+                  <span className="rounded border border-emerald-500/50 bg-emerald-950/70 px-1.5 py-0.2 text-[9px] text-emerald-300">
+                    ⊞ FULL GRAPH ({fullExpanded?.zones.length ?? 0} SUBGRAPHS)
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-2 font-mono text-[9px] text-gray-400">
               <span>PARTICLES: {totalParticleEstimate.toLocaleString()}</span>
@@ -1443,7 +1619,10 @@ export default function ParticleGraphCanvas() {
                       <React.Fragment key={`${crumb.id}-${idx}`}>
                         {idx > 0 && <span>▸</span>}
                         <button
-                          onClick={() => setPath(crumb.path)}
+                          onClick={() => {
+                            if (viewFullGraph) setViewFullGraph(false);
+                            setPath(crumb.path);
+                          }}
                           className="hover:underline"
                         >
                           {crumb.label}
@@ -1459,6 +1638,21 @@ export default function ParticleGraphCanvas() {
 
         {/* Right Interactive Holographic Mode & FX Controls */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-lg border border-cyan-500/35 bg-slate-950/85 px-2.5 py-1.5 font-mono text-[10px] backdrop-blur-md shadow-[0_0_25px_rgba(0,240,255,0.14)]">
+          {/* View Full Graph Toggle */}
+          <button
+            type="button"
+            onClick={() => setViewFullGraph(!viewFullGraph)}
+            className={`flex items-center gap-1.5 rounded border px-2.5 py-1 font-bold transition-all ${
+              viewFullGraph
+                ? "border-emerald-400/90 bg-emerald-500/25 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.4)]"
+                : "border-cyan-500/45 bg-cyan-950/45 text-cyan-200 hover:border-cyan-400 hover:bg-cyan-900/50"
+            }`}
+            title="Expand all nested subgraphs into a single unified full-architecture graph view"
+          >
+            <span>⊞</span>
+            <span>FULL GRAPH: {viewFullGraph ? "ON" : "OFF"}</span>
+          </button>
+
           {/* Switch between HUD + Swarm vs Pure Particle Nebula */}
           <button
             type="button"

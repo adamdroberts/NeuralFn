@@ -318,7 +318,7 @@ export const WebGLCyberScene: React.FC<WebGLCyberSceneProps> = ({
           const r = n.rgb[0] / 255;
           const g = n.rgb[1] / 255;
           const b = n.rgb[2] / 255;
-          const scale = n.selected ? 96.0 : 78.0;
+          const scale = n.selected ? 34.0 : 26.0;
 
           for (let v = 0; v < VERTS_PER_NODE; v++) {
             data[offset++] = UNIT_CAGE_VERTS[v * 3];

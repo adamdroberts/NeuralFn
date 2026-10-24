@@ -36,7 +36,9 @@ import {
   mergeVariantLibraries,
   normalizeGraph,
   normalizeNeuronDef,
+  parseFullGraphNodeId,
   refreshBuiltinNodesInGraph,
+  resolveEditableGraphPath,
   updateGraphAtPath,
 } from "./graphUtils";
 
@@ -148,6 +150,19 @@ function createNodePosition(
   return [anchor.x + offsetX, anchor.y + offsetY] as [number, number];
 }
 
+function isValidSelectedNodeId(
+  rootGraph: GraphData,
+  activeGraph: GraphData,
+  selectedNodeId: string | null,
+): boolean {
+  if (!selectedNodeId) return false;
+  if (activeGraph.nodes[selectedNodeId]) return true;
+  const parsed = parseFullGraphNodeId(selectedNodeId);
+  if (!parsed) return false;
+  const targetGraph = getGraphAtPath(rootGraph, parsed.instancePath);
+  return Boolean(targetGraph?.nodes[parsed.nodeId]);
+}
+
 function normalizeState(
   state: GraphState,
   rootGraph: GraphData,
@@ -161,7 +176,9 @@ function normalizeState(
     ...state,
     rootGraph: normalizedRoot,
     currentPath: nextPath,
-    selectedNodeId: selectedNodeId && activeGraph.nodes[selectedNodeId] ? selectedNodeId : null,
+    selectedNodeId: isValidSelectedNodeId(normalizedRoot, activeGraph, selectedNodeId)
+      ? selectedNodeId
+      : null,
     lastError: null,
   };
 }
@@ -306,7 +323,40 @@ export function selectSelectedNode(state: GraphState): Node<NeuronNodeData> | nu
   if (!selectedNodeId) {
     return null;
   }
-  return selectFlowNodes(state).find((node) => node.id === selectedNodeId) ?? null;
+  const activeHit = selectFlowNodes(state).find((node) => node.id === selectedNodeId);
+  if (activeHit) {
+    return activeHit;
+  }
+  const parsed = parseFullGraphNodeId(selectedNodeId);
+  if (!parsed) {
+    return null;
+  }
+  const targetGraph = getGraphAtPath(state.rootGraph, parsed.instancePath);
+  const rawNode = targetGraph?.nodes[parsed.nodeId];
+  if (!rawNode || !targetGraph) {
+    return null;
+  }
+  const navPath = resolveEditableGraphPath(state.rootGraph, parsed.instancePath);
+  const crumbs = breadcrumbsForPath(state.rootGraph, parsed.instancePath)
+    .slice(1)
+    .map((c) => c.label);
+  return {
+    id: selectedNodeId,
+    type: "neuron",
+    position: { x: rawNode.position[0] ?? 0, y: rawNode.position[1] ?? 0 },
+    measured: rawNode.measured,
+    selected: true,
+    data: {
+      label: rawNode.neuron_def.name,
+      neuronDef: normalizeNeuronDef(rawNode.neuron_def),
+      isInput: targetGraph.input_node_ids.includes(parsed.nodeId),
+      isOutput: targetGraph.output_node_ids.includes(parsed.nodeId),
+      subgraphPath: navPath,
+      instancePath: parsed.instancePath,
+      localNodeId: parsed.nodeId,
+      breadcrumbLabel: crumbs.length > 0 ? crumbs.join(" ▸ ") : undefined,
+    },
+  };
 }
 
 export const useGraphStore = create<GraphState>((set) => ({
@@ -622,54 +672,78 @@ export const useGraphStore = create<GraphState>((set) => ({
     ),
 
   removeNode: (id) =>
-    set((state) =>
-      mutateActiveGraph(
+    set((state) => {
+      const parsed = parseFullGraphNodeId(id);
+      const targetNodeId = parsed ? parsed.nodeId : id;
+      const targetPath = parsed
+        ? resolveEditableGraphPath(state.rootGraph, parsed.instancePath)
+        : clampGraphPath(state.rootGraph, state.currentPath);
+      return withSafety(
         state,
-        (graph) => {
-          const nextNodes = { ...graph.nodes };
-          delete nextNodes[id];
-          const validIds = new Set(Object.keys(nextNodes));
-          return {
-            ...graph,
-            nodes: nextNodes,
-            edges: Object.fromEntries(
-              Object.entries(graph.edges).filter(
-                ([, edge]) => validIds.has(edge.src_node) && validIds.has(edge.dst_node),
+        () => ({
+          rootGraph: updateGraphAtPath(state.rootGraph, targetPath, (graph) => {
+            const nextNodes = { ...graph.nodes };
+            delete nextNodes[targetNodeId];
+            const validIds = new Set(Object.keys(nextNodes));
+            return {
+              ...graph,
+              nodes: nextNodes,
+              edges: Object.fromEntries(
+                Object.entries(graph.edges).filter(
+                  ([, edge]) =>
+                    validIds.has(edge.src_node) && validIds.has(edge.dst_node),
+                ),
               ),
-            ),
-            input_node_ids: graph.input_node_ids.filter((nodeId) => nodeId !== id),
-            output_node_ids: graph.output_node_ids.filter((nodeId) => nodeId !== id),
-          };
-        },
-        state.selectedNodeId === id ? null : state.selectedNodeId,
-      ),
-    ),
+              input_node_ids: graph.input_node_ids.filter(
+                (nodeId) => nodeId !== targetNodeId,
+              ),
+              output_node_ids: graph.output_node_ids.filter(
+                (nodeId) => nodeId !== targetNodeId,
+              ),
+            };
+          }),
+          selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+        }),
+        { graphChanged: true },
+      );
+    }),
 
   updateNodeData: (id, data) =>
-    set((state) =>
-      mutateActiveGraph(state, (graph) => {
-        const node = graph.nodes[id];
-        if (!node) {
-          return graph;
-        }
-        const nextNeuronDef = data.neuronDef
-          ? normalizeNeuronDef(data.neuronDef)
-          : normalizeNeuronDef({
-              ...node.neuron_def,
-              name: data.label ?? node.neuron_def.name,
-            });
-        return {
-          ...graph,
-          nodes: {
-            ...graph.nodes,
-            [id]: {
-              ...node,
-              neuron_def: nextNeuronDef,
-            },
-          },
-        };
-      }),
-    ),
+    set((state) => {
+      const parsed = parseFullGraphNodeId(id);
+      const targetNodeId = parsed ? parsed.nodeId : id;
+      const targetPath = parsed
+        ? resolveEditableGraphPath(state.rootGraph, parsed.instancePath)
+        : clampGraphPath(state.rootGraph, state.currentPath);
+      return withSafety(
+        state,
+        () => ({
+          rootGraph: updateGraphAtPath(state.rootGraph, targetPath, (graph) => {
+            const node = graph.nodes[targetNodeId];
+            if (!node) {
+              return graph;
+            }
+            const nextNeuronDef = data.neuronDef
+              ? normalizeNeuronDef(data.neuronDef)
+              : normalizeNeuronDef({
+                  ...node.neuron_def,
+                  name: data.label ?? node.neuron_def.name,
+                });
+            return {
+              ...graph,
+              nodes: {
+                ...graph.nodes,
+                [targetNodeId]: {
+                  ...node,
+                  neuron_def: nextNeuronDef,
+                },
+              },
+            };
+          }),
+        }),
+        { graphChanged: true },
+      );
+    }),
 
   selectNode: (selectedNodeId) => set((state) => ({ ...state, selectedNodeId })),
   setBuiltins: (builtins) =>

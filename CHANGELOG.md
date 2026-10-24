@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- Added a **View Full Graph** toggle (`viewFullGraph` in `editor/src/store/settingsStore.ts`,
+  `buildFullExpandedGraph` in `editor/src/store/graphUtils.ts`, and `FullGraphZonesLayer`
+  in `editor/src/components/SubgraphExpansionOverlay.tsx`) and **Animated Subgraph Click
+  Expansion** (`useSubgraphExpansion` and `SubgraphExpansionOverlay` in
+  `editor/src/components/SubgraphExpansionOverlay.tsx`) across both the Volumetric 3D
+  Cyber Graph Editor (`ParticleGraphCanvas.tsx`) and Standard 2D Graph Editor
+  (`GraphCanvas.tsx`):
+  - **View Full Graph Toggle (`⊞ View Full Graph` / `⊞ FULL GRAPH: ON/OFF`)**:
+    Recursively expands all nested subgraphs across the graph into a single unified
+    full-architecture view, bridging external input/output ports directly across pass-through
+    terminals so all internal components and residual streams connect end-to-end. Renders
+    interactive nested subgraph zone containers (`FullGraphZonesLayer`) with `⌖ Fit` and
+    `⤢ Isolate` controls, and supports selecting/editing any nested leaf node via scoped
+    full-graph IDs (`makeFullGraphNodeId` / `parseFullGraphNodeId`) in `graphStore.ts`.
+  - **Radial Burst Emission, Simultaneous 3D Vector Wireframe Morphing & Outer-Edge Box/Label Growth**:
+    When not in Full Graph mode (`!viewFullGraph`), clicking on any subgraph node detaches the
+    node's title/name plate upward (`titleDetached` in `ParticleNeuronNode.tsx` and
+    `SubgraphExpansionOverlay.tsx`) and executes a `500ms` 3-stage choreography:
+    1. **Stage 1 — Radial Burst Around Parent (`p: 0.08 -> 0.34`)**: Pulls cloned central animated
+       3D cores (`SemanticNodeGlyph` / `VolumetricNodeCore`) out of the parent center into a circular
+       halo ring all around the parent node (`coreMorphProgress = 0`, `shellExpandProgress = 0`).
+    2. **Stage 2 — Simultaneous Transition & True 3D Vector Wireframe Metamorphosis (`p: 0.34 -> 0.82`)**:
+       All emitted cores transition into their target locations at once while `VolumetricNodeCore.tsx`
+       interpolates the live 3D rotating wireframe segments (`WireframeSegment3D[]`, `v1`/`v2` in 3D `(x, y, z)`
+       space with axial twist) from the parent's 3D wireframe (`coreMorphFrom`) into each child node's
+       new 3D vector wireframe (`coreMorphProgress: 0 -> 1`).
+    3. **Stage 3 — Outer-Edge Box & Label Growth (`p: 0.82 -> 1.00`)**: Once in place with their new
+       3D vector wireframes formed, `shellExpandProgress` sweeps `0 -> 1` so each node's outer box,
+       border, ports, and labels grow outward from the outer edges of its central animated 3D core.
+       Clicking a parent/ancestor breadcrumb in `Toolbar.tsx` or `ParticleGraphCanvas.tsx` plays the
+       exact reverse (`mode: "collapse"`): all child nodes retract their labels and outer boxes into
+       their central 3D cores, all bare 3D cores transition into a ring around the parent while
+       morphing their 3D vector wireframes back into the parent's 3D wireframe (`1 -> 0`), pull into the
+       central parent core, and the parent subgraph node's box and labels grow outward from its central
+       core's outer edges.
+  - **Full-Screen Graph Canvas with On-Demand Left, Bottom & Right Panel Dialogs**:
+    Updated `EditorPage.tsx`, `Toolbar.tsx`, `LibraryPanel.tsx`, `CodePanel.tsx`,
+    `DatasetSourcePanel.tsx`, `ChatPanel.tsx`, `TrainingPanel.tsx`, and
+    `settingsStore.ts` (`activePanelDialog`, `rightPanelTab`) so the graph canvas fills
+    the entire workspace without permanent left, right, or bottom panels crowding the
+    view. Added floating Left (`◈ Variants`), Bottom (`⚡ Training & Trace`), and Right
+    (`◧ Inspector` & `💬 Model Chat`) launcher buttons around the canvas perimeter (plus
+    matching buttons in `Toolbar.tsx`) that open each panel in a modal dialog while
+    keeping `TrainingPanel` and `ChatPanel` mounted so active training runs, `torchTrace`
+    updates, and chat transcripts persist when closed.
+  - Verified with `npm --prefix editor run build` (`tsc -b && vite build`).
 - Added a persisted Settings & Feature Flags system (`editor/src/store/settingsStore.ts`
   and `editor/src/components/SettingsModal.tsx`) with a feature flag toggle for the
   **Volumetric 3D WebGL & Particle Cyber Graph Editor** (`ParticleGraphCanvas.tsx`,

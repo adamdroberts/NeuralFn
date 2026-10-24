@@ -158,6 +158,20 @@ for (let i = 0; i < 16; i++) {
   }
 }
 
+export interface VolumetricMorphSource {
+  archetypeId: NodeArchetypeId;
+  neuronName: string;
+  primary: string;
+  secondary: string;
+}
+
+interface WireframeSegment3D {
+  v1: Vec3;
+  v2: Vec3;
+  rgb: [number, number, number];
+  alpha: number;
+}
+
 export interface VolumetricNodeCoreProps {
   archetypeId: NodeArchetypeId;
   neuronName: string;
@@ -166,12 +180,16 @@ export interface VolumetricNodeCoreProps {
   size?: number;
   speedMultiplier?: number;
   selected?: boolean;
+  morphFrom?: VolumetricMorphSource;
+  morphProgress?: number;
 }
 
 /**
  * Real-time 60 FPS 3D Volumetric Geometry & Twisting Mesh Core.
  * Renders depth-sorted 3D faces, normal-lit surfaces, counter-rotating gimbal rings,
  * torsional twisting lattices, and 4D hypercube projections.
+ * Supports true 3D vector wireframe vertex-and-edge metamorphosis from `morphFrom`
+ * into the target archetype as `morphProgress` sweeps from 0 to 1.
  */
 export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
   archetypeId,
@@ -181,12 +199,19 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
   size = 64,
   speedMultiplier = 1,
   selected = false,
+  morphFrom,
+  morphProgress = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const phaseOffsetRef = useRef<number>(
     neuronName.split("").reduce((acc, ch, i) => acc + ch.charCodeAt(0) * (i + 1) * 0.37, 0) %
       (Math.PI * 2),
   );
+  const morphStateRef = useRef<{
+    morphFrom?: VolumetricMorphSource;
+    morphProgress: number;
+  }>({ morphFrom, morphProgress });
+  morphStateRef.current = { morphFrom, morphProgress };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -199,8 +224,10 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
     canvas.width = Math.round(size * dpr);
     canvas.height = Math.round(size * dpr);
 
-    const [pr, pg, pb] = hexToRgb(primaryColor);
-    const [sr, sg, sb] = hexToRgb(secondaryColor);
+    const targetPRgb = hexToRgb(primaryColor);
+    const targetSRgb = hexToRgb(secondaryColor);
+
+    let activeCollector: WireframeSegment3D[] | null = null;
 
     const drawFacesAndEdges = (
       verts3D: Vec3[],
@@ -214,6 +241,20 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
       faceAlphaScale = 0.24,
       drawVertices = true,
     ) => {
+      if (activeCollector) {
+        for (const [i, j] of edges) {
+          if (verts3D[i] && verts3D[j]) {
+            activeCollector.push({
+              v1: verts3D[i],
+              v2: verts3D[j],
+              rgb,
+              alpha: edgeAlpha,
+            });
+          }
+        }
+        return;
+      }
+
       const projected = verts3D.map((v) => project(v, cx, cy, radius));
 
       // Depth-sort faces back-to-front (Painter's algorithm + normal lighting)
@@ -306,13 +347,26 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
       scalePx = size * 0.36,
       dashed = false,
     ) => {
-      const pts: ProjectedVert[] = [];
+      const rotPts: Vec3[] = [];
       for (let i = 0; i <= segments; i++) {
         const a = (i / segments) * Math.PI * 2;
         const v: Vec3 = [Math.cos(a) * radius3D, Math.sin(a) * radius3D, 0];
-        const rot = rotateXYZ(v, rx, ry, rz);
-        pts.push(project(rot, cx, cy, scalePx));
+        rotPts.push(rotateXYZ(v, rx, ry, rz));
       }
+      if (activeCollector) {
+        for (let i = 0; i < segments; i++) {
+          if (dashed && i % 2 === 1) continue;
+          activeCollector.push({
+            v1: rotPts[i],
+            v2: rotPts[i + 1],
+            rgb,
+            alpha: 0.82,
+          });
+        }
+        return;
+      }
+
+      const pts = rotPts.map((rot) => project(rot, cx, cy, scalePx));
       for (let i = 0; i < segments; i++) {
         if (dashed && i % 2 === 1) continue;
         const p1 = pts[i];
@@ -327,27 +381,19 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
       }
     };
 
-    const render = (nowMs: number) => {
-      const t = (nowMs * 0.001 * speedMultiplier * (selected ? 1.35 : 1.0)) + phaseOffsetRef.current;
-      ctx.save();
-      ctx.scale(dpr, dpr);
-      ctx.clearRect(0, 0, size, size);
-
-      const cx = size * 0.5;
-      const cy = size * 0.5;
-      const baseR = size * 0.34;
-
-      // Ambient volumetric core glow
-      const amb = ctx.createRadialGradient(cx, cy, 1, cx, cy, size * 0.48);
-      amb.addColorStop(0, `rgba(${pr}, ${pg}, ${pb}, ${selected ? 0.32 : 0.2})`);
-      amb.addColorStop(0.55, `rgba(${sr}, ${sg}, ${sb}, 0.08)`);
-      amb.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = amb;
-      ctx.fillRect(0, 0, size, size);
-
-      ctx.globalCompositeOperation = "lighter";
-
-      switch (archetypeId) {
+    const emitArchetypeGeometry = (
+      curArchId: NodeArchetypeId,
+      curNeuronName: string,
+      pRgb: [number, number, number],
+      sRgb: [number, number, number],
+      t: number,
+      cx: number,
+      cy: number,
+      baseR: number,
+    ) => {
+      const [pr, pg, pb] = pRgb;
+      const [sr, sg, sb] = sRgb;
+      switch (curArchId) {
         case "attention_prism": {
           // 2 counter-rotating 3D gimbal rings + inner rotating 3D octahedron crystal + Q/K/V laser vectors
           drawRing3D(cx, cy, 1.15, t * 0.9 + 0.8, -t * 0.7, t * 0.4, [sr, sg, sb], 24, baseR, true);
@@ -466,18 +512,27 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
               0.3,
               e % 2 === 0 ? 0.35 : -0.35,
             );
-            const pCenter = project(satCenter, cx, cy, baseR);
+            if (activeCollector) {
+              activeCollector.push({
+                v1: [0, 0, 0],
+                v2: satCenter,
+                rgb: [pr, pg, pb],
+                alpha: 0.75,
+              });
+            } else {
+              const pCenter = project(satCenter, cx, cy, baseR);
 
-            // Laser routing beam from origin to satellite
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(pCenter.x, pCenter.y);
-            ctx.strokeStyle =
-              e === activeExpert
-                ? `rgba(255, 255, 255, 0.92)`
-                : `rgba(${pr}, ${pg}, ${pb}, 0.38)`;
-            ctx.lineWidth = (e === activeExpert ? 1.8 : 0.9) * (size / 64);
-            ctx.stroke();
+              // Laser routing beam from origin to satellite
+              ctx.beginPath();
+              ctx.moveTo(cx, cy);
+              ctx.lineTo(pCenter.x, pCenter.y);
+              ctx.strokeStyle =
+                e === activeExpert
+                  ? `rgba(255, 255, 255, 0.92)`
+                  : `rgba(${pr}, ${pg}, ${pb}, 0.38)`;
+              ctx.lineWidth = (e === activeExpert ? 1.8 : 0.9) * (size / 64);
+              ctx.stroke();
+            }
 
             // Mini 3D octahedron at satellite position
             const satVerts = OCTAHEDRON_VERTS.map((v) => {
@@ -741,7 +796,7 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
 
           for (let i = 0; i < steps; i++) {
             const u = (i / (steps - 1)) * 2.0 - 1.0;
-            const fnY = -computeActivationY(neuronName, u * 1.8) * 0.85;
+            const fnY = -computeActivationY(curNeuronName, u * 1.8) * 0.85;
             const twist = u * 0.65 * Math.sin(t * 1.3);
             const zHalf = 0.26;
             const vFront: Vec3 = [
@@ -816,7 +871,7 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
         case "portal_input":
         case "portal_output": {
           // 3D Twisting Vortex Tunnel (4 coaxial 3D rings receding/advancing in Z depth)
-          const isInput = archetypeId === "portal_input";
+          const isInput = curArchId === "portal_input";
           const rings = 4;
           const N = 6;
           const verts: Vec3[] = [];
@@ -845,6 +900,199 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
           }
           drawFacesAndEdges(verts, edges, [], cx, cy, baseR, [pr, pg, pb], 0.9, 0, true);
           break;
+        }
+      }
+    };
+
+    const render = (nowMs: number) => {
+      const mState = morphStateRef.current;
+      const u = Math.max(0, Math.min(1, mState.morphProgress));
+      const isMorphing = Boolean(mState.morphFrom && u < 0.995);
+
+      const t =
+        nowMs * 0.001 * speedMultiplier * (selected || isMorphing ? 1.35 : 1.0) +
+        phaseOffsetRef.current;
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, size, size);
+
+      const cx = size * 0.5;
+      const cy = size * 0.5;
+      const baseR = size * 0.34;
+
+      const srcPRgb = mState.morphFrom
+        ? hexToRgb(mState.morphFrom.primary)
+        : targetPRgb;
+      const srcSRgb = mState.morphFrom
+        ? hexToRgb(mState.morphFrom.secondary)
+        : targetSRgb;
+
+      const blendPRgb: [number, number, number] = isMorphing
+        ? [
+            Math.round(srcPRgb[0] + (targetPRgb[0] - srcPRgb[0]) * u),
+            Math.round(srcPRgb[1] + (targetPRgb[1] - srcPRgb[1]) * u),
+            Math.round(srcPRgb[2] + (targetPRgb[2] - srcPRgb[2]) * u),
+          ]
+        : targetPRgb;
+      const blendSRgb: [number, number, number] = isMorphing
+        ? [
+            Math.round(srcSRgb[0] + (targetSRgb[0] - srcSRgb[0]) * u),
+            Math.round(srcSRgb[1] + (targetSRgb[1] - srcSRgb[1]) * u),
+            Math.round(srcSRgb[2] + (targetSRgb[2] - srcSRgb[2]) * u),
+          ]
+        : targetSRgb;
+
+      // Ambient volumetric core glow
+      const amb = ctx.createRadialGradient(cx, cy, 1, cx, cy, size * 0.48);
+      amb.addColorStop(
+        0,
+        `rgba(${blendPRgb[0]}, ${blendPRgb[1]}, ${blendPRgb[2]}, ${
+          selected || isMorphing ? 0.36 : 0.2
+        })`,
+      );
+      amb.addColorStop(
+        0.55,
+        `rgba(${blendSRgb[0]}, ${blendSRgb[1]}, ${blendSRgb[2]}, 0.1)`,
+      );
+      amb.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = amb;
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.globalCompositeOperation = "lighter";
+
+      if (!isMorphing || !mState.morphFrom) {
+        activeCollector = null;
+        emitArchetypeGeometry(
+          archetypeId,
+          neuronName,
+          targetPRgb,
+          targetSRgb,
+          t,
+          cx,
+          cy,
+          baseR,
+        );
+      } else if (u <= 0.01) {
+        // Pure cloned parent 3D wireframe core at start of emission
+        activeCollector = null;
+        emitArchetypeGeometry(
+          mState.morphFrom.archetypeId,
+          mState.morphFrom.neuronName,
+          srcPRgb,
+          srcSRgb,
+          t,
+          cx,
+          cy,
+          baseR,
+        );
+      } else {
+        // True 3D Vector Wireframe Metamorphosis:
+        // Extract the live 3D rotating wireframe segments of both the parent archetype
+        // and the target archetype, then interpolate every 3D vertex & edge in (x, y, z) space!
+        const srcSegs: WireframeSegment3D[] = [];
+        activeCollector = srcSegs;
+        emitArchetypeGeometry(
+          mState.morphFrom.archetypeId,
+          mState.morphFrom.neuronName,
+          srcPRgb,
+          srcSRgb,
+          t,
+          cx,
+          cy,
+          baseR,
+        );
+
+        const dstSegs: WireframeSegment3D[] = [];
+        activeCollector = dstSegs;
+        emitArchetypeGeometry(
+          archetypeId,
+          neuronName,
+          targetPRgb,
+          targetSRgb,
+          t,
+          cx,
+          cy,
+          baseR,
+        );
+        activeCollector = null;
+
+        const maxLen = Math.max(srcSegs.length, dstSegs.length);
+        if (maxLen > 0) {
+          // Smooth S-curve so you can clearly watch the 3D vector wireframe lines unfold and re-lock
+          const morphEase =
+            u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+          const midTwist = Math.sin(u * Math.PI) * 0.55;
+
+          const morphedSegs: {
+            p1: ProjectedVert;
+            p2: ProjectedVert;
+            z: number;
+            rgb: [number, number, number];
+            alpha: number;
+          }[] = [];
+
+          for (let k = 0; k < maxLen; k++) {
+            const s = srcSegs[k % srcSegs.length];
+            const d = dstSegs[k % dstSegs.length];
+
+            const rawV1: Vec3 = [
+              s.v1[0] + (d.v1[0] - s.v1[0]) * morphEase,
+              s.v1[1] + (d.v1[1] - s.v1[1]) * morphEase,
+              s.v1[2] + (d.v1[2] - s.v1[2]) * morphEase,
+            ];
+            const rawV2: Vec3 = [
+              s.v2[0] + (d.v2[0] - s.v2[0]) * morphEase,
+              s.v2[1] + (d.v2[1] - s.v2[1]) * morphEase,
+              s.v2[2] + (d.v2[2] - s.v2[2]) * morphEase,
+            ];
+
+            const v1 = twistY(rawV1, midTwist);
+            const v2 = twistY(rawV2, midTwist);
+
+            const p1 = project(v1, cx, cy, baseR);
+            const p2 = project(v2, cx, cy, baseR);
+            const rgb: [number, number, number] = [
+              Math.round(s.rgb[0] + (d.rgb[0] - s.rgb[0]) * morphEase),
+              Math.round(s.rgb[1] + (d.rgb[1] - s.rgb[1]) * morphEase),
+              Math.round(s.rgb[2] + (d.rgb[2] - s.rgb[2]) * morphEase),
+            ];
+
+            morphedSegs.push({
+              p1,
+              p2,
+              z: (v1[2] + v2[2]) * 0.5,
+              rgb,
+              alpha: s.alpha + (d.alpha - s.alpha) * morphEase,
+            });
+          }
+
+          morphedSegs.sort((a, b) => a.z - b.z);
+
+          for (const seg of morphedSegs) {
+            const depthFactor = Math.max(
+              0.3,
+              Math.min(1.2, (seg.z + 1.4) / 2.2),
+            );
+            ctx.beginPath();
+            ctx.moveTo(seg.p1.x, seg.p1.y);
+            ctx.lineTo(seg.p2.x, seg.p2.y);
+            ctx.strokeStyle = `rgba(${seg.rgb[0]}, ${seg.rgb[1]}, ${seg.rgb[2]}, ${Math.min(
+              1,
+              seg.alpha * depthFactor,
+            )})`;
+            ctx.lineWidth = (1.0 + 0.95 * depthFactor) * (size / 64);
+            ctx.stroke();
+
+            // Draw glowing 3D wireframe vertex joints so the vertex migration is clearly visible
+            const vr = (1.15 + 1.0 * depthFactor) * (size / 64);
+            ctx.beginPath();
+            ctx.arc(seg.p1.x, seg.p1.y, vr, 0, Math.PI * 2);
+            ctx.fillStyle =
+              depthFactor > 0.82
+                ? `rgba(255, 255, 255, ${0.88 * depthFactor})`
+                : `rgba(${seg.rgb[0]}, ${seg.rgb[1]}, ${seg.rgb[2]}, ${0.8 * depthFactor})`;
+            ctx.fill();
+          }
         }
       }
 

@@ -6,6 +6,7 @@ import {
   type NeuronNodeData,
   useGraphStore,
 } from "../store/graphStore";
+import type { CoreMorphSource } from "../store/graphUtils";
 import { useSettingsStore } from "../store/settingsStore";
 import {
   type NodeArchetypeId,
@@ -16,6 +17,9 @@ import VolumetricNodeCore from "./VolumetricNodeCore";
 /**
  * Live 60 FPS 3D Volumetric Hologram + Counter-Rotating Reticle Assembly
  * used both on graph nodes and inside the Node Picker Modal.
+ * When `morphFrom` and `morphProgress < 1` are supplied, the central animated
+ * 3D core smoothly morphs from the cloned source core (`morphFrom`) into this
+ * node's target 3D core (`archetypeId`, `neuronName`, `primary`, `secondary`).
  */
 export function SemanticNodeGlyph({
   archetypeId,
@@ -24,6 +28,8 @@ export function SemanticNodeGlyph({
   secondary,
   size = 56,
   selected = false,
+  morphFrom,
+  morphProgress = 1,
 }: {
   archetypeId: NodeArchetypeId;
   neuronName: string;
@@ -31,8 +37,14 @@ export function SemanticNodeGlyph({
   secondary: string;
   size?: number;
   selected?: boolean;
+  morphFrom?: CoreMorphSource;
+  morphProgress?: number;
 }) {
   const outerSize = size + 14;
+  const u = Math.max(0, Math.min(1, morphProgress));
+  const isMorphing = Boolean(morphFrom && u < 0.995);
+  const morphFlare = isMorphing ? Math.sin(u * Math.PI) : 0;
+
   return (
     <div
       className="relative flex items-center justify-center select-none"
@@ -42,6 +54,20 @@ export function SemanticNodeGlyph({
         transformStyle: "preserve-3d",
       }}
     >
+      {/* Mid-flight 3D Core Metamorphosis Shimmer Halo */}
+      {isMorphing && morphFrom && (
+        <div
+          className="pointer-events-none absolute rounded-full"
+          style={{
+            width: outerSize * (1.05 + morphFlare * 0.35),
+            height: outerSize * (1.05 + morphFlare * 0.35),
+            background: `radial-gradient(circle, ${primary}55 0%, ${morphFrom.primary}44 48%, transparent 74%)`,
+            opacity: 0.45 + morphFlare * 0.55,
+            boxShadow: `0 0 ${16 + morphFlare * 18}px ${primary}88`,
+          }}
+        />
+      )}
+
       {/* Rear Counter-Rotating Mechanical Turbine Ring (Z = -8px) */}
       <svg
         width={outerSize}
@@ -55,7 +81,7 @@ export function SemanticNodeGlyph({
           cy="50"
           r="46"
           fill="none"
-          stroke={secondary}
+          stroke={isMorphing && morphFrom && u < 0.5 ? morphFrom.secondary : secondary}
           strokeWidth="1.2"
           strokeDasharray="6 8 2 6"
         />
@@ -64,7 +90,7 @@ export function SemanticNodeGlyph({
           cy="50"
           r="39"
           fill="none"
-          stroke={primary}
+          stroke={isMorphing && morphFrom && u < 0.5 ? morphFrom.primary : primary}
           strokeWidth="0.9"
           strokeDasharray="16 10"
         />
@@ -83,23 +109,47 @@ export function SemanticNodeGlyph({
           cy="50"
           r="43"
           fill="none"
-          stroke={primary}
+          stroke={isMorphing && morphFrom && u < 0.5 ? morphFrom.primary : primary}
           strokeWidth="1.4"
           strokeDasharray="22 18 4 14"
         />
-        <polygon points="50,2 47,8 53,8" fill={primary} />
-        <polygon points="50,98 47,92 53,92" fill={secondary} />
+        <polygon
+          points="50,2 47,8 53,8"
+          fill={isMorphing && morphFrom && u < 0.5 ? morphFrom.primary : primary}
+        />
+        <polygon
+          points="50,98 47,92 53,92"
+          fill={isMorphing && morphFrom && u < 0.5 ? morphFrom.secondary : secondary}
+        />
       </svg>
 
-      {/* Center 60 FPS 3D Rotating & Twisting Volumetric Mesh Core (Z = +10px) */}
-      <div className="relative z-10" style={{ transform: "translateZ(10px)" }}>
+      {/* Center 60 FPS 3D Rotating & Twisting Volumetric Vector Wireframe Core (Z = +10px) */}
+      <div
+        className="relative z-10"
+        style={{
+          transform: isMorphing
+            ? `translateZ(14px) scale(${1 + morphFlare * 0.38})`
+            : "translateZ(10px)",
+        }}
+      >
         <VolumetricNodeCore
           archetypeId={archetypeId}
           neuronName={neuronName}
           primaryColor={primary}
           secondaryColor={secondary}
           size={size}
-          selected={selected}
+          selected={selected || isMorphing}
+          morphFrom={
+            morphFrom
+              ? {
+                  archetypeId: morphFrom.archetypeId as NodeArchetypeId,
+                  neuronName: morphFrom.neuronName,
+                  primary: morphFrom.primary,
+                  secondary: morphFrom.secondary,
+                }
+              : undefined
+          }
+          morphProgress={u}
         />
       </div>
     </div>
@@ -108,13 +158,46 @@ export function SemanticNodeGlyph({
 
 function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
   const nodeData = data as unknown as NeuronNodeData;
-  const { neuronDef, label, isInput, isOutput } = nodeData;
+  const {
+    neuronDef,
+    label,
+    isInput,
+    isOutput,
+    breadcrumbLabel,
+    spawnScale = 1,
+    titleDetached = 0,
+    coreOnlyMorph = 0,
+    coreMorphProgress = 1,
+    coreMorphFrom,
+    shellExpandProgress = 1,
+    instancePath,
+    localNodeId,
+  } = nodeData;
   const inputs = neuronDef.input_ports;
   const outputs = neuronDef.output_ports;
   const isSubgraph = neuronDef.kind === "subgraph";
   const isModule = neuronDef.kind === "module";
   const trainingMethod = neuronDef.subgraph?.training_method;
   const variantRef = neuronDef.variant_ref;
+
+  // `shellU`: 0 = only the central animated 3D core is visible;
+  // 0 -> 1 = the outer box, ports, and labels grow outward from the outer edges of the central 3D core!
+  const shellU = Math.max(
+    0,
+    Math.min(1, shellExpandProgress * (1 - coreOnlyMorph)),
+  );
+  // Smooth ease-out for box growing outward from the central core's outer edges
+  const boxGrowEase = 1 - Math.pow(1 - shellU, 2.6);
+  const boxScaleX = 0.32 + 0.68 * boxGrowEase;
+  const boxScaleY = 0.38 + 0.62 * boxGrowEase;
+  const boxOpacity = shellU <= 0.01 ? 0 : Math.min(1, shellU * 1.85);
+  // Ports and labels unfold outward from the outer edges of the central core slightly as/after the box edge expands
+  const edgeGrowU = Math.max(0, Math.min(1, (shellU - 0.12) / 0.88));
+  const edgeGrowEase = 1 - Math.pow(1 - edgeGrowU, 2.5);
+  const edgeOpacity = edgeGrowU <= 0.01 ? 0 : Math.min(1, edgeGrowU * 1.5);
+  // Glowing rim highlight while the box is actively growing from the core's outer edges
+  const shellExpandingGlow =
+    shellU > 0.01 && shellU < 0.98 ? Math.sin(shellU * Math.PI) : 0;
 
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
   const torchTrace = useGraphStore((state) => state.torchTrace);
@@ -126,7 +209,11 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
 
   const [isHovered, setIsHovered] = useState(false);
   const [tilt, setTilt] = useState<{ rx: number; ry: number }>({ rx: 6, ry: -6 });
-  const traceStats = resolveTorchTraceStats(torchTrace, currentPath, id);
+  const traceStats = resolveTorchTraceStats(
+    torchTrace,
+    instancePath ?? currentPath,
+    localNodeId ?? id,
+  );
 
   // Resolve distinct semantic archetype for this node
   const archetype = useMemo(
@@ -202,39 +289,51 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
           style={{
             transformStyle: "preserve-3d",
             transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(${
-              selected ? 1.07 : isHovered ? 1.03 : 1
+              (selected ? 1.07 : isHovered ? 1.03 : 1) * spawnScale
             })`,
           }}
         >
-          {/* Plane -2 (Z = -18px): Extruded 3D Backplate */}
+          {/* Plane -2 (Z = -18px): Extruded 3D Backplate (grows outward from core outer edges) */}
           <div
             className="pointer-events-none absolute inset-1"
             style={{
               clipPath: archetype.clipPath,
-              transform: "translateZ(-18px)",
+              transformOrigin: "center center",
+              transform: `translateZ(-18px) scaleX(${boxScaleX}) scaleY(${boxScaleY})`,
+              opacity: boxOpacity,
               backgroundColor: `${accentColor}20`,
               border: `1px solid ${accentColor}55`,
               boxShadow: `0 18px 36px rgba(0,0,0,0.9), 0 0 24px ${accentColor}33`,
             }}
           />
 
-          {/* Plane 0 (Z = 0px): Main Shaped Cyber Frame */}
+          {/* Plane 0 (Z = 0px): Main Shaped Cyber Frame (grows outward from core outer edges) */}
           <div
-            className="pointer-events-none absolute inset-1 transition-all duration-300"
+            className="pointer-events-none absolute inset-1"
             style={{
               clipPath: archetype.clipPath,
-              transform: "translateZ(0px)",
+              transformOrigin: "center center",
+              transform: `translateZ(0px) scaleX(${boxScaleX}) scaleY(${boxScaleY})`,
+              opacity: boxOpacity,
               background: `linear-gradient(135deg, ${accentColor}26 0%, rgba(3, 10, 24, 0.85) 55%, ${secondaryColor}22 100%)`,
               border: `1.5px solid ${selected ? accentColor : `${accentColor}88`}`,
-              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), 0 0 18px ${accentColor}40`,
+              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), 0 0 ${
+                18 + shellExpandingGlow * 22
+              }px ${accentColor}`,
             }}
           />
 
-          {/* Plane +2 (Z = +22px): Floating Top Laser Callout Banner */}
+          {/* Plane +2 (Z = +22px): Floating Top Laser Callout Banner (grows upward from top edge of core) */}
           <div
             className="pointer-events-none absolute -top-9 left-1/2 flex flex-col items-center z-20"
             style={{
-              transform: "translateX(-50%) translateZ(22px)",
+              transformOrigin: "center bottom",
+              transform: `translateX(-50%) translateY(${
+                (1 - edgeGrowEase) * 32 - titleDetached * 56
+              }px) translateZ(${22 + titleDetached * 24}px) scaleX(${
+                0.45 + 0.55 * edgeGrowEase
+              }) scaleY(${0.15 + 0.85 * edgeGrowEase})`,
+              opacity: Math.max(0, edgeOpacity * (1 - titleDetached * 1.15)),
             }}
           >
             <div
@@ -272,10 +371,16 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
             />
           </div>
 
-          {/* Left Input Ports (Z = +16px) */}
+          {/* Left Input Ports (Z = +16px, grows leftward from left outer edge of core) */}
           <div
             className="relative z-10 flex flex-col gap-1.5"
-            style={{ transform: "translateZ(16px)" }}
+            style={{
+              transformOrigin: "right center",
+              transform: `translateZ(16px) translateX(${
+                (1 - edgeGrowEase) * 32
+              }px) scaleX(${0.15 + 0.85 * edgeGrowEase})`,
+              opacity: edgeOpacity,
+            }}
           >
             {inputs.map((p, i) => (
               <div key={p.name} className="relative flex items-center">
@@ -314,13 +419,21 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
               secondary={secondaryColor}
               size={62}
               selected={selected}
+              morphFrom={coreMorphFrom}
+              morphProgress={coreMorphProgress}
             />
           </div>
 
-          {/* Right Output Ports (Z = +16px) */}
+          {/* Right Output Ports (Z = +16px, grows rightward from right outer edge of core) */}
           <div
             className="relative z-10 flex flex-col gap-1.5 items-end"
-            style={{ transform: "translateZ(16px)" }}
+            style={{
+              transformOrigin: "left center",
+              transform: `translateZ(16px) translateX(${
+                -(1 - edgeGrowEase) * 32
+              }px) scaleX(${0.15 + 0.85 * edgeGrowEase})`,
+              opacity: edgeOpacity,
+            }}
           >
             {outputs.map((p, i) => (
               <div key={p.name} className="relative flex items-center">
@@ -370,16 +483,18 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
         style={{
           transformStyle: "preserve-3d",
           transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(${
-            selected ? 1.04 : isHovered ? 1.02 : 1
+            (selected ? 1.04 : isHovered ? 1.02 : 1) * spawnScale
           })`,
         }}
       >
-        {/* ── PLANE -2 (Z = -20px): Deep 3D Shadow & Rear Rotating Reactor Ring ── */}
+        {/* ── PLANE -2 (Z = -20px): Deep 3D Shadow & Rear Backplate (grows outward from core outer edges) ── */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             clipPath: archetype.clipPath,
-            transform: "translateZ(-20px) translateX(4px) translateY(6px)",
+            transformOrigin: "center center",
+            transform: `translateZ(-20px) translateX(4px) translateY(6px) scaleX(${boxScaleX}) scaleY(${boxScaleY})`,
+            opacity: boxOpacity,
             backgroundColor: "rgba(1, 4, 12, 0.92)",
             border: `1.5px solid ${accentColor}55`,
             boxShadow: selected
@@ -390,8 +505,13 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
 
         {/* Rear Counter-Rotating Cyber Gear peeking behind the chassis (Z = -14px) */}
         <div
-          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-40"
-          style={{ transform: "translate(-50%, -50%) translateZ(-14px)" }}
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+          style={{
+            transform: `translate(-50%, -50%) translateZ(-14px) scale(${
+              0.45 + 0.55 * boxGrowEase
+            })`,
+            opacity: boxOpacity * 0.4,
+          }}
         >
           <svg
             width={136}
@@ -420,31 +540,39 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
           </svg>
         </div>
 
-        {/* ── PLANE -1 (Z = -9px): Extruded Metallic-Glass Bevel Plate ── */}
+        {/* ── PLANE -1 (Z = -9px): Extruded Metallic-Glass Bevel Plate (grows outward from core outer edges) ── */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             clipPath: archetype.clipPath,
-            transform: "translateZ(-9px) translateX(2px) translateY(3px)",
+            transformOrigin: "center center",
+            transform: `translateZ(-9px) translateX(2px) translateY(3px) scaleX(${boxScaleX}) scaleY(${boxScaleY})`,
+            opacity: boxOpacity,
             background: `linear-gradient(135deg, ${accentColor}44, rgba(8, 18, 38, 0.92), ${secondaryColor}44)`,
           }}
         />
 
-        {/* ── PLANE 0 (Z = 0px): Main Shaped Cyber Armor Shell ── */}
+        {/* ── PLANE 0 (Z = 0px): Main Shaped Cyber Armor Shell Background & Border (grows outward from core outer edges!) ── */}
         <div
-          className="relative p-[1.5px]"
+          className="pointer-events-none absolute inset-0 p-[1.5px]"
           style={{
             clipPath: archetype.clipPath,
-            transform: "translateZ(0px)",
+            transformOrigin: "center center",
+            transform: `translateZ(0px) scaleX(${boxScaleX}) scaleY(${boxScaleY})`,
+            opacity: boxOpacity,
             background: selected
               ? `linear-gradient(135deg, ${accentColor}, ${secondaryColor}, ${accentColor})`
               : isHovered
               ? `linear-gradient(135deg, ${accentColor}dd, ${secondaryColor}88, ${accentColor}bb)`
               : `linear-gradient(135deg, ${accentColor}99, rgba(15, 23, 42, 0.92), ${secondaryColor}77)`,
+            boxShadow:
+              shellExpandingGlow > 0.01
+                ? `0 0 ${24 * shellExpandingGlow}px ${accentColor}`
+                : undefined,
           }}
         >
           <div
-            className="relative px-3.5 py-2.5 backdrop-blur-md"
+            className="h-full w-full backdrop-blur-md"
             style={{
               clipPath: archetype.clipPath,
               background: selected
@@ -452,8 +580,26 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
                 : `linear-gradient(160deg, rgba(4, 11, 26, 0.92) 0%, rgba(2, 6, 16, 0.96) 70%, ${accentColor}14 100%)`,
               boxShadow: `inset 0 1px 0 rgba(255,255,255,0.18), inset 0 0 26px ${accentColor}22`,
             }}
+          />
+        </div>
+
+        {/* ── FOREGROUND CONTENT LAYER: Central Animated 3D Core + Labels/Ports that grow from outside its outer edges ── */}
+        <div
+          className="relative px-3.5 py-2.5"
+          style={{ transform: "translateZ(2px)" }}
+        >
+          {/* Top Header & Node Title: Grows upward from the top outer edge of the central 3D core */}
+          <div
+            style={{
+              transformOrigin: "center bottom",
+              transform: `translateY(${
+                (1 - edgeGrowEase) * 26 - titleDetached * 54
+              }px) translateZ(${titleDetached * 26}px) scaleX(${
+                0.48 + 0.52 * edgeGrowEase
+              }) scaleY(${0.12 + 0.88 * edgeGrowEase})`,
+              opacity: Math.max(0, edgeOpacity * (1 - titleDetached * 1.15)),
+            }}
           >
-            {/* Top Archetype Telemetry Bar */}
             <div
               className="mb-1.5 flex items-center justify-between border-b pb-1 font-mono text-[8px] tracking-widest"
               style={{
@@ -543,135 +689,183 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
                   )}
               </div>
             </div>
+          </div>
 
-            {/* Center Body: Left Input Ports + Center 3D Volumetric Hologram Chamber + Right Output Ports */}
-            <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
-              {/* Input Ports */}
-              <div className="flex flex-col gap-1.5 min-w-[44px]">
-                {inputs.map((p, i) => {
-                  let shape = "";
-                  if (p.name === "q" || p.name === "v" || p.name === "heads")
-                    shape = "[B,H,T,D]";
-                  else if (p.name === "k") shape = "[B,KV,T,D]";
-                  else if (
-                    p.dtype === "tensor" &&
-                    p.name !== "k" &&
-                    p.name !== "q" &&
-                    p.name !== "v"
-                  )
-                    shape = "[B,T,C]";
-                  else if (p.dtype === "tokens") shape = "[B,T]";
+          {/* Center Body: Left Input Ports + Center 3D Volumetric Hologram Chamber + Right Output Ports */}
+          <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
+            {/* Left Input Ports: Grow leftward from the left outer edge of the central 3D core */}
+            <div
+              className="flex flex-col gap-1.5 min-w-[44px]"
+              style={{
+                transformOrigin: "right center",
+                transform: `translateX(${
+                  (1 - edgeGrowEase) * 34
+                }px) scaleX(${0.15 + 0.85 * edgeGrowEase})`,
+                opacity: edgeOpacity,
+              }}
+            >
+              {inputs.map((p, i) => {
+                let shape = "";
+                if (p.name === "q" || p.name === "v" || p.name === "heads")
+                  shape = "[B,H,T,D]";
+                else if (p.name === "k") shape = "[B,KV,T,D]";
+                else if (
+                  p.dtype === "tensor" &&
+                  p.name !== "k" &&
+                  p.name !== "q" &&
+                  p.name !== "v"
+                )
+                  shape = "[B,T,C]";
+                else if (p.dtype === "tokens") shape = "[B,T]";
 
-                  return (
-                    <div key={p.name} className="relative flex items-center group/port">
-                      <Handle
-                        type="target"
-                        position={Position.Left}
-                        id={`in-${i}`}
-                        className="!w-3 !h-3 !rounded-sm transition-all duration-150 hover:!scale-125"
-                        style={{
-                          top: "auto",
-                          position: "relative",
-                          left: -8,
-                          transform: "rotate(45deg)",
-                          backgroundColor: accentColor,
-                          borderColor: "#ffffff",
-                          borderWidth: 1.5,
-                          boxShadow: `0 0 8px ${accentColor}`,
-                        }}
-                      />
-                      <span className="flex items-center gap-1 text-gray-200">
-                        {p.name}
-                        {shape && (
-                          <span
-                            className="pointer-events-none rounded-sm border px-1 text-[7px] opacity-75 group-hover/port:opacity-100"
-                            style={{
-                              borderColor: `${accentColor}44`,
-                              backgroundColor: `${accentColor}14`,
-                              color: accentColor,
-                            }}
-                          >
-                            {shape}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* ── PLANE +1: 3D Volumetric Rotating & Twisting Core Pedestal ── */}
-              <div
-                className="pointer-events-none relative flex flex-col items-center justify-center rounded-lg border px-1.5 py-1"
-                style={{
-                  borderColor: `${accentColor}40`,
-                  background: `radial-gradient(circle at 50% 50%, ${accentColor}22 0%, rgba(2, 6, 18, 0.85) 75%)`,
-                  boxShadow: `0 8px 20px rgba(0,0,0,0.85), inset 0 0 16px ${accentColor}25, 0 0 14px ${accentColor}20`,
-                }}
-              >
-                <SemanticNodeGlyph
-                  archetypeId={archetype.id}
-                  neuronName={neuronDef.name}
-                  primary={accentColor}
-                  secondary={secondaryColor}
-                  size={54}
-                  selected={selected}
-                />
-              </div>
-
-              {/* Output Ports */}
-              <div className="flex flex-col items-end gap-1.5 min-w-[44px]">
-                {outputs.map((p, i) => {
-                  let shape = "";
-                  if (p.name === "q_rot" || p.name === "k_rot" || p.name === "heads")
-                    shape = "[B,H,T,D]";
-                  else if (
-                    p.dtype === "tensor" &&
-                    p.name !== "heads" &&
-                    p.name !== "q_rot" &&
-                    p.name !== "k_rot"
-                  )
-                    shape = "[B,T,C]";
-
-                  return (
-                    <div key={p.name} className="relative flex items-center group/port">
-                      <span className="mr-1 flex flex-row-reverse items-center gap-1 text-gray-200">
-                        {p.name}
-                        {shape && (
-                          <span
-                            className="pointer-events-none rounded-sm border px-1 text-[7px] opacity-75 group-hover/port:opacity-100"
-                            style={{
-                              borderColor: `${secondaryColor}44`,
-                              backgroundColor: `${secondaryColor}14`,
-                              color: secondaryColor,
-                            }}
-                          >
-                            {shape}
-                          </span>
-                        )}
-                      </span>
-                      <Handle
-                        type="source"
-                        position={Position.Right}
-                        id={`out-${i}`}
-                        className="!w-3 !h-3 !rounded-sm transition-all duration-150 hover:!scale-125"
-                        style={{
-                          top: "auto",
-                          position: "relative",
-                          right: -8,
-                          transform: "rotate(45deg)",
-                          backgroundColor: secondaryColor,
-                          borderColor: "#ffffff",
-                          borderWidth: 1.5,
-                          boxShadow: `0 0 8px ${secondaryColor}`,
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                return (
+                  <div key={p.name} className="relative flex items-center group/port">
+                    <Handle
+                      type="target"
+                      position={Position.Left}
+                      id={`in-${i}`}
+                      className="!w-3 !h-3 !rounded-sm transition-all duration-150 hover:!scale-125"
+                      style={{
+                        top: "auto",
+                        position: "relative",
+                        left: -8,
+                        transform: "rotate(45deg)",
+                        backgroundColor: accentColor,
+                        borderColor: "#ffffff",
+                        borderWidth: 1.5,
+                        boxShadow: `0 0 8px ${accentColor}`,
+                      }}
+                    />
+                    <span className="flex items-center gap-1 text-gray-200">
+                      {p.name}
+                      {shape && (
+                        <span
+                          className="pointer-events-none rounded-sm border px-1 text-[7px] opacity-75 group-hover/port:opacity-100"
+                          style={{
+                            borderColor: `${accentColor}44`,
+                            backgroundColor: `${accentColor}14`,
+                            color: accentColor,
+                          }}
+                        >
+                          {shape}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
+            {/* ── PLANE +1: 3D Volumetric Rotating & Twisting Core (Always full-size during travel & morph!) ── */}
+            <div
+              className="pointer-events-none relative flex flex-col items-center justify-center rounded-lg px-1.5 py-1"
+              style={{
+                border:
+                  boxOpacity > 0.05
+                    ? `1px solid ${accentColor}${Math.round(boxOpacity * 64)
+                        .toString(16)
+                        .padStart(2, "0")}`
+                    : "1px solid transparent",
+                background:
+                  boxOpacity > 0.05
+                    ? `radial-gradient(circle at 50% 50%, ${accentColor}22 0%, rgba(2, 6, 18, ${
+                        0.85 * boxOpacity
+                      }) 75%)`
+                    : "transparent",
+                boxShadow:
+                  boxOpacity > 0.05
+                    ? `0 8px 20px rgba(0,0,0,${
+                        0.85 * boxOpacity
+                      }), inset 0 0 16px ${accentColor}25, 0 0 14px ${accentColor}20`
+                    : undefined,
+              }}
+            >
+              <SemanticNodeGlyph
+                archetypeId={archetype.id}
+                neuronName={neuronDef.name}
+                primary={accentColor}
+                secondary={secondaryColor}
+                size={54}
+                selected={selected}
+                morphFrom={coreMorphFrom}
+                morphProgress={coreMorphProgress}
+              />
+            </div>
+
+            {/* Right Output Ports: Grow rightward from the right outer edge of the central 3D core */}
+            <div
+              className="flex flex-col items-end gap-1.5 min-w-[44px]"
+              style={{
+                transformOrigin: "left center",
+                transform: `translateX(${
+                  -(1 - edgeGrowEase) * 34
+                }px) scaleX(${0.15 + 0.85 * edgeGrowEase})`,
+                opacity: edgeOpacity,
+              }}
+            >
+              {outputs.map((p, i) => {
+                let shape = "";
+                if (p.name === "q_rot" || p.name === "k_rot" || p.name === "heads")
+                  shape = "[B,H,T,D]";
+                else if (
+                  p.dtype === "tensor" &&
+                  p.name !== "heads" &&
+                  p.name !== "q_rot" &&
+                  p.name !== "k_rot"
+                )
+                  shape = "[B,T,C]";
+
+                return (
+                  <div key={p.name} className="relative flex items-center group/port">
+                    <span className="mr-1 flex flex-row-reverse items-center gap-1 text-gray-200">
+                      {p.name}
+                      {shape && (
+                        <span
+                          className="pointer-events-none rounded-sm border px-1 text-[7px] opacity-75 group-hover/port:opacity-100"
+                          style={{
+                            borderColor: `${secondaryColor}44`,
+                            backgroundColor: `${secondaryColor}14`,
+                            color: secondaryColor,
+                          }}
+                        >
+                          {shape}
+                        </span>
+                      )}
+                    </span>
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={`out-${i}`}
+                      className="!w-3 !h-3 !rounded-sm transition-all duration-150 hover:!scale-125"
+                      style={{
+                        top: "auto",
+                        position: "relative",
+                        right: -8,
+                        transform: "rotate(45deg)",
+                        backgroundColor: secondaryColor,
+                        borderColor: "#ffffff",
+                        borderWidth: 1.5,
+                        boxShadow: `0 0 8px ${secondaryColor}`,
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bottom Footer: Grows downward from the bottom outer edge of the central 3D core */}
+          <div
+            style={{
+              transformOrigin: "center top",
+              transform: `translateY(${
+                -(1 - edgeGrowEase) * 20
+              }px) scaleX(${0.48 + 0.52 * edgeGrowEase}) scaleY(${
+                0.12 + 0.88 * edgeGrowEase
+              })`,
+              opacity: edgeOpacity,
+            }}
+          >
             {/* Subgraph / Variant Footer */}
             {isSubgraph && (
               <div
@@ -688,7 +882,23 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
                     ? `VARIANT: ${String(variantRef.family)}`
                     : `${subgraphNodeCount} INTERNAL NODES`}
                 </span>
-                <span className="uppercase tracking-wider opacity-85">2×CLICK WARP ▸</span>
+                <span className="uppercase tracking-wider opacity-90 font-bold">
+                  CLICK TO EXPAND ⤢
+                </span>
+              </div>
+            )}
+
+            {/* Full-Graph Subgraph Lineage Chip */}
+            {!isSubgraph && breadcrumbLabel && (
+              <div
+                className="mt-1.5 flex items-center justify-between rounded-sm border px-1.5 py-0.5 font-mono text-[7px] opacity-80"
+                style={{
+                  borderColor: `${secondaryColor}33`,
+                  backgroundColor: "rgba(2, 8, 23, 0.7)",
+                  color: secondaryColor,
+                }}
+              >
+                <span className="truncate">◈ {breadcrumbLabel}</span>
               </div>
             )}
 

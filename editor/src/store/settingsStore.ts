@@ -116,10 +116,16 @@ export interface PersistedEditorSettings {
   holoPerspective3D: boolean;
   motionIntensity: MotionIntensity;
   hudTelemetryOverlay: boolean;
+  viewFullGraph: boolean;
 }
+
+export type EditorPanelDialog = "left" | "bottom" | "right" | null;
+export type RightPanelTab = "inspector" | "chat";
 
 export interface SettingsState extends PersistedEditorSettings {
   isSettingsOpen: boolean;
+  activePanelDialog: EditorPanelDialog;
+  rightPanelTab: RightPanelTab;
   pulseSequence: number;
 
   setParticleGraphEditorEnabled: (enabled: boolean) => void;
@@ -130,7 +136,11 @@ export interface SettingsState extends PersistedEditorSettings {
   setHoloPerspective3D: (enabled: boolean) => void;
   setMotionIntensity: (intensity: MotionIntensity) => void;
   setHudTelemetryOverlay: (enabled: boolean) => void;
+  setViewFullGraph: (enabled: boolean) => void;
+  toggleViewFullGraph: () => void;
   setSettingsOpen: (open: boolean) => void;
+  setActivePanelDialog: (dialog: EditorPanelDialog) => void;
+  openRightPanelDialog: (tab?: RightPanelTab) => void;
   triggerPulse: () => void;
   resetSettings: () => void;
 }
@@ -145,6 +155,7 @@ const DEFAULT_SETTINGS: PersistedEditorSettings = {
   holoPerspective3D: false,
   motionIntensity: "cinematic",
   hudTelemetryOverlay: true,
+  viewFullGraph: false,
 };
 
 function loadPersistedSettings(): PersistedEditorSettings {
@@ -189,6 +200,10 @@ function loadPersistedSettings(): PersistedEditorSettings {
         typeof parsed.hudTelemetryOverlay === "boolean"
           ? parsed.hudTelemetryOverlay
           : DEFAULT_SETTINGS.hudTelemetryOverlay,
+      viewFullGraph:
+        typeof parsed.viewFullGraph === "boolean"
+          ? parsed.viewFullGraph
+          : DEFAULT_SETTINGS.viewFullGraph,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -208,6 +223,7 @@ function savePersistedSettings(state: PersistedEditorSettings) {
       holoPerspective3D: state.holoPerspective3D,
       motionIntensity: state.motionIntensity,
       hudTelemetryOverlay: state.hudTelemetryOverlay,
+      viewFullGraph: state.viewFullGraph,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {
@@ -218,6 +234,8 @@ function savePersistedSettings(state: PersistedEditorSettings) {
 export const useSettingsStore = create<SettingsState>((set) => ({
   ...loadPersistedSettings(),
   isSettingsOpen: false,
+  activePanelDialog: null,
+  rightPanelTab: "inspector",
   pulseSequence: 0,
 
   setParticleGraphEditorEnabled: (particleGraphEditorEnabled) =>
@@ -279,7 +297,31 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       return next;
     }),
 
+  setViewFullGraph: (viewFullGraph) =>
+    set((state) => {
+      const next = { ...state, viewFullGraph };
+      savePersistedSettings(next);
+      return next;
+    }),
+
+  toggleViewFullGraph: () =>
+    set((state) => {
+      const next = { ...state, viewFullGraph: !state.viewFullGraph };
+      savePersistedSettings(next);
+      return next;
+    }),
+
   setSettingsOpen: (isSettingsOpen) => set((state) => ({ ...state, isSettingsOpen })),
+
+  setActivePanelDialog: (activePanelDialog) =>
+    set((state) => ({ ...state, activePanelDialog })),
+
+  openRightPanelDialog: (tab = "inspector") =>
+    set((state) => ({
+      ...state,
+      activePanelDialog: "right",
+      rightPanelTab: tab,
+    })),
 
   triggerPulse: () =>
     set((state) => ({ ...state, pulseSequence: state.pulseSequence + 1 })),

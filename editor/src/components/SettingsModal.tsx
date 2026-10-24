@@ -32,6 +32,8 @@ export default function SettingsModal() {
   const setHudTelemetryOverlay = useSettingsStore(
     (state) => state.setHudTelemetryOverlay,
   );
+  const viewFullGraph = useSettingsStore((state) => state.viewFullGraph);
+  const setViewFullGraph = useSettingsStore((state) => state.setViewFullGraph);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
 
   useEffect(() => {
@@ -409,6 +411,28 @@ export default function SettingsModal() {
                   checked={hudTelemetryOverlay}
                   onChange={(e) => setHudTelemetryOverlay(e.target.checked)}
                   className="h-4 w-4 accent-cyan-400"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-gray-800 bg-gray-900/50 px-4 py-3 sm:col-span-2">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-gray-200">
+                    <span>⊞ View Full Graph (Expand All Subgraphs)</span>
+                    {viewFullGraph && (
+                      <span className="rounded border border-emerald-500/40 bg-emerald-950/60 px-1.5 py-0.2 font-mono text-[9px] text-emerald-300">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-gray-400">
+                    Recursively expands all nested subgraphs into a single unified architecture view with interactive subgraph zone containers. When disabled, clicking a subgraph node smoothly zooms out and expands the node to fill the canvas while adding its internal components into view.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={viewFullGraph}
+                  onChange={(e) => setViewFullGraph(e.target.checked)}
+                  className="h-4 w-4 accent-emerald-400"
                 />
               </label>
             </div>

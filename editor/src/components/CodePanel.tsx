@@ -27,6 +27,9 @@ export default function CodePanel() {
     (state) => state.setParticleGraphEditorEnabled,
   );
   const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
+  const setActivePanelDialog = useSettingsStore(
+    (state) => state.setActivePanelDialog,
+  );
 
   const [code, setCode] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -80,9 +83,7 @@ export default function CodePanel() {
       </div>
     ) : null;
 
-  const panelShellClass = particleGraphEditorEnabled
-    ? "w-80 min-h-0 cyber-panel-right flex flex-col overflow-hidden z-10"
-    : "w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden";
+  const panelShellClass = "w-full flex-1 min-h-0 flex flex-col overflow-hidden";
 
   const inputClass = particleGraphEditorEnabled
     ? "mt-1 block w-full cyber-input rounded px-2 py-1 text-gray-100"
@@ -325,7 +326,10 @@ export default function CodePanel() {
               </div>
 
               <button
-                onClick={() => openSubgraph(node.id)}
+                onClick={() => {
+                  openSubgraph(node.id);
+                  setActivePanelDialog(null);
+                }}
                 className="bg-amber-800 hover:bg-amber-700 text-amber-100 text-xs px-3 py-1.5 rounded font-medium"
               >
                 Open Variant
@@ -384,7 +388,10 @@ export default function CodePanel() {
               </label>
 
               <button
-                onClick={() => openSubgraph(node.id)}
+                onClick={() => {
+                  openSubgraph(node.id);
+                  setActivePanelDialog(null);
+                }}
                 className="bg-amber-800 hover:bg-amber-700 text-amber-100 text-xs px-3 py-1.5 rounded font-medium"
               >
                 Open Subgraph

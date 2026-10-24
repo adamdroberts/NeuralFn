@@ -435,13 +435,7 @@ export default function TrainingPanel() {
     : "ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs";
 
   return (
-    <div
-      className={
-        particleGraphEditorEnabled
-          ? "cyber-panel-bottom p-3"
-          : "border-t border-gray-800 bg-gray-900 p-3"
-      }
-    >
+    <div className="w-full p-4 overflow-auto">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-xs text-gray-300">
           Root method:{" "}

@@ -24,7 +24,13 @@ A 60 FPS 3D volumetric WebGL and particle cybernetic graph editor, toggled via t
 - **60 FPS Multi-Layer Particle Engine**: Simulates ambient curl-noise field particles, semantic 3D orbital node swarms (`tri_prism`, `lissajous_wave`, `vortex_funnel`, `satellite_clusters`, `matrix_lattice`, `stabilizer_rings`, `cylinder_stack`, `radial_pulsar`, `harmonic_orbit`, `hex_shield`, `emitter_beam`), double-helix synaptic photon packets along cubic Bézier edges, and supernova burst/shockwave rings.
 - **Smooth Vortex Morphing Transitions**: Re-targets orbital particles using damped spring physics when navigating subgraphs (`currentPath`), loading GPT templates, or switching projection modes.
 - **Projection Modes**: Supports both `hybrid_hud` (multi-plane CSS 3D extruded node chassis via `ParticleNeuronNode` + orbital particle halos) and `particle_nebula` (floating 3D rotating & twisting sculptures with laser callout banners).
-- **Interactive HUD Chrome & Tactical Radar**: Includes top telemetry/mode controls (`3D TILT`, `PULSE`, color matrix cycler) and a bottom-right circular radar sweep scanner with click-to-warp node blips.
+- **View Full Graph Mode & 3D Core Clone-and-Morph Subgraph Transitions (`SubgraphExpansionOverlay.tsx`, `ParticleNeuronNode.tsx`)**:
+  - **View Full Graph Toggle (`viewFullGraph`)**: Recursively expands all nested subgraphs into a single unified full-architecture graph view via `buildFullExpandedGraph`, bridging external ports directly to internal components and rendering interactive nested subgraph zone containers (`FullGraphZonesLayer`) with `⌖ Fit` and `⤢ Isolate` actions.
+  - **Radial Burst Emission, Simultaneous 3D Vector Wireframe Morphing & Outer-Edge Box/Label Growth (`useSubgraphExpansion`, `SemanticNodeGlyph`, `VolumetricNodeCore`, `ParticleNeuronNode`)**: When not in Full Graph mode, clicking on any subgraph node detaches the node's title/name plate (`titleDetached`) and executes a `500ms` 3-stage transition:
+    1. **Radial Burst Emission Around Parent**: Clones of the parent node's central animated 3D core (`SemanticNodeGlyph` / `VolumetricNodeCore`) are pulled out into a circular halo ring all around the parent node (`coreMorphProgress = 0`, `shellExpandProgress = 0`).
+    2. **Simultaneous Transition & True 3D Vector Wireframe Metamorphosis**: All emitted 3D cores glide into their target locations at once while `VolumetricNodeCore` interpolates its 3D rotating wireframe vertices and edges (`WireframeSegment3D[]`) in 3D `(x, y, z)` space from the parent's 3D wireframe into each child node's new 3D vector wireframe (`coreMorphProgress: 0 -> 1`).
+    3. **Outer-Edge Box & Label Growth**: Once in place with their new 3D vector wireframes formed, each node's shaped outer box, ports, and labels grow outward from the outer edges of its central animated 3D core (`shellExpandProgress: 0 -> 1`). Clicking a parent/ancestor breadcrumb plays the exact reverse: all child nodes retract their labels and outer boxes into their central 3D cores, all bare 3D cores transition into a ring around the parent while morphing their 3D vector wireframes back into the parent's 3D wireframe, pull into the parent center, and the parent node's box and labels grow outward from its central core's outer edges.
+- **Interactive HUD Chrome & Tactical Radar**: Includes top telemetry/mode controls (`FULL GRAPH`, `3D TILT`, `PULSE`, color matrix cycler) and a bottom-right circular radar sweep scanner with click-to-warp node blips.
 
 ## ParticleNeuronNode, VolumetricNodeCore & ParticleEdge
 
@@ -67,25 +73,13 @@ Custom React Flow edge renderer. Shows:
 - Weight and bias values as inline labels (editable on click).
 - Telemetry coloring when `edgeTelemetry` data is available (activation magnitude mapped to color intensity).
 
-## CodePanel
+## EditorPage Dialog Panels (`LibraryPanel`, `TrainingPanel`, `CodePanel`, `ChatPanel`)
 
-**Default export.**
+To maximize graph canvas visibility, `EditorPage.tsx` dedicates 100% of the stage below `Toolbar.tsx` to `GraphCanvas` and houses the left, bottom, and right panels inside on-demand modal dialogs (`activePanelDialog` in `useSettingsStore`), launched from floating edge buttons (left, bottom, right) or from the top `Toolbar`:
 
-A Monaco Editor panel for writing and editing custom neuron source code. Appears when a custom neuron node is selected. Features:
-
-- Python syntax highlighting and IntelliSense.
-- Live updates pushed to the selected node's `neuron_def.source_code` via `updateNodeData`.
-- Graph settings include an explicit `scalar`, `torch`, or `native-cuda` runtime selector. Selecting native CUDA does not imply compatibility; the Training panel owns preflight.
-
-## LibraryPanel
-
-**Default export.**
-
-The builtin neuron palette displayed alongside the canvas. Lists all available builtin neuron definitions grouped by category. Supports:
-
-- Drag-and-drop onto the canvas to insert a builtin node.
-- Click-to-insert at the preferred insert position.
-- Search/filter by neuron name.
+- **Left Dialog (`◈ Variants` — `LibraryPanel`)**: Displays saved variant families and swappable versions in a responsive multi-column grid, automatically closing when a variant is opened or inserted.
+- **Bottom Dialog (`⚡ Training & Trace` — `TrainingPanel`)**: Houses all training configuration, fine-tuning controls, dataset/JSON inputs, Recharts loss curve, and Torch Trace inside a modal dialog while keeping `TrainingPanel` mounted so active training runs and background trace polling continue uninterrupted when the dialog is closed.
+- **Right Dialog (`◧ Inspector` / `💬 Model Chat` — `CodePanel` & `ChatPanel`)**: Houses both the Node & Graph Inspector / Monaco Code Editor (`CodePanel`) and the interactive `ChatPanel` inside a tabbed modal dialog.
 
 ## Toolbar
 

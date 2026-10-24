@@ -132,7 +132,22 @@ export default function Toolbar() {
   const toggleParticleGraphEditor = useSettingsStore(
     (state) => state.toggleParticleGraphEditor,
   );
+  const viewFullGraph = useSettingsStore((state) => state.viewFullGraph);
+  const setViewFullGraph = useSettingsStore((state) => state.setViewFullGraph);
+  const toggleViewFullGraph = useSettingsStore(
+    (state) => state.toggleViewFullGraph,
+  );
   const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
+  const activePanelDialog = useSettingsStore(
+    (state) => state.activePanelDialog,
+  );
+  const setActivePanelDialog = useSettingsStore(
+    (state) => state.setActivePanelDialog,
+  );
+  const openRightPanelDialog = useSettingsStore(
+    (state) => state.openRightPanelDialog,
+  );
+  const isTraining = useGraphStore((state) => state.isTraining);
   const [showNodePicker, setShowNodePicker] = useState(false);
 
   useEffect(() => {
@@ -390,26 +405,138 @@ export default function Toolbar() {
         </div>
 
         <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto font-mono">
-          {breadcrumbs.map((crumb, idx) => (
-            <React.Fragment key={`${crumb.id}-${idx}`}>
-              {idx > 0 && <span className="text-cyan-500/60">/</span>}
-              <button
-                onClick={() => setPath(crumb.path)}
-                className={`whitespace-nowrap rounded px-1.5 py-0.5 transition-colors ${
-                  idx === breadcrumbs.length - 1
-                    ? particleGraphEditorEnabled
-                      ? "border border-cyan-500/40 bg-cyan-950/60 text-cyan-200"
-                      : "bg-gray-800 text-gray-200"
-                    : "hover:bg-gray-800 hover:text-gray-200"
-                }`}
-              >
-                {crumb.label}
-              </button>
-            </React.Fragment>
-          ))}
+          {breadcrumbs.map((crumb, idx) => {
+            const isParent = idx < breadcrumbs.length - 1;
+            return (
+              <React.Fragment key={`${crumb.id}-${idx}`}>
+                {idx > 0 && <span className="text-cyan-500/60">/</span>}
+                <button
+                  onClick={() => {
+                    if (viewFullGraph) setViewFullGraph(false);
+                    setPath(crumb.path);
+                  }}
+                  title={
+                    isParent
+                      ? `Collapse subgraph back to ${crumb.label} ⤡`
+                      : `Current graph: ${crumb.label}`
+                  }
+                  className={`flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 transition-colors ${
+                    !isParent
+                      ? particleGraphEditorEnabled
+                        ? "border border-cyan-500/40 bg-cyan-950/60 text-cyan-200"
+                        : "bg-gray-800 text-gray-200"
+                      : particleGraphEditorEnabled
+                      ? "border border-amber-500/30 bg-amber-950/30 text-amber-200/90 hover:border-amber-400/70 hover:bg-amber-900/50 hover:text-amber-100"
+                      : "hover:bg-gray-800 hover:text-gray-200"
+                  }`}
+                >
+                  {isParent && <span className="text-[9px] opacity-80">⤡</span>}
+                  <span>{crumb.label}</span>
+                </button>
+              </React.Fragment>
+            );
+          })}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+          {/* Dialog Launchers for Left (Variants), Bottom (Training), and Right (Inspector / Chat) Panels */}
+          <button
+            type="button"
+            onClick={() =>
+              setActivePanelDialog(activePanelDialog === "left" ? null : "left")
+            }
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "left"
+                      ? "border-amber-400/90 bg-amber-500/25 text-amber-100 shadow-[0_0_14px_rgba(251,191,36,0.3)]"
+                      : "border-amber-500/35 bg-slate-950/90 text-amber-200/90 hover:border-amber-400/70 hover:bg-amber-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-amber-200 hover:bg-gray-700"
+            }
+            title="Open Variant Matrix / Library Dialog (Left Panel)"
+          >
+            <span>◈ Variants</span>
+            <span className="rounded bg-black/40 px-1 py-0.2 font-mono text-[9px] text-amber-300">
+              {Object.keys(rootGraph.variant_library ?? {}).length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setActivePanelDialog(
+                activePanelDialog === "bottom" ? null : "bottom",
+              )
+            }
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "bottom" || isTraining
+                      ? "border-cyan-400/90 bg-cyan-500/25 text-cyan-100 shadow-[0_0_14px_rgba(0,240,255,0.35)]"
+                      : "border-cyan-500/35 bg-slate-950/90 text-cyan-200/90 hover:border-cyan-400/70 hover:bg-cyan-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-cyan-200 hover:bg-gray-700"
+            }
+            title="Open Training & Telemetry Dialog (Bottom Panel)"
+          >
+            <span className={isTraining ? "animate-pulse text-emerald-300" : ""}>
+              ⚡ Training
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openRightPanelDialog("inspector")}
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "right"
+                      ? "border-sky-400/90 bg-sky-500/25 text-sky-100 shadow-[0_0_14px_rgba(56,189,248,0.3)]"
+                      : "border-sky-500/35 bg-slate-950/90 text-sky-200/90 hover:border-sky-400/70 hover:bg-sky-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-sky-200 hover:bg-gray-700"
+            }
+            title="Open Node Inspector, Graph Config & Code Dialog (Right Panel)"
+          >
+            <span>◧ Inspector</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openRightPanelDialog("chat")}
+            className={
+              particleGraphEditorEnabled
+                ? "flex items-center gap-1 rounded border border-indigo-400/50 bg-indigo-950/70 px-2 py-1 font-mono text-xs text-indigo-200 hover:border-indigo-400/90 hover:bg-indigo-900/70"
+                : "rounded border border-indigo-700/60 bg-indigo-900/70 px-2 py-1 text-xs text-indigo-100 hover:bg-indigo-800"
+            }
+            title="Open Model Chat Dialog (Right Panel)"
+          >
+            <span>💬 Chat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleViewFullGraph}
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-xs font-bold transition-all ${
+                    viewFullGraph
+                      ? "border-emerald-400/90 bg-emerald-500/25 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.35)]"
+                      : "border-cyan-500/35 bg-slate-950/90 text-cyan-200/90 hover:border-cyan-400/70 hover:bg-cyan-950/60"
+                  }`
+                : `flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-medium transition-all ${
+                    viewFullGraph
+                      ? "border-emerald-500/70 bg-emerald-900/70 text-emerald-100"
+                      : "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700"
+                  }`
+            }
+            title="Expand all nested subgraphs into a single unified full-architecture graph view"
+          >
+            <span>⊞</span>
+            <span>{viewFullGraph ? "Full Graph: ON" : "View Full Graph"}</span>
+          </button>
+
           <div className="flex items-center rounded border border-cyan-500/35 bg-slate-950/90">
             <button
               type="button"

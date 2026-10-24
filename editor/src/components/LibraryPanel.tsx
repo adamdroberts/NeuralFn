@@ -2,7 +2,7 @@ import React from "react";
 import { useGraphStore } from "../store/graphStore";
 import { useSettingsStore } from "../store/settingsStore";
 
-export default function LibraryPanel() {
+export default function LibraryPanel({ onDone }: { onDone?: () => void } = {}) {
   const variantLibrary = useGraphStore((state) => state.rootGraph.variant_library);
   const openVariant = useGraphStore((state) => state.openVariant);
   const addVariantNode = useGraphStore((state) => state.addVariantNode);
@@ -13,14 +13,8 @@ export default function LibraryPanel() {
   const families = Object.entries(variantLibrary);
 
   return (
-    <aside
-      className={`w-64 min-h-0 p-3 overflow-auto transition-all duration-300 ${
-        particleGraphEditorEnabled
-          ? "cyber-panel-left z-10"
-          : "border-r border-gray-800 bg-gray-950/80"
-      }`}
-    >
-      <div className="mb-3">
+    <div className="w-full min-h-0 p-4 overflow-auto">
+      <div className="mb-4">
         <div
           className={`text-sm font-bold ${
             particleGraphEditorEnabled
@@ -39,22 +33,22 @@ export default function LibraryPanel() {
         <div
           className={
             particleGraphEditorEnabled
-              ? "rounded-lg border border-dashed border-cyan-500/30 bg-slate-950/70 px-3 py-4 font-mono text-[11px] text-cyan-200/60"
-              : "rounded border border-dashed border-gray-800 px-3 py-4 text-[11px] text-gray-500"
+              ? "rounded-lg border border-dashed border-cyan-500/30 bg-slate-950/70 px-4 py-6 font-mono text-xs text-cyan-200/60"
+              : "rounded border border-dashed border-gray-800 px-4 py-6 text-xs text-gray-500"
           }
         >
           No saved variants yet. Save a subgraph as a named family/version or add a GPT template to seed the library.
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {families.map(([family, versions]) => (
           <div
             key={family}
             className={
               particleGraphEditorEnabled
-                ? "cyber-card-3d rounded-lg p-2.5"
-                : "rounded border border-gray-800 bg-gray-900/70 p-2"
+                ? "cyber-card-3d rounded-lg p-3"
+                : "rounded border border-gray-800 bg-gray-900/70 p-3"
             }
           >
             <div className="mb-2 flex items-center justify-between text-xs font-bold font-mono text-amber-300">
@@ -77,23 +71,29 @@ export default function LibraryPanel() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-mono text-gray-200">{version}</span>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1.5">
                         <button
-                          onClick={() => openVariant(family, version)}
+                          onClick={() => {
+                            openVariant(family, version);
+                            onDone?.();
+                          }}
                           className={
                             particleGraphEditorEnabled
-                              ? "rounded border border-cyan-500/40 bg-cyan-950/60 px-2 py-1 font-mono text-[10px] text-cyan-200 hover:bg-cyan-900/70"
-                              : "rounded bg-gray-800 px-2 py-1 text-[10px] text-gray-200 hover:bg-gray-700"
+                              ? "rounded border border-cyan-500/40 bg-cyan-950/60 px-2.5 py-1 font-mono text-[10px] text-cyan-200 hover:bg-cyan-900/70"
+                              : "rounded bg-gray-800 px-2.5 py-1 text-[10px] text-gray-200 hover:bg-gray-700"
                           }
                         >
                           Open
                         </button>
                         <button
-                          onClick={() => addVariantNode(family, version)}
+                          onClick={() => {
+                            addVariantNode(family, version);
+                            onDone?.();
+                          }}
                           className={
                             particleGraphEditorEnabled
-                              ? "rounded border border-amber-500/50 bg-amber-950/60 px-2 py-1 font-mono text-[10px] text-amber-200 hover:bg-amber-900/70"
-                              : "rounded bg-amber-900 px-2 py-1 text-[10px] text-amber-100 hover:bg-amber-800"
+                              ? "rounded border border-amber-500/50 bg-amber-950/60 px-2.5 py-1 font-mono text-[10px] text-amber-200 hover:bg-amber-900/70"
+                              : "rounded bg-amber-900 px-2.5 py-1 text-[10px] text-amber-100 hover:bg-amber-800"
                           }
                         >
                           Insert
@@ -106,6 +106,6 @@ export default function LibraryPanel() {
           </div>
         ))}
       </div>
-    </aside>
+    </div>
   );
 }
