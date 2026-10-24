@@ -14,17 +14,22 @@ import {
 } from "@xyflow/react";
 import { NeuronNode } from "./NeuronNode";
 import InteractiveEdge from "./InteractiveEdge";
+import ParticleGraphCanvas from "./ParticleGraphCanvas";
 import {
   selectFlowEdges,
   selectFlowNodes,
   useGraphStore,
   type NeuronNodeData,
 } from "../store/graphStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 const nodeTypes: NodeTypes = { neuron: NeuronNode as any };
 const edgeTypes = { default: InteractiveEdge };
 
 export default function GraphCanvas() {
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { screenToFlowPosition } = useReactFlow();
   const nodes = useGraphStore(selectFlowNodes);
@@ -116,6 +121,10 @@ export default function GraphCanvas() {
   const onMoveEnd = useCallback(() => {
     updatePreferredInsertPosition();
   }, [updatePreferredInsertPosition]);
+
+  if (particleGraphEditorEnabled) {
+    return <ParticleGraphCanvas />;
+  }
 
   return (
     <div ref={containerRef} className="flex-1 h-full min-h-0">

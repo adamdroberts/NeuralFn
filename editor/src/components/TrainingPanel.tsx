@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
+import { useSettingsStore } from "../store/settingsStore";
 import { api, ApiError } from "../api/client";
 import type {
   DatasetInfo,
@@ -111,6 +112,9 @@ export default function TrainingPanel() {
   } = useGraphStore();
 
   const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
   const usesNative = rootGraph.runtime === "native-cuda";
   const usesTorch =
     !usesNative && (rootGraph.training_method === "torch" || rootGraph.runtime === "torch");
@@ -426,14 +430,25 @@ export default function TrainingPanel() {
     usesTorch,
   ]);
 
+  const compactInputClass = particleGraphEditorEnabled
+    ? "ml-1 cyber-input rounded px-1.5 py-0.5 text-xs font-mono"
+    : "ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs";
+
   return (
-    <div className="border-t border-gray-800 bg-gray-900 p-3">
+    <div
+      className={
+        particleGraphEditorEnabled
+          ? "cyber-panel-bottom p-3"
+          : "border-t border-gray-800 bg-gray-900 p-3"
+      }
+    >
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-xs text-gray-300">
-          Root method: <span className="font-mono">{rootGraph.training_method}</span>
+          Root method:{" "}
+          <span className="font-mono text-cyan-300">{rootGraph.training_method}</span>
         </span>
         <span className="text-xs text-gray-300">
-          Runtime: <span className="font-mono">{rootGraph.runtime}</span>
+          Runtime: <span className="font-mono text-amber-300">{rootGraph.runtime}</span>
         </span>
 
         {hasNestedGraphs && (
@@ -443,7 +458,7 @@ export default function TrainingPanel() {
               type="number"
               value={outerRounds}
               onChange={(e) => setOuterRounds(parseInt(e.target.value, 10) || 1)}
-              className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              className={`w-16 ${compactInputClass}`}
             />
           </label>
         )}
@@ -454,7 +469,7 @@ export default function TrainingPanel() {
             type="number"
             value={epochs}
             onChange={(e) => setEpochs(parseInt(e.target.value) || 100)}
-            className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+            className={`w-16 ${compactInputClass}`}
           />
         </label>
 
@@ -465,7 +480,7 @@ export default function TrainingPanel() {
             value={lr}
             step={0.0001}
             onChange={(e) => setLr(parseFloat(e.target.value) || 0.001)}
-            className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+            className={`w-20 ${compactInputClass}`}
           />
         </label>
 
@@ -477,7 +492,7 @@ export default function TrainingPanel() {
                 type="number"
                 value={batchSize}
                 onChange={(e) => setBatchSize(parseInt(e.target.value, 10) || 1)}
-                className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+                className={`w-16 ${compactInputClass}`}
               />
             </label>
 
@@ -488,7 +503,7 @@ export default function TrainingPanel() {
                 value={weightDecay}
                 step={0.001}
                 onChange={(e) => setWeightDecay(parseFloat(e.target.value) || 0)}
-                className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+                className={`w-20 ${compactInputClass}`}
               />
             </label>
           </>
@@ -501,7 +516,7 @@ export default function TrainingPanel() {
               type="number"
               value={popSize}
               onChange={(e) => setPopSize(parseInt(e.target.value) || 50)}
-              className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              className={`w-16 ${compactInputClass}`}
             />
           </label>
         )}
@@ -513,7 +528,7 @@ export default function TrainingPanel() {
               <select
                 value={trainingMode}
                 onChange={(e) => setTrainingMode(e.target.value as any)}
-                className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+                className={compactInputClass}
               >
                 <option value="pretrain">pretrain</option>
                 <option value="sft">sft</option>
@@ -528,7 +543,7 @@ export default function TrainingPanel() {
               <select
                 value={adapterType}
                 onChange={(e) => setAdapterType(e.target.value as any)}
-                className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+                className={compactInputClass}
               >
                 <option value="none">none</option>
                 <option value="lora">lora</option>
@@ -542,9 +557,13 @@ export default function TrainingPanel() {
         {!isTraining ? (
           <button
             onClick={start}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1 rounded font-medium"
+            className={
+              particleGraphEditorEnabled
+                ? "rounded border border-cyan-400/80 bg-cyan-500/25 px-3.5 py-1 font-mono text-xs font-bold uppercase tracking-wider text-cyan-100 shadow-[0_0_18px_rgba(0,240,255,0.35)] hover:bg-cyan-400/35"
+                : "bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1 rounded font-medium"
+            }
           >
-            Train
+            {particleGraphEditorEnabled ? "⚡ Engage Train" : "Train"}
           </button>
         ) : (
           <button
@@ -750,7 +769,11 @@ export default function TrainingPanel() {
             <textarea
               value={dataInput}
               onChange={(e) => setDataInput(e.target.value)}
-              className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+              className={
+                particleGraphEditorEnabled
+                  ? "block w-full mt-0.5 cyber-input rounded px-2 py-1 text-xs font-mono h-12 resize-none"
+                  : "block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+              }
             />
           </label>
           <label className="text-[10px] text-gray-400 flex-1">
@@ -758,7 +781,11 @@ export default function TrainingPanel() {
             <textarea
               value={dataTarget}
               onChange={(e) => setDataTarget(e.target.value)}
-              className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+              className={
+                particleGraphEditorEnabled
+                  ? "block w-full mt-0.5 cyber-input rounded px-2 py-1 text-xs font-mono h-12 resize-none"
+                  : "block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+              }
             />
           </label>
         </div>

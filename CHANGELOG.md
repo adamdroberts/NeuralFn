@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Added a persisted Settings & Feature Flags system (`editor/src/store/settingsStore.ts`
+  and `editor/src/components/SettingsModal.tsx`) with a feature flag toggle for the
+  **Volumetric 3D WebGL & Particle Cyber Graph Editor** (`ParticleGraphCanvas.tsx`,
+  `WebGLCyberScene.tsx`, `VolumetricNodeCore.tsx`, `ParticleNeuronNode.tsx`,
+  `ParticleEdge.tsx`, `nodeArchetypes.ts`, and `NodePickerModal.tsx`):
+  - **14 Semantic 3D Node Archetypes & 60 FPS Twisting/Rotating Volumetric Cores**:
+    Instead of uniform flat nodes, `resolveNodeArchetype` maps each node label and
+    `NeuronDefData` to one of 14 distinct polygon silhouettes and 60 FPS 3D
+    perspective-projected mesh cores (`VolumetricNodeCore.tsx`) with depth-sorted
+    normal-lit faces, counter-rotating gimbal rings, torsional twisting 3D tensor
+    cubes (`tensor_matrix`), twisting 3D double-helices (`sequence_wave`),
+    4D-to-3D stereographic rotating tesseracts (`latent_tesseract`), orbiting 3D
+    expert satellites (`moe_router`), counter-twisting hyperbolic hourglasses
+    (`lora_adapter`), 3-axis gyroscopic armillary spheres (`norm_stabilizer`),
+    stacked counter-rotating memory platters (`memory_vault`), dual counter-rotating
+    Merkaba tetrahedra (`objective_beacon`), and 3D twisting activation ribbons
+    (`signal_modulator`), housed in a 5-plane CSS 3D `preserve-3d` chassis with
+    interactive cursor-tilt parallax.
+  - **Shared WebGL 3D Shader & Wireframe Scene (`WebGLCyberScene.tsx`)**: Renders a
+    GPU-accelerated GLSL 3D perspective cyber grid and rotating/twisting 3D
+    wireframe cages around every node synchronized with the React Flow viewport,
+    paired with 60 FPS semantic particle swarms and double-helix synaptic photon
+    streams.
+  - **Full Cyber 3D Cockpit UI**: Extends 3D perspective depth, neon rim lighting,
+    and recessed cyber glass across `AppShell`, `EditorPage`, `Toolbar`,
+    `LibraryPanel`, `CodePanel`, `TrainingPanel`, and `ChatPanel` when enabled.
+  - **Categorized Holographic Node Picker (`NodePickerModal.tsx`)**: Replaces the
+    inline 120-button toolbar wall with a clean **`✦ + Add Node`** button that
+    opens a 9-category modal where grouped neural modules animate out with a 3D
+    fan-out transition (`cyberCardFanOut`) alongside a live 3D Blueprint Inspector.
+  - **Unified Server Launcher**: Added `./start_servers.sh` (`npm run start:servers`)
+    to launch both the FastAPI backend and Vite editor concurrently. Verified via
+    `npm --prefix editor run build` (`tsc -b && vite build`).
 - Restored a colorful Rich TUI for interactive resident inference. TTY
   `nfn infer` now opens a multi-turn transcript UI with model/runtime/precision/
   cache/DFlash state, Markdown assistant panels, per-turn prefill/reuse/decode

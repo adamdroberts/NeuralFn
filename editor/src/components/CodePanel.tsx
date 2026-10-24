@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { selectActiveGraph, selectSelectedNode, useGraphStore } from "../store/graphStore";
 import { listCompatibleVariantVersions } from "../store/graphUtils";
+import { useSettingsStore } from "../store/settingsStore";
 import PortConfig from "./PortConfig";
 import DatasetSourcePanel from "./DatasetSourcePanel";
 import type { GraphRuntime, TrainingMethod } from "../api/client";
@@ -19,6 +20,13 @@ export default function CodePanel() {
 
   const saveNodeAsVariant = useGraphStore((state) => state.saveNodeAsVariant);
   const swapNodeVariant = useGraphStore((state) => state.swapNodeVariant);
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
+  const setParticleGraphEditorEnabled = useSettingsStore(
+    (state) => state.setParticleGraphEditorEnabled,
+  );
+  const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
 
   const [code, setCode] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -72,16 +80,32 @@ export default function CodePanel() {
       </div>
     ) : null;
 
+  const panelShellClass = particleGraphEditorEnabled
+    ? "w-80 min-h-0 cyber-panel-right flex flex-col overflow-hidden z-10"
+    : "w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden";
+
+  const inputClass = particleGraphEditorEnabled
+    ? "mt-1 block w-full cyber-input rounded px-2 py-1 text-gray-100"
+    : "mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200";
+
   if (!node) {
     const isTorchGraph =
       activeGraph.runtime !== "native-cuda" &&
       (activeGraph.training_method === "torch" || activeGraph.runtime === "torch");
     return (
-      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col">
+      <div className={panelShellClass}>
         <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-auto p-4">
           <div>
-            <div className="text-sm font-bold text-blue-300">{activeGraph.name}</div>
-            <div className="text-[11px] text-gray-500">
+            <div
+              className={`text-sm font-bold ${
+                particleGraphEditorEnabled
+                  ? "font-mono uppercase tracking-wider text-cyan-300 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]"
+                  : "text-blue-300"
+              }`}
+            >
+              {activeGraph.name}
+            </div>
+            <div className="text-[11px] text-gray-400">
               {activeVariant
                 ? `Editing shared variant ${activeVariant.family}@${activeVariant.version}`
                 : "Active graph settings"}
@@ -102,7 +126,7 @@ export default function CodePanel() {
               type="text"
               value={activeGraph.name}
               onChange={(e) => updateActiveGraphSettings({ name: e.target.value })}
-              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+              className={inputClass}
             />
           </label>
 
@@ -113,7 +137,7 @@ export default function CodePanel() {
               onChange={(e) =>
                 updateActiveGraphSettings({ training_method: e.target.value as TrainingMethod })
               }
-              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+              className={inputClass}
             >
               <option value="surrogate">surrogate</option>
               <option value="evolutionary">evolutionary</option>
@@ -129,7 +153,7 @@ export default function CodePanel() {
               onChange={(e) =>
                 updateActiveGraphSettings({ runtime: e.target.value as GraphRuntime })
               }
-              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+              className={inputClass}
             >
               <option value="scalar">scalar</option>
               <option value="torch">torch</option>
@@ -159,7 +183,7 @@ export default function CodePanel() {
                       },
                     })
                   }
-                  className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 font-mono"
+                  className={`${inputClass} font-mono`}
                 />
               </label>
 
@@ -175,7 +199,7 @@ export default function CodePanel() {
                       },
                     })
                   }
-                  className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+                  className={inputClass}
                 >
                   <option value="bfloat16">bfloat16</option>
                   <option value="float16">float16</option>
@@ -183,6 +207,49 @@ export default function CodePanel() {
               </label>
             </>
           )}
+
+          {/* Feature Flags & Holographic Engine Settings */}
+          <div className="mt-2 rounded-lg border border-cyan-500/30 bg-slate-950/80 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-cyan-300">
+                  <span>✦ Cyber 3D Graph Engine</span>
+                  <span className="rounded border border-amber-400/40 bg-amber-500/10 px-1 py-0.2 font-mono text-[8px] uppercase text-amber-300">
+                    WebGL 3D
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] leading-snug text-gray-400">
+                  60 FPS 3D rotating &amp; twisting node cores, WebGL shaders, particle swarms &amp; vortex transitions.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={particleGraphEditorEnabled}
+                onClick={() => setParticleGraphEditorEnabled(!particleGraphEditorEnabled)}
+                className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-full border transition-all duration-300 ${
+                  particleGraphEditorEnabled
+                    ? "border-cyan-300 bg-cyan-500/30 shadow-[0_0_12px_rgba(0,240,255,0.45)]"
+                    : "border-gray-700 bg-gray-800"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full transition-all duration-300 ${
+                    particleGraphEditorEnabled
+                      ? "translate-x-5 bg-cyan-300 shadow-[0_0_8px_#00f0ff]"
+                      : "translate-x-0.5 bg-gray-400"
+                  }`}
+                />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="mt-2.5 w-full rounded border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-1 text-[10px] font-medium text-cyan-200 transition-colors hover:bg-cyan-900/50"
+            >
+              ⚙ Configure Holographic &amp; Particle Settings...
+            </button>
+          </div>
 
           <div className="text-[11px] text-gray-500 leading-5">
             Select a node to edit it, double-click a subgraph to open it, or open a saved family/version from the variant library.
@@ -228,7 +295,7 @@ export default function CodePanel() {
     };
 
     return (
-      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+      <div className={panelShellClass}>
         <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
           <span className="text-sm font-bold text-amber-300">{node.data.label}</span>
           <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
@@ -429,7 +496,7 @@ export default function CodePanel() {
     }
 
     return (
-      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+      <div className={panelShellClass}>
         <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
           <span className="text-sm font-bold text-emerald-300">{node.data.label}</span>
           <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
@@ -484,7 +551,7 @@ export default function CodePanel() {
   }
 
   return (
-    <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+    <div className={panelShellClass}>
       <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
         <span className="text-sm font-bold text-blue-300">{node.data.label}</span>
         <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>

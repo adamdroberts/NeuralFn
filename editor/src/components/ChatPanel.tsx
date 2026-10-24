@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type InferenceComputePolicy } from "../api/client";
 import { useGraphStore } from "../store/graphStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 type ChatMessage = {
   id: string;
@@ -24,6 +25,9 @@ const randomId = () => `m_${Math.random().toString(36).slice(2, 9)}_${Date.now()
 export default function ChatPanel() {
   const projectId = useGraphStore((state) => state.projectId);
   const sessionId = useGraphStore((state) => state.sessionId);
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
 
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -114,14 +118,24 @@ export default function ChatPanel() {
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="absolute right-3 top-2 z-20 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1 shadow-md"
+        className={
+          particleGraphEditorEnabled
+            ? "absolute right-3 top-14 z-20 rounded border border-indigo-400/70 bg-indigo-950/85 hover:bg-indigo-900/90 text-indigo-100 font-mono text-xs font-bold px-3 py-1 shadow-[0_0_18px_rgba(99,102,241,0.35)] backdrop-blur-md"
+            : "absolute right-3 top-2 z-20 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1 shadow-md"
+        }
         title="Open chat panel"
       >
         {open ? "✕ Close Chat" : "💬 Chat with model"}
       </button>
 
       {open && (
-        <aside className="absolute right-0 top-0 bottom-0 z-10 w-[420px] max-w-[90vw] flex flex-col border-l border-gray-800 bg-gray-950/95 shadow-2xl">
+        <aside
+          className={`absolute right-0 top-0 bottom-0 z-30 w-[420px] max-w-[90vw] flex flex-col shadow-2xl ${
+            particleGraphEditorEnabled
+              ? "cyber-panel-right border-l border-cyan-500/40"
+              : "border-l border-gray-800 bg-gray-950/95"
+          }`}
+        >
           <div className="border-b border-gray-800 px-3 py-2">
             <div className="text-sm font-bold text-indigo-300">Model Chat</div>
             <div className="text-[11px] text-gray-500">

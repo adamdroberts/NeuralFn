@@ -115,6 +115,14 @@ Nested subgraphs with hybrid (per-subgraph) training.
 
 ## Start the platform
 
+Launch both the FastAPI backend (`http://127.0.0.1:8000`) and Vite editor (`http://localhost:5173`) together from the repository root:
+
+```bash
+./start_servers.sh
+```
+
+Or start them in separate terminals:
+
 **Backend** (terminal 1):
 
 ```bash

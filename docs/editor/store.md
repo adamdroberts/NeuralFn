@@ -132,3 +132,19 @@ interface LossPoint {
 ### NeuronNodeData
 
 Type alias for `FlowNodeData`, used as the data payload on React Flow nodes.
+
+## Settings Store (`useSettingsStore`)
+
+`editor/src/store/settingsStore.ts` exports `useSettingsStore`, a Zustand store with `localStorage` persistence (`neuralfn:editor_settings:v1`) for client-side feature flags and holographic particle graph editor settings.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `particleGraphEditorEnabled` | `boolean` | Feature flag toggle enabling the Volumetric 3D Cyber / 60 FPS particle-based graph editor (`ParticleGraphCanvas`). |
+| `particleVisualMode` | `"hybrid_hud" \| "particle_nebula"` | Switches between chamfered cyber HUD cards with orbital swarms and pure 3D spherical particle nebulae. |
+| `particleDensity` | `"balanced" \| "high" \| "ultra"` | Controls particle count budgets across ambient, node-orbital, and edge-photon layers. |
+| `colorPalette` | `"cyber_plasma" \| "solaris_gold" \| "quantum_violet" \| "crimson_protocol"` | Active holographic color theme. |
+| `holoPerspective3D` | `boolean` | Enables 3D holographic table tilt projection on the canvas. |
+| `motionIntensity` | `"smooth" \| "cinematic"` | Controls spring damping and vortex transition impulses. |
+| `hudTelemetryOverlay` | `boolean` | Toggles the background cybernetic telemetry schematic and circular tactical radar HUD. |
+| `isSettingsOpen` | `boolean` | Controls visibility of `SettingsModal`. |
+| `pulseSequence` | `number` | Monotonic counter incremented by `triggerPulse()` to fire an electromagnetic shockwave across the active graph. |

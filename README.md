@@ -3395,7 +3395,7 @@ still requires the tokenizer assets or the `tiktoken` cache.
 | [REST API Reference](docs/rest-api/README.md) | All HTTP endpoints with request/response shapes |
 | [MCP Tools Reference](docs/mcp/README.md) | All MCP tools for AI agent integration |
 | [Server Internals](docs/server/README.md) | Services, ORM models, auth, configuration |
-| [Editor Reference](docs/editor/README.md) | React frontend: store, components, API client |
+| [Editor Reference](docs/editor/README.md) | React frontend: store, components, API client, and the feature-flagged Volumetric 3D Cyber / 60 FPS particle-based holographic graph editor |
 | [Agent Skills](docs/agent-skills.md) | AI coding agent skills for Cursor and Codex |
 | [llms.txt](llms.txt) | LLM-friendly project index |
 | [llms-full.txt](llms-full.txt) | Complete docs in a single file for LLM ingestion |
@@ -7680,6 +7680,14 @@ export NEURALFN_CREATE_SCHEMA_ON_STARTUP=0
 
 ### Start the platform
 
+Launch both the backend (`http://127.0.0.1:8000`) and editor (`http://localhost:5173`) together from the repository root:
+
+```bash
+./start_servers.sh
+```
+
+Or run them in separate terminals:
+
 Terminal 1 — backend:
 
 ```bash
@@ -7738,6 +7746,14 @@ After authentication, the app routes into the scoped shell under `/app`:
 - `Admin` — `/app/admin`
 
 The app shell keeps the active project and session in the header, lets authenticated users create a new personal project, updates the server-side active scope when you switch workspaces, and routes each surface to the matching project/session pair.
+
+### Volumetric 3D Cyber Mode & Categorized Node Picker
+
+Click **`✦ Cyber 3D`** in the editor toolbar (or open **`⚙ Settings`** in the header) to toggle the feature-flagged **Volumetric 3D WebGL & Particle Cyber Graph Editor**:
+
+- **14 Semantic 3D Node Archetypes (`VolumetricNodeCore`)**: Nodes are semantically styled and shaped according to their neural role with live 60 FPS 3D rotating and twisting geometry cores (counter-rotating gimbal crystals for Attention, twisting 3D double-helices for Mamba/SSM, 4D-to-3D rotating tesseracts for JEPA/Latent stages, orbiting 3D expert satellites for MoE, torsional twisting 3D tensor lattices for Linear/MLP, hyperbolic hourglasses for LoRA, 3-axis gyroscopes for Norms, and 3D twisting activation ribbons) inside a multi-plane CSS 3D (`preserve-3d`) extruded chassis.
+- **WebGL 3D Scene & 60 FPS Particle Swarms (`WebGLCyberScene` & `ParticleGraphCanvas`)**: Combines a shared WebGL GLSL shader & 3D wireframe layer with reactive particle swarms, double-helix synaptic photon streams, and vortex transitions across the full 3D-angled cyber cockpit interface.
+- **Holographic Node Arsenal (`✦ + Add Node`)**: Keeps the builtin library hidden by default and opens an animated, 9-category 3D node picker modal with staggered card fan-out animations, instant search, and a live 3D Blueprint Inspector.
 
 ## Refresh-safe session restore
 
