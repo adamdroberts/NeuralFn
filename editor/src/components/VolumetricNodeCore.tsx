@@ -942,23 +942,26 @@ export const VolumetricNodeCore: React.FC<VolumetricNodeCoreProps> = ({
           ]
         : targetSRgb;
 
-      // Ambient volumetric core glow
-      const amb = ctx.createRadialGradient(cx, cy, 1, cx, cy, size * 0.48);
-      amb.addColorStop(
-        0,
-        `rgba(${blendPRgb[0]}, ${blendPRgb[1]}, ${blendPRgb[2]}, ${
-          selected || isMorphing ? 0.36 : 0.2
-        })`,
-      );
-      amb.addColorStop(
-        0.55,
-        `rgba(${blendSRgb[0]}, ${blendSRgb[1]}, ${blendSRgb[2]}, 0.1)`,
-      );
-      amb.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = amb;
-      ctx.fillRect(0, 0, size, size);
+      // Only draw subtle ambient core tint when not morphing so overlapping transitioning nodes
+      // never create a circular glow disc that prevents smooth blending into the parent node.
+      if (!isMorphing) {
+        const amb = ctx.createRadialGradient(cx, cy, 1, cx, cy, size * 0.48);
+        amb.addColorStop(
+          0,
+          `rgba(${blendPRgb[0]}, ${blendPRgb[1]}, ${blendPRgb[2]}, ${
+            selected ? 0.16 : 0.1
+          })`,
+        );
+        amb.addColorStop(
+          0.55,
+          `rgba(${blendSRgb[0]}, ${blendSRgb[1]}, ${blendSRgb[2]}, 0.05)`,
+        );
+        amb.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = amb;
+        ctx.fillRect(0, 0, size, size);
+      }
 
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = isMorphing ? "source-over" : "lighter";
 
       if (!isMorphing || !mState.morphFrom) {
         activeCollector = null;

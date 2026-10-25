@@ -43,7 +43,6 @@ export function SemanticNodeGlyph({
   const outerSize = size + 14;
   const u = Math.max(0, Math.min(1, morphProgress));
   const isMorphing = Boolean(morphFrom && u < 0.995);
-  const morphFlare = isMorphing ? Math.sin(u * Math.PI) : 0;
 
   return (
     <div
@@ -54,20 +53,6 @@ export function SemanticNodeGlyph({
         transformStyle: "preserve-3d",
       }}
     >
-      {/* Mid-flight 3D Core Metamorphosis Shimmer Halo */}
-      {isMorphing && morphFrom && (
-        <div
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            width: outerSize * (1.05 + morphFlare * 0.35),
-            height: outerSize * (1.05 + morphFlare * 0.35),
-            background: `radial-gradient(circle, ${primary}55 0%, ${morphFrom.primary}44 48%, transparent 74%)`,
-            opacity: 0.45 + morphFlare * 0.55,
-            boxShadow: `0 0 ${16 + morphFlare * 18}px ${primary}88`,
-          }}
-        />
-      )}
-
       {/* Rear Counter-Rotating Mechanical Turbine Ring (Z = -8px) */}
       <svg
         width={outerSize}
@@ -127,9 +112,7 @@ export function SemanticNodeGlyph({
       <div
         className="relative z-10"
         style={{
-          transform: isMorphing
-            ? `translateZ(14px) scale(${1 + morphFlare * 0.38})`
-            : "translateZ(10px)",
+          transform: "translateZ(10px)",
         }}
       >
         <VolumetricNodeCore
@@ -195,9 +178,7 @@ function ParticleNeuronNodeInner({ id, data, selected }: NodeProps) {
   const edgeGrowU = Math.max(0, Math.min(1, (shellU - 0.12) / 0.88));
   const edgeGrowEase = 1 - Math.pow(1 - edgeGrowU, 2.5);
   const edgeOpacity = edgeGrowU <= 0.01 ? 0 : Math.min(1, edgeGrowU * 1.5);
-  // Glowing rim highlight while the box is actively growing from the core's outer edges
-  const shellExpandingGlow =
-    shellU > 0.01 && shellU < 0.98 ? Math.sin(shellU * Math.PI) : 0;
+  const shellExpandingGlow = 0;
 
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
   const torchTrace = useGraphStore((state) => state.torchTrace);

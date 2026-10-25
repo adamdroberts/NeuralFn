@@ -84,6 +84,8 @@ export interface SubgraphExpansionAnimState {
   /** Screen position of the central animated 3D core / dimensional rift portal */
   singularityX: number;
   singularityY: number;
+  /** Exact rendered pixel diameter of the parent node's 3D core on screen */
+  singularityCoreSize: number;
   /** Pulse intensity (0..1) whenever a node breaches the portal mouth */
   portalPulse: number;
   /** Screen position where the node's title/name sits before detaching (or after re-attaching) */
@@ -185,9 +187,10 @@ export function useSubgraphExpansion({
   const currentPathRef = useRef(currentPath);
   currentPathRef.current = currentPath;
 
-  // Remembers which subgraph node ID was clicked at each depth so jumping back via breadcrumbs
-  // collapses back into the exact instance node that was expanded.
+  // Remembers which subgraph node ID and zoom level were active at each depth so jumping back via breadcrumbs
+  // collapses back into the exact instance node centered at the same zoom level as before the transition started.
   const enteredNodeByDepthRef = useRef<Map<number, string>>(new Map());
+  const enteredZoomByDepthRef = useRef<Map<number, number>>(new Map());
   const forwardAnimStartedForPathRef = useRef<string | null>(null);
 
   const safeGetViewport = useCallback((): Viewport => {
@@ -259,10 +262,15 @@ export function useSubgraphExpansion({
       const startTitleX = startCoreX;
       const startTitleY = startScreenRect.y + 16;
 
-      // Record the entered node ID at this depth so reverse breadcrumb navigation knows the exact parent node
+      // Record the entered node ID and pre-transition zoom level at this depth so reverse breadcrumb navigation
+      // centers the parent node at the exact same zoom level as before the transition started.
       enteredNodeByDepthRef.current.set(
         currentPathRef.current.length,
         clickedNode.id,
+      );
+      enteredZoomByDepthRef.current.set(
+        currentPathRef.current.length,
+        vp.zoom,
       );
 
       // Capture outgoing sibling nodes so they smoothly recede outward as we zoom into the core
@@ -326,6 +334,9 @@ export function useSubgraphExpansion({
       const spanX = Math.max(380, maxX - minX);
       const spanY = Math.max(250, maxY - minY);
 
+      const canvasCenterX = canvasW * 0.5;
+      const canvasCenterY = canvasH * 0.52;
+
       // Final zoomed-out viewport framing all child components cleanly
       const endZoom = Math.min(
         1.08,
@@ -334,29 +345,41 @@ export function useSubgraphExpansion({
           Math.min((canvasW * 0.72) / spanX, (canvasH * 0.68) / spanY),
         ),
       );
-      const endVpX = canvasW * 0.5 - centerX * endZoom;
-      const endVpY = canvasH * 0.52 - centerY * endZoom;
+      const endVpX = canvasCenterX - centerX * endZoom;
+      const endVpY = canvasCenterY - centerY * endZoom;
 
-      // Starting zoomed-in viewport anchored at the central animated part of the clicked node
-      const startZoom = Math.min(2.35, Math.max(endZoom * 2.15, vp.zoom * 1.4));
-      const startVpX = startCoreX - centerX * startZoom;
-      const startVpY = startCoreY - centerY * startZoom;
+      // Direction vector from the selected node's starting position toward the canvas center
+      const toCenterScreenX = canvasCenterX - startCoreX;
+      const toCenterScreenY = canvasCenterY - startCoreY;
+      const distToCenter = Math.hypot(toCenterScreenX, toCenterScreenY);
+      const dirToCenterX = distToCenter > 4 ? toCenterScreenX / distToCenter : 0;
+      const dirToCenterY = distToCenter > 4 ? toCenterScreenY / distToCenter : 0;
+
+      // Flow-space starting position of the selected node before it moves toward the center (centerX, centerY)
+      const originStartFlowX =
+        centerX + (startCoreX - canvasCenterX) / Math.max(0.28, endZoom);
+      const originStartFlowY =
+        centerY + (startCoreY - canvasCenterY) / Math.max(0.28, endZoom);
+      const burstForwardPush =
+        Math.min(115, distToCenter * 0.28) / Math.max(0.35, endZoom);
+
+      // Starting viewport slightly zoomed in while the selected node moves from its clicked position toward the center
+      const startZoom = Math.min(1.85, Math.max(endZoom * 1.45, vp.zoom * 1.15));
+      const startVpX = canvasCenterX - centerX * startZoom;
+      const startVpY = canvasCenterY - centerY * startZoom;
 
       const totalCount = sortedChildNodes.length;
 
-      // Radial burst layout all around the parent node's central core:
-      // Stage 1 (p = 0.08 -> 0.34): Pull each cloned 3D core out of the parent into a ring all around the parent.
-      // Stage 2 (p = 0.34 -> 0.82): All emitted cores slowly transition into their target places at once while
-      //                             visibly morphing their 3D vector wireframe animations into the new node's wireframe.
-      // Stage 3 (p = 0.82 -> 1.00): Once in place with their new 3D wireframes formed, the outer boxes, ports,
-      //                             and labels grow outward from the outer edges of each central 3D core.
+      // Radial + directional burst layout around the parent node's moving core:
+      // The selected node moves from (originStartFlowX, originStartFlowY) toward the center (centerX, centerY)
+      // while exploding the child cores outward along that direction.
       const burstRadius = Math.min(200, Math.max(125, 95 + totalCount * 7));
-      const emitWindowStart = 0.08;
-      const emitWindowEnd = 0.32;
+      const emitWindowStart = 0.06;
+      const emitWindowEnd = 0.3;
       const emitGap =
         totalCount <= 1
           ? 0
-          : (emitWindowEnd - emitWindowStart - 0.12) /
+          : (emitWindowEnd - emitWindowStart - 0.1) /
             Math.max(1, totalCount - 1);
 
       const nodeBurstMetaById = new Map<
@@ -364,24 +387,26 @@ export function useSubgraphExpansion({
         {
           emitStart: number;
           emitEnd: number;
-          burstNodeX: number;
-          burstNodeY: number;
+          burstOffsetX: number;
+          burstOffsetY: number;
         }
       >();
 
       sortedChildNodes.forEach((cn, idx) => {
         const angle =
           (idx / Math.max(1, totalCount)) * Math.PI * 2 - Math.PI * 0.5;
-        const burstNodeX = centerX - 95 + Math.cos(angle) * burstRadius;
-        const burstNodeY =
-          centerY - 48 + Math.sin(angle) * (burstRadius * 0.78);
+        const burstOffsetX =
+          Math.cos(angle) * burstRadius + dirToCenterX * burstForwardPush;
+        const burstOffsetY =
+          Math.sin(angle) * (burstRadius * 0.78) +
+          dirToCenterY * burstForwardPush;
         const emitStart = emitWindowStart + idx * emitGap;
-        const emitEnd = Math.min(0.34, emitStart + 0.14);
+        const emitEnd = Math.min(0.32, emitStart + 0.14);
         nodeBurstMetaById.set(cn.id, {
           emitStart,
           emitEnd,
-          burstNodeX,
-          burstNodeY,
+          burstOffsetX,
+          burstOffsetY,
         });
       });
 
@@ -409,8 +434,8 @@ export function useSubgraphExpansion({
       // Advance the graph store path into the clicked subgraph
       openSubgraph(clickedNode.id);
 
-      // Snappy 500ms duration for the radial burst, 3D vector wireframe metamorphosis, and outer-edge shell growth
-      const DURATION_MS = 500;
+      // 2000ms (2s) duration so each stage's timing and easing can be inspected clearly
+      const DURATION_MS = 2000;
       const startTime = performance.now();
       let portalPulse = 0;
 
@@ -418,8 +443,15 @@ export function useSubgraphExpansion({
         const elapsed = now - startTime;
         const p = Math.min(1, Math.max(0, elapsed / DURATION_MS));
 
-        // Phase 0 (p = 0.0 -> 0.12): Detach node title and smoothly frame the subgraph canvas
-        const zoomU = Math.min(1, p / 0.12);
+        // Smoothly move the selected node from its clicked position toward the canvas center (p = 0.0 -> 0.48)
+        const centerMoveU = Math.min(1, p / 0.48);
+        const centerMoveEase = 1 - Math.pow(1 - centerMoveU, 3);
+        const liveOriginFlowX =
+          originStartFlowX + (centerX - originStartFlowX) * centerMoveEase;
+        const liveOriginFlowY =
+          originStartFlowY + (centerY - originStartFlowY) * centerMoveEase;
+
+        const zoomU = Math.min(1, p / 0.55);
         const camEase = 1 - Math.pow(1 - zoomU, 3);
 
         const currVp: Viewport = {
@@ -434,40 +466,38 @@ export function useSubgraphExpansion({
           // Ignore if React Flow instance is mid-mount
         }
 
-        // Screen coordinates of the parent node's central animated 3D core
-        const singularityX = centerX * currVp.zoom + currVp.x;
-        const singularityY = centerY * currVp.zoom + currVp.y;
+        // Screen coordinates of the selected parent node's central animated 3D core as it moves toward the center
+        const singularityX =
+          startCoreX + (canvasCenterX - startCoreX) * centerMoveEase;
+        const singularityY =
+          startCoreY + (canvasCenterY - startCoreY) * centerMoveEase;
 
         portalPulse = Math.max(0, portalPulse * 0.9);
 
         if (!initialBurstFired && p >= emitWindowStart) {
           initialBurstFired = true;
           portalPulse = 1.0;
-          onSpawnBurst?.(
-            centerX,
-            centerY,
-            [...archetype.primaryRgb] as [number, number, number],
-            65,
-            220,
-          );
         }
 
         const animatedNodes: Node<FlowNodeData>[] = [];
         let spawnedCount = 0;
 
-        const startNodeX = centerX - 95;
-        const startNodeY = centerY - 48;
+        const startNodeX = liveOriginFlowX - 95;
+        const startNodeY = liveOriginFlowY - 48;
 
         for (const cn of sortedChildNodes) {
           const meta = nodeBurstMetaById.get(cn.id) ?? {
-            emitStart: 0.08,
-            emitEnd: 0.24,
-            burstNodeX: startNodeX,
-            burstNodeY: startNodeY,
+            emitStart: 0.06,
+            emitEnd: 0.22,
+            burstOffsetX: 0,
+            burstOffsetY: 0,
           };
 
+          const burstNodeX = startNodeX + meta.burstOffsetX;
+          const burstNodeY = startNodeY + meta.burstOffsetY;
+
           if (p < meta.emitStart) {
-            // Not pulled out of the parent core yet — keep hidden at center
+            // Not pulled out of the parent core yet — keep hidden at the moving parent core
             animatedNodes.push({
               ...cn,
               position: { x: startNodeX, y: startNodeY },
@@ -507,49 +537,40 @@ export function useSubgraphExpansion({
           let nodeOpacity = 1;
 
           if (p < 0.34) {
-            // Stage 1: Burst emission — pull each cloned 3D core out from the parent center
-            // into its radial ring position all around the parent node.
-            // Keep `coreMorphProgress = 0` so all emitted cores around the parent still display
-            // the parent's rotating 3D vector wireframe before they all transition together.
+            // Stage 1: Burst emission — pull each cloned 3D core out from the moving parent core
+            // along the direction toward the center.
             const emitU = Math.min(
               1,
               (p - meta.emitStart) /
                 Math.max(0.01, meta.emitEnd - meta.emitStart),
             );
             const emitEase = 1 - Math.pow(1 - emitU, 3);
-            // Gentle orbital float while waiting in the halo ring around the parent
             const hoverPhase = (p - meta.emitEnd) * 14 + spawnedCount * 0.9;
             const hoverX = emitU >= 1 ? Math.cos(hoverPhase) * 4 : 0;
             const hoverY = emitU >= 1 ? Math.sin(hoverPhase) * 4 : 0;
 
             animX =
               startNodeX +
-              (meta.burstNodeX - startNodeX) * emitEase +
+              (burstNodeX - startNodeX) * emitEase +
               hoverX;
             animY =
               startNodeY +
-              (meta.burstNodeY - startNodeY) * emitEase +
+              (burstNodeY - startNodeY) * emitEase +
               hoverY;
             coreMorphProgress = 0;
             shellExpandProgress = 0;
             nodeOpacity = Math.min(1, emitU * 3.5);
           } else if (p < 0.82) {
-            // Stage 2: Slow simultaneous transition & 3D vector wireframe metamorphosis (~2.3 seconds).
-            // All emitted cores move from their radial burst ring around the parent into their target
-            // graph positions at once while `coreMorphProgress` slowly sweeps 0 -> 1 so the user can
-            // clearly watch every 3D vector wireframe animation transforming into its new shape!
+            // Stage 2: Simultaneous transition & 3D vector wireframe metamorphosis
+            // from the moving directional burst ring into final positions
             const morphU = Math.min(1, (p - 0.34) / 0.48);
             const moveEase =
               morphU < 0.5
                 ? 4 * morphU * morphU * morphU
                 : 1 - Math.pow(-2 * morphU + 2, 3) / 2;
 
-            animX =
-              meta.burstNodeX +
-              (cn.position.x - meta.burstNodeX) * moveEase;
-            animY =
-              meta.burstNodeY +
-              (cn.position.y - meta.burstNodeY) * moveEase;
+            animX = burstNodeX + (cn.position.x - burstNodeX) * moveEase;
+            animY = burstNodeY + (cn.position.y - burstNodeY) * moveEase;
             coreMorphProgress = morphU;
             shellExpandProgress = 0;
             nodeOpacity = 1;
@@ -565,13 +586,6 @@ export function useSubgraphExpansion({
 
             if (shellExpandProgress >= 0.12 && !shellGrownIds.has(cn.id)) {
               shellGrownIds.add(cn.id);
-              onSpawnBurst?.(
-                cn.position.x + 95,
-                cn.position.y + 48,
-                [...cnArch.primaryRgb] as [number, number, number],
-                16,
-                105,
-              );
             }
           }
 
@@ -619,6 +633,7 @@ export function useSubgraphExpansion({
           primaryRgb: [...archetype.primaryRgb] as [number, number, number],
           singularityX,
           singularityY,
+          singularityCoreSize: Math.max(36, Math.round(56 * currVp.zoom)),
           portalPulse,
           titleAnchorX: startTitleX,
           titleAnchorY: startTitleY,
@@ -762,18 +777,8 @@ export function useSubgraphExpansion({
       const parentSpanX = Math.max(380, pMaxX - pMinX);
       const parentSpanY = Math.max(250, pMaxY - pMinY);
 
-      const endZoom = Math.min(
-        1.08,
-        Math.max(
-          0.22,
-          Math.min(
-            (canvasW * 0.72) / parentSpanX,
-            (canvasH * 0.68) / parentSpanY,
-          ),
-        ),
-      );
-      const endVpX = canvasW * 0.5 - parentCenterX * endZoom;
-      const endVpY = canvasH * 0.52 - parentCenterY * endZoom;
+      const canvasCenterX = canvasW * 0.5;
+      const canvasCenterY = canvasH * 0.52;
 
       const nodeW =
         targetParentNode?.measured?.width ?? archetype.minWidth + 12;
@@ -785,11 +790,22 @@ export function useSubgraphExpansion({
       const targetNodeCoreX = targetNodePos.x + nodeW * 0.5;
       const targetNodeCoreY = targetNodePos.y + nodeH * 0.54;
 
-      const startZoom = Math.min(2.3, Math.max(endZoom * 2.1, 1.45));
-      const startVpX = canvasW * 0.5 - targetNodeCoreX * startZoom;
-      const startVpY = canvasH * 0.52 - targetNodeCoreY * startZoom;
+      // Place the parent node at the centre of the canvas and at the exact same zoom level
+      // as before the transition started.
+      const preTransitionZoom =
+        enteredZoomByDepthRef.current.get(targetDepth) ??
+        departingSnapshot.viewport.zoom ??
+        1;
+      const endZoom = Math.min(2.5, Math.max(0.18, preTransitionZoom));
+      const endVpX = canvasCenterX - targetNodeCoreX * endZoom;
+      const endVpY = canvasCenterY - targetNodeCoreY * endZoom;
 
-      // 3. Snapshot the departing child components and schedule their reverse box-retract + core-morph-back
+      const startZoom = endZoom;
+      const startVpX = endVpX;
+      const startVpY = endVpY;
+
+      // 3. Snapshot the departing child components and schedule their reverse box-retract,
+      // slow shape transition into the parent shape, overlap with the centered parent node, and alpha fade to nothing.
       const childVp = departingSnapshot.viewport;
       const reverseSortedChildren = [...departingSnapshot.nodes].sort((a, b) =>
         Math.abs(b.position.x - a.position.x) > 14
@@ -825,10 +841,10 @@ export function useSubgraphExpansion({
           const burstOffsetY = Math.sin(angle) * (burstRadiusScreen * 0.78);
 
           const stagger =
-            totalCount <= 1 ? 0 : (idx / Math.max(1, totalCount - 1)) * 0.08;
-          const recallStartAt = 0.02 + stagger * 0.5;
-          const recallEndAt = 0.76 - stagger * 0.4;
-          despawnByChildId.set(cn.id, 0.18);
+            totalCount <= 1 ? 0 : (idx / Math.max(1, totalCount - 1)) * 0.06;
+          const recallStartAt = 0.02 + stagger * 0.4;
+          const recallEndAt = 0.96 - stagger * 0.25;
+          despawnByChildId.set(cn.id, 0.16);
 
           return {
             id: cn.id,
@@ -871,7 +887,7 @@ export function useSubgraphExpansion({
 
       let implosionBurstFired = false;
 
-      const DURATION_MS = 500;
+      const DURATION_MS = 2000;
       const startTime = performance.now();
       const absorbedChildIds = new Set<string>();
       let portalPulse = 0;
@@ -880,16 +896,11 @@ export function useSubgraphExpansion({
         const elapsed = now - startTime;
         const p = Math.min(1, Math.max(0, elapsed / DURATION_MS));
 
-        // Keep camera steady while child nodes retract their outer boxes/labels into their 3D cores,
-        // morph back into a ring around the parent core, and pull into the parent core (p = 0.0 -> 0.74),
-        // then zoom out to the parent graph!
-        const zoomU = p < 0.74 ? 0 : Math.min(1, (p - 0.74) / 0.26);
-        const camEase = 1 - Math.pow(1 - zoomU, 3);
-
+        // Keep the parent node centered in the canvas at the exact same zoom level as before the transition started
         const currVp: Viewport = {
-          x: startVpX + (endVpX - startVpX) * camEase,
-          y: startVpY + (endVpY - startVpY) * camEase,
-          zoom: startZoom + (endZoom - startZoom) * camEase,
+          x: startVpX,
+          y: startVpY,
+          zoom: startZoom,
         };
         try {
           setViewport(currVp, { duration: 0 });
@@ -898,8 +909,40 @@ export function useSubgraphExpansion({
           // Ignore if React Flow instance is mid-mount
         }
 
-        const singularityX = targetNodeCoreX * currVp.zoom + currVp.x;
-        const singularityY = targetNodeCoreY * currVp.zoom + currVp.y;
+        let singularityX = targetNodeCoreX * currVp.zoom + currVp.x;
+        let singularityY = targetNodeCoreY * currVp.zoom + currVp.y;
+        let singularityCoreSize = Math.max(32, Math.round(56 * currVp.zoom));
+
+        // Measure the exact live DOM center and size of the parent node's 3D core canvas in React Flow
+        // so collapsing child nodes always converge 100% inside the parent graph node.
+        if (container && targetParentNode) {
+          const contRect = container.getBoundingClientRect();
+          const escapedId =
+            typeof CSS !== "undefined" && typeof CSS.escape === "function"
+              ? CSS.escape(targetParentNode.id)
+              : targetParentNode.id;
+          const parentEl = container.querySelector(
+            `.react-flow__node[data-id="${escapedId}"]`,
+          ) as HTMLElement | null;
+          const coreCanvas = parentEl?.querySelector(
+            "canvas",
+          ) as HTMLElement | null;
+          if (coreCanvas) {
+            const cRect = coreCanvas.getBoundingClientRect();
+            if (cRect.width > 4 && cRect.height > 4) {
+              singularityX = cRect.left - contRect.left + cRect.width * 0.5;
+              singularityY = cRect.top - contRect.top + cRect.height * 0.5;
+              singularityCoreSize = Math.max(28, Math.round(cRect.width));
+            }
+          } else if (parentEl) {
+            const pRect = parentEl.getBoundingClientRect();
+            if (pRect.width > 4 && pRect.height > 4) {
+              singularityX = pRect.left - contRect.left + pRect.width * 0.5;
+              singularityY = pRect.top - contRect.top + pRect.height * 0.5;
+            }
+          }
+        }
+
         const titleAnchorX = singularityX;
         const titleAnchorY =
           targetNodePos.y * currVp.zoom + currVp.y + 16 * currVp.zoom;
@@ -916,28 +959,22 @@ export function useSubgraphExpansion({
           }
         }
 
-        if (!implosionBurstFired && p >= 0.75) {
+        if (!implosionBurstFired && p >= 0.76) {
           implosionBurstFired = true;
-          onSpawnBurst?.(
-            targetNodeCoreX,
-            targetNodeCoreY,
-            [...archetype.primaryRgb] as [number, number, number],
-            55,
-            220,
-          );
         }
 
-        // Reveal parent graph nodes: the target parent subgraph node starts as its bare central 3D core
-        // and grows its outer box & labels outward from the outer edges of its central 3D core!
+        // Reveal parent graph nodes: the target parent subgraph node sits at the center
+        // and grows its outer box & labels outward as the overlapping subgraph nodes alpha-fade to nothing!
         const animatedNodes: Node<FlowNodeData>[] = [];
         for (const pn of sortedParentNodes) {
           const isTargetSubgraphNode =
             targetParentNode && pn.id === targetParentNode.id;
 
           if (isTargetSubgraphNode) {
-            const coreVisible = p >= 0.74 ? 1 : 0;
+            const coreVisible =
+              p < 0.54 ? 0 : Math.min(1, (p - 0.54) / 0.22);
             const shellGrowU =
-              p < 0.78 ? 0 : Math.min(1, (p - 0.78) / 0.22);
+              p < 0.76 ? 0 : Math.min(1, (p - 0.76) / 0.24);
 
             animatedNodes.push({
               ...pn,
@@ -954,7 +991,7 @@ export function useSubgraphExpansion({
               },
             });
           } else {
-            const sibU = p < 0.78 ? 0 : Math.min(1, (p - 0.78) / 0.22);
+            const sibU = p < 0.72 ? 0 : Math.min(1, (p - 0.72) / 0.28);
             const sibEase = 1 - Math.pow(1 - sibU, 2.5);
 
             animatedNodes.push({
@@ -1000,6 +1037,7 @@ export function useSubgraphExpansion({
           primaryRgb: [...archetype.primaryRgb] as [number, number, number],
           singularityX,
           singularityY,
+          singularityCoreSize,
           portalPulse,
           titleAnchorX,
           titleAnchorY,
@@ -1116,6 +1154,7 @@ export function SubgraphExpansionOverlay({
     secondaryColor,
     singularityX,
     singularityY,
+    singularityCoreSize,
     titleAnchorX,
     titleAnchorY,
     progress,
@@ -1127,12 +1166,11 @@ export function SubgraphExpansionOverlay({
 
   const isCollapse = mode === "collapse";
 
-  // The parent node's central animated 3D core stays visible at the center while clones detach from it
-  // (or while returning child cores merge back into it), then hands off cleanly to the graph nodes.
+  // During forward expansion, the parent node's central animated 3D core stays visible at the center
+  // while clones detach from it. During reverse collapse, the actual parent node in React Flow
+  // displays its core directly at the exact center so there is never a second offset overlay core.
   const singularityOpacity = isCollapse
-    ? progress < 0.76
-      ? 1
-      : Math.max(0, 1 - (progress - 0.76) / 0.14)
+    ? 0
     : progress < 0.42
     ? 1
     : Math.max(0, (0.62 - progress) / 0.2);
@@ -1140,17 +1178,11 @@ export function SubgraphExpansionOverlay({
   const ghostOpacity =
     !isCollapse && progress < 0.18 ? Math.max(0, 1 - progress / 0.18) : 0;
 
-  const parentCoreMorphSource: CoreMorphSource = {
-    archetypeId,
-    neuronName,
-    primary: primaryColor,
-    secondary: secondaryColor,
-  };
-
   // Compute live screen state of each child node during reverse breadcrumb collapse:
-  // 1) Stage 1 (p: 0.00 -> 0.20): Outer box and labels shrink inward into the outer edges of its central animated 3D core (`shellU: 1 -> 0`).
-  // 2) Stage 2 (p: 0.20 -> 0.64): All bare animated 3D cores transition into the ring around the parent while slowly morphing their 3D vector wireframes back into the parent's 3D wireframe (`morphProgress: 1 -> 0`).
-  // 3) Stage 3 (p: 0.64 -> 0.78): The ring of parent-shaped 3D cores pulls into the central parent core (`(singularityX, singularityY)`).
+  // 1) Box/label retraction (p: 0.00 -> 0.16): Outer box and labels shrink inward into the outer edges of its central 3D core (`shellU: 1 -> 0`).
+  // 2) Slow shape transition & convergence (p: 0.16 -> 0.86): Bare 3D cores keep their own colors, move directly into
+  //    the exact center of the parent node at `(singularityX, singularityY)`, and slowly transition their 3D wireframe shape into the parent shape (`morphProgress: 1 -> 0`).
+  // 3) Overlap & alpha fade to nothing (p: 0.70 -> 0.96): Once inside and overlapping the centered parent node, they alpha-fade to nothing (`opacity: 1 -> 0`).
   const liveChildPositions = new Map<
     string,
     {
@@ -1170,14 +1202,11 @@ export function SubgraphExpansionOverlay({
         continue;
       }
 
-      const ringX = singularityX + child.burstOffsetX;
-      const ringY = singularityY + child.burstOffsetY;
-
-      if (progress < 0.2) {
-        // Stage 1: Retract outer box and labels into the central 3D core
+      if (progress < 0.16) {
+        // Stage 1: Retract outer box and labels into the central 3D core while keeping 100% child shape & color
         const shrinkU = Math.max(
           0,
-          Math.min(1, (progress - child.recallStartAt) / 0.16),
+          Math.min(1, (progress - child.recallStartAt) / 0.14),
         );
         const shellU = Math.max(0, 1 - shrinkU);
         liveChildPositions.set(child.id, {
@@ -1189,19 +1218,33 @@ export function SubgraphExpansionOverlay({
           morphProgress: 1,
           opacity: 1,
         });
-      } else if (progress < 0.64) {
-        // Stage 2: Slowly transition all bare 3D cores into the radial ring around the parent
-        // while morphing their 3D vector wireframes back into the parent's 3D wireframe (1 -> 0)
-        const morphBackU = Math.min(1, (progress - 0.2) / 0.44);
-        const moveEase =
-          morphBackU < 0.5
-            ? 4 * morphBackU * morphBackU * morphBackU
-            : 1 - Math.pow(-2 * morphBackU + 2, 3) / 2;
+      } else {
+        // Travel smoothly and directly into the exact center of the parent node at (singularityX, singularityY) by p = 0.70
+        const travelU = Math.min(1, (progress - 0.16) / 0.54);
+        const travelEase =
+          travelU < 0.5
+            ? 4 * travelU * travelU * travelU
+            : 1 - Math.pow(-2 * travelU + 2, 3) / 2;
+
         const cx =
-          child.startCenterX + (ringX - child.startCenterX) * moveEase;
+          child.startCenterX +
+          (singularityX - child.startCenterX) * travelEase;
         const cy =
-          child.startCenterY + (ringY - child.startCenterY) * moveEase;
-        const morphProgress = Math.max(0, 1 - morphBackU);
+          child.startCenterY +
+          (singularityY - child.startCenterY) * travelEase;
+
+        // Slowly transition the 3D wireframe shape into the parent shape (p: 0.22 -> 0.86)
+        // with a gentle power curve so it doesn't snap to the parent shape too early
+        const shapeU = Math.max(0, Math.min(1, (progress - 0.22) / 0.64));
+        const shapeEase = Math.pow(shapeU, 1.45);
+        const morphProgress = Math.max(0, 1 - shapeEase);
+
+        // Once the subgraph nodes are inside and overlapping the centered parent node (p >= 0.70), alpha-fade to nothing
+        const fadeSpan = Math.max(0.08, child.recallEndAt - 0.7);
+        const opacity =
+          progress < 0.7
+            ? 1
+            : Math.max(0, 1 - (progress - 0.7) / fadeSpan);
 
         liveChildPositions.set(child.id, {
           cx,
@@ -1210,24 +1253,6 @@ export function SubgraphExpansionOverlay({
           h: child.startRect.height,
           shellU: 0,
           morphProgress,
-          opacity: 1,
-        });
-      } else {
-        // Stage 3: Pull the ring of parent-shaped 3D cores into the central parent core
-        const pullSpan = Math.max(0.04, child.recallEndAt - 0.64);
-        const pullU = Math.min(1, Math.max(0, (progress - 0.64) / pullSpan));
-        const pullEase = pullU * pullU * (3 - 2 * pullU);
-        const cx = ringX + (singularityX - ringX) * pullEase;
-        const cy = ringY + (singularityY - ringY) * pullEase;
-        const opacity = pullU < 0.78 ? 1 : Math.max(0, (1 - pullU) / 0.22);
-
-        liveChildPositions.set(child.id, {
-          cx,
-          cy,
-          w: child.startRect.width,
-          h: child.startRect.height,
-          shellU: 0,
-          morphProgress: 0,
           opacity,
         });
       }
@@ -1387,16 +1412,21 @@ export function SubgraphExpansionOverlay({
                 </div>
               )}
 
-              {/* Central Animated 3D Core (`SemanticNodeGlyph`) — morphs back into the parent's animated 3D core as it moves into the center */}
+              {/* Central Animated 3D Core (`SemanticNodeGlyph`) — keeps its own child colors while slowly morphing its 3D shape into the parent shape, then alpha-fading as it overlaps inside the parent node */}
               <div className="relative z-10 flex items-center justify-center">
                 <SemanticNodeGlyph
                   archetypeId={child.archetypeId}
                   neuronName={child.neuronName}
                   primary={child.color}
                   secondary={child.secondaryColor}
-                  size={54}
+                  size={singularityCoreSize || 54}
                   selected={true}
-                  morphFrom={parentCoreMorphSource}
+                  morphFrom={{
+                    archetypeId,
+                    neuronName,
+                    primary: child.color,
+                    secondary: child.secondaryColor,
+                  }}
                   morphProgress={pos.morphProgress}
                 />
               </div>

@@ -19,10 +19,12 @@
   - **Radial Burst Emission, Simultaneous 3D Vector Wireframe Morphing & Outer-Edge Box/Label Growth**:
     When not in Full Graph mode (`!viewFullGraph`), clicking on any subgraph node detaches the
     node's title/name plate upward (`titleDetached` in `ParticleNeuronNode.tsx` and
-    `SubgraphExpansionOverlay.tsx`) and executes a `500ms` 3-stage choreography:
-    1. **Stage 1 — Radial Burst Around Parent (`p: 0.08 -> 0.34`)**: Pulls cloned central animated
-       3D cores (`SemanticNodeGlyph` / `VolumetricNodeCore`) out of the parent center into a circular
-       halo ring all around the parent node (`coreMorphProgress = 0`, `shellExpandProgress = 0`).
+    `SubgraphExpansionOverlay.tsx`) and executes a `2000ms` (`2s`) 3-stage choreography:
+    1. **Stage 1 — Center-Seeking Directional Burst (`p: 0.06 -> 0.34`)**: Moves the selected
+       parent node from its starting position (`originStartFlowX`, `originStartFlowY`) toward the
+       canvas center (`centerX`, `centerY`) while pulling cloned central animated 3D cores
+       (`SemanticNodeGlyph` / `VolumetricNodeCore`) out along that direction (`dirToCenterX`,
+       `dirToCenterY`) into a directional halo ring (`coreMorphProgress = 0`, `shellExpandProgress = 0`).
     2. **Stage 2 — Simultaneous Transition & True 3D Vector Wireframe Metamorphosis (`p: 0.34 -> 0.82`)**:
        All emitted cores transition into their target locations at once while `VolumetricNodeCore.tsx`
        interpolates the live 3D rotating wireframe segments (`WireframeSegment3D[]`, `v1`/`v2` in 3D `(x, y, z)`
@@ -32,11 +34,17 @@
        3D vector wireframes formed, `shellExpandProgress` sweeps `0 -> 1` so each node's outer box,
        border, ports, and labels grow outward from the outer edges of its central animated 3D core.
        Clicking a parent/ancestor breadcrumb in `Toolbar.tsx` or `ParticleGraphCanvas.tsx` plays the
-       exact reverse (`mode: "collapse"`): all child nodes retract their labels and outer boxes into
-       their central 3D cores, all bare 3D cores transition into a ring around the parent while
-       morphing their 3D vector wireframes back into the parent's 3D wireframe (`1 -> 0`), pull into the
-       central parent core, and the parent subgraph node's box and labels grow outward from its central
-       core's outer edges.
+       reverse (`mode: "collapse"`): `GraphCanvas.tsx` cleanly delegates to `ParticleGraphCanvas`
+       or `StandardGraphCanvas` so only the active canvas's `useSubgraphExpansion` hook drives
+       `<ReactFlow>`'s viewport, and `startSubgraphCollapse` tracks the live DOM bounding rect of
+       the parent node's `<canvas>` core (`container.querySelector('.react-flow__node[data-id="..."] canvas')`)
+       so all collapsing child nodes converge 100% inside the parent node's exact screen coordinates
+       and core dimensions (`singularityCoreSize`). During morphing, all glowing circular halos,
+       radial ambient fills (`VolumetricNodeCore.tsx`), shimmer rings (`ParticleNeuronNode.tsx`),
+       shockwave bursts, and additive canvas blending are disabled (`globalCompositeOperation = "source-over"`)
+       so the child nodes keep their own colors, smoothly morph their 3D vector wireframes into the
+       parent shape directly inside the parent node, and alpha-fade out (`opacity: 1 -> 0`) without
+       glow artifacts before the parent node's outer box and labels grow outward.
   - **Full-Screen Graph Canvas with On-Demand Left, Bottom & Right Panel Dialogs**:
     Updated `EditorPage.tsx`, `Toolbar.tsx`, `LibraryPanel.tsx`, `CodePanel.tsx`,
     `DatasetSourcePanel.tsx`, `ChatPanel.tsx`, `TrainingPanel.tsx`, and

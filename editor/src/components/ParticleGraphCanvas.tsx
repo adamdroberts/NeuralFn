@@ -414,9 +414,13 @@ export default function ParticleGraphCanvas() {
     [currentPath],
   );
 
+  const prevPathKeyRef = useRef(pathKey);
   useEffect(() => {
+    const pathChanged = prevPathKeyRef.current !== pathKey;
+    prevPathKeyRef.current = pathKey;
+
     warpTimerRef.current = 1.0;
-    setWarpOverlayAlpha(isExpandingRef.current ? 0.35 : 1);
+    setWarpOverlayAlpha(0);
     setTransitionStatus(
       viewFullGraph
         ? "FULL ARCHITECTURE VIEW // ALL SUBGRAPHS EXPANDED"
@@ -434,15 +438,14 @@ export default function ParticleGraphCanvas() {
     // directly with each node as it is summoned from the portal.
     orbitalParticlesRef.current.length = 0;
     edgePhotonsRef.current.length = 0;
+    shockwavesRef.current.length = 0;
+    burstParticlesRef.current.length = 0;
 
-    const fadeTimer = window.setTimeout(() => {
-      setWarpOverlayAlpha(0);
-    }, 420);
     const statusTimer = window.setTimeout(() => {
       setTransitionStatus(
         viewFullGraph ? "FULL GRAPH // LOCKED" : "MATRIX LOCKED // 60 FPS",
       );
-      if (!isExpandingRef.current) {
+      if (!isExpandingRef.current && !pathChanged) {
         fitView({ duration: 550, padding: viewFullGraph ? 0.14 : 0.22 }).catch(
           () => undefined,
         );
@@ -450,7 +453,6 @@ export default function ParticleGraphCanvas() {
     }, 650);
 
     return () => {
-      window.clearTimeout(fadeTimer);
       window.clearTimeout(statusTimer);
     };
   }, [pathKey, visualMode, viewFullGraph, spawnFlowBurst, fitView]);
@@ -474,9 +476,9 @@ export default function ParticleGraphCanvas() {
     return () => window.clearTimeout(timer);
   }, [pulseSequence, spawnFlowBurst]);
 
-  // Detect node or edge additions to fire localized particle bursts
+  // Detect node or edge additions to fire localized particle bursts (only outside subgraph transitions)
   useEffect(() => {
-    if (nodes.length > prevNodeCountRef.current) {
+    if (!isExpandingRef.current && nodes.length > prevNodeCountRef.current) {
       const newest = nodes[nodes.length - 1];
       if (newest) {
         const cx = newest.position.x + 85;
@@ -488,7 +490,7 @@ export default function ParticleGraphCanvas() {
   }, [nodes, spawnFlowBurst]);
 
   useEffect(() => {
-    if (edges.length > prevEdgeCountRef.current) {
+    if (!isExpandingRef.current && edges.length > prevEdgeCountRef.current) {
       const newestEdge = edges[edges.length - 1];
       if (newestEdge) {
         const targetNode = nodes.find((n) => n.id === newestEdge.target);
@@ -508,7 +510,7 @@ export default function ParticleGraphCanvas() {
 
   // Selection burst
   useEffect(() => {
-    if (!selectedNodeId) return;
+    if (!selectedNodeId || isExpandingRef.current) return;
     const sel = nodesRef.current.find((n) => n.id === selectedNodeId);
     if (sel) {
       const cx = sel.position.x + (sel.measured?.width ?? 170) / 2;
@@ -859,25 +861,27 @@ export default function ParticleGraphCanvas() {
       const springK = motionIntensityRef.current === "cinematic" ? 0.095 : 0.13;
       const damping = motionIntensityRef.current === "cinematic" ? 0.84 : 0.8;
 
-      // Draw soft radial nebula glow behind each node
-      for (const anchor of nodeMap.values()) {
-        const sx = anchor.x * vpZoom + vpX;
-        const sy = anchor.y * vpZoom + vpY;
-        const glowR =
-          (mode === "particle_nebula" ? 78 : Math.max(anchor.width, anchor.height) * 0.68) *
-          vpZoom;
-        if (sx + glowR < 0 || sx - glowR > width || sy + glowR < 0 || sy - glowR > height) {
-          continue;
+      // Draw soft radial nebula glow behind each node (suppressed during subgraph transitions so wireframes blend smoothly without glowing halos)
+      if (!isExpandingRef.current) {
+        for (const anchor of nodeMap.values()) {
+          const sx = anchor.x * vpZoom + vpX;
+          const sy = anchor.y * vpZoom + vpY;
+          const glowR =
+            (mode === "particle_nebula" ? 78 : Math.max(anchor.width, anchor.height) * 0.68) *
+            vpZoom;
+          if (sx + glowR < 0 || sx - glowR > width || sy + glowR < 0 || sy - glowR > height) {
+            continue;
+          }
+          const [r, g, b] = anchor.rgb;
+          const grad = ctx.createRadialGradient(sx, sy, 2, sx, sy, glowR);
+          grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${anchor.selected ? 0.34 : 0.18})`);
+          grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${anchor.selected ? 0.12 : 0.06})`);
+          grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
+          ctx.fill();
         }
-        const [r, g, b] = anchor.rgb;
-        const grad = ctx.createRadialGradient(sx, sy, 2, sx, sy, glowR);
-        grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${anchor.selected ? 0.34 : 0.18})`);
-        grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${anchor.selected ? 0.12 : 0.06})`);
-        grad.addColorStop(1, "rgba(0, 0, 0, 0)");
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
-        ctx.fill();
       }
 
       // Update & draw each orbital particle

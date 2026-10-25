@@ -41,6 +41,13 @@ export default function GraphCanvas() {
   const particleGraphEditorEnabled = useSettingsStore(
     (state) => state.particleGraphEditorEnabled,
   );
+  if (particleGraphEditorEnabled) {
+    return <ParticleGraphCanvas />;
+  }
+  return <StandardGraphCanvas />;
+}
+
+function StandardGraphCanvas() {
   const viewFullGraph = useSettingsStore((state) => state.viewFullGraph);
   const setViewFullGraph = useSettingsStore((state) => state.setViewFullGraph);
 
@@ -280,10 +287,6 @@ export default function GraphCanvas() {
     },
     [updatePreferredInsertPosition],
   );
-
-  if (particleGraphEditorEnabled) {
-    return <ParticleGraphCanvas />;
-  }
 
   return (
     <div ref={containerRef} className="relative flex-1 h-full min-h-0 overflow-hidden">
