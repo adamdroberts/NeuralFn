@@ -1,5 +1,7 @@
 # React Components
 
+Component-level reference for `editor/src/components/`. For the workflow view of the cyber canvas, View Full Graph mode, the expansion animation, and the panel dialogs, read [Cyber Mode, Full Graph View, and Panel Dialogs](cyber-mode.md) first.
+
 ## GraphCanvas
 
 **Default export** from the canvas module.
@@ -12,7 +14,8 @@ The main graph editing surface, built on React Flow (`@xyflow/react`). Renders t
 - Edge creation via port-to-port dragging.
 - Panning and zooming.
 - Wires node/edge change events back to the Zustand store actions (`applyActiveNodeChanges`, `applyActiveEdgeChanges`, `connectActiveGraph`).
-- Automatically switches to `ParticleGraphCanvas` when the `particleGraphEditorEnabled` feature flag is enabled in `useSettingsStore`.
+- `GraphCanvas` itself is only a switch: it renders `ParticleGraphCanvas` when `particleGraphEditorEnabled` is true in `useSettingsStore`, otherwise the internal `StandardGraphCanvas`.
+- `StandardGraphCanvas` also hosts the shared full-graph and expansion machinery: it memoizes `buildFullExpandedGraph(rootGraph)` while `viewFullGraph` is on (forwarding only selection changes to the store and calling `fitView` on toggle), mounts `FullGraphZonesLayer` (`⌖ Fit` animates the viewport to a zone, `⤢ Isolate` turns the mode off and `setPath`s into the zone), and runs `useSubgraphExpansion` so a click or double-click on a subgraph node plays the expansion animation and a breadcrumb jump plays the collapse. See [cyber-mode.md](cyber-mode.md#subgraph-expand-and-collapse-animation).
 
 ## ParticleGraphCanvas & WebGLCyberScene
 
@@ -34,23 +37,56 @@ A 60 FPS 3D volumetric WebGL and particle cybernetic graph editor, toggled via t
 
 ## ParticleNeuronNode, VolumetricNodeCore & ParticleEdge
 
-**Exports** from `ParticleNeuronNode.tsx`, `VolumetricNodeCore.tsx`, `nodeArchetypes.tsx`, and `ParticleEdge.tsx`.
+**Exports** from `ParticleNeuronNode.tsx` (`ParticleNeuronNode`, `SemanticNodeGlyph`), `VolumetricNodeCore.tsx` (`VolumetricNodeCore`, `VolumetricNodeCoreProps`, `VolumetricMorphSource`), `nodeArchetypes.ts` (`NODE_ARCHETYPES`, `resolveNodeArchetype`, `NodeArchetypeId`, `ParticleSwarmGeometry`, `NodeArchetypeSpec`), and `ParticleEdge.tsx`.
 
 - **14 Semantic Node Archetypes (`nodeArchetypes.ts`)**: Maps every node label and `NeuronDefData` to one of 14 distinct visual archetypes (`attention_prism`, `sequence_wave`, `latent_tesseract`, `moe_router`, `tensor_matrix`, `lora_adapter`, `norm_stabilizer`, `residual_combiner`, `memory_vault`, `objective_beacon`, `signal_modulator`, `citadel_subgraph`, `portal_input`, `portal_output`), each with unique polygon silhouettes, neon color pairs, and particle swarm geometries.
 - **60 FPS 3D Volumetric Rotating & Twisting Cores (`VolumetricNodeCore.tsx`)**: Renders depth-sorted, normal-lit 3D meshes inside each node—including counter-rotating gimbal rings + octahedral crystals for Attention, twisting 3D double-helices for Mamba/SSM, 4D-to-3D stereographic rotating tesseracts for JEPA/Latent nodes, orbiting 3D expert satellites with laser tethers for MoE, torsional twisting 3D tensor cubes for Linear/MLP, counter-twisting hyperbolic hourglasses for LoRA, 3-axis gyroscopic armillary spheres for Norms, stacked counter-rotating octagonal platters for Embeddings/KV Memory, dual counter-rotating Merkaba tetrahedra for Losses/Objectives, and 3D extruded twisting ribbons for Activations.
 - **Multi-Plane CSS 3D Extruded Chassis (`ParticleNeuronNode.tsx`)**: Uses `transform-style: preserve-3d` with 5 distinct `translateZ` depth planes (`-20px` to `+22px`) and interactive cursor-tilt parallax.
 
+
+### Archetype table
+
+`resolveNodeArchetype(label, neuronDef, isInput?, isOutput?)` returns one `NodeArchetypeSpec` (`id`, `categoryId`, `categoryLabel`, `badgeText`, `primary` / `secondary` colors with `[r, g, b]` pairs, `clipPath`, `borderRadius`, `swarmGeometry`, `minWidth`). Rules are evaluated in this order; the first match wins.
+
+| Archetype | Matched when | Badge | Swarm geometry |
+|-----------|--------------|-------|----------------|
+| `citadel_subgraph` | `neuronDef.kind === "subgraph"` | `MACRO // CITADEL` | `hex_shield` |
+| `portal_input` | `isInput`, name `input`, or key contains `dataset_source` / `rollout_source` / `data_source` | `SOURCE // EMITTER` | `emitter_beam` |
+| `portal_output` | `isOutput`, name `output`, or key contains `lm_head` / `denoise_head` | `SINK // NEXUS` | `emitter_beam` |
+| `sequence_wave` | `mamba`, `ssm`, `causal_chunk_state`, `ttt_`, `universal_transformer`, `act_halt`, `act_weighted` | `SSM // WAVEGUIDE` | `lissajous_wave` |
+| `attention_prism` | `attention`, `sdpa`, `reshape_heads`, `merge_heads`, `repeat_kv`, `qk_gain` | `ATTN // PRISM` | `tri_prism` |
+| `latent_tesseract` | `latent`, `jepa`, `semantic_projector`, `semantic_hasher`, `semantic_chunk`, `byte_patch`, `mask_scheduler`, `random_timesteps`, `muse_glimmer` | `LATENT // TESSERACT` | `vortex_funnel` |
+| `moe_router` | `moe`, `router`, `topk_route`, `expert_`, `auxfree`, `broadcast_chunk_routes`, `broadcast_expert_routes` | `MOE // MULTIPLEX` | `satellite_clusters` |
+| `lora_adapter` | `lora`, `nf4`, `randmap` | `ADAPTER // LOW-RANK` | `matrix_lattice` |
+| `tensor_matrix` | `linear`, `mlp`, `swiglu`, `geglu`, `reglu`, `solu` | `TENSOR // LATTICE` | `matrix_lattice` |
+| `residual_combiner` | `residual`, `manifold_hyper`, `pair_batch` | `STREAM // JUNCTION` | `stabilizer_rings` |
+| `norm_stabilizer` | `norm`, `dyt`, `softcap`, `dropout`, `tensor_scale`, `loss_scale` | `NORM // GYRO-GATE` | `stabilizer_rings` |
+| `memory_vault` | `embedding`, `rotary`, `kv_cache`, `kv_pca`, `kv_quant` | `MEM // VAULT-BANK` | `cylinder_stack` |
+| `objective_beacon` | `loss`, `cross_entropy`, `dpo`, `ppo`, `kl_penalty`, `reward`, `value_head`, `policy_logits`, `gae`, `logp`, `reference_forward` | `OBJ // CRITIC-CORE` | `radial_pulsar` |
+| `signal_modulator` | anything else | `ACT // WAVE-SHAPER` | `harmonic_orbit` |
+
+"key" is the lower-cased concatenation of the node label, `neuronDef.name`, and `neuronDef.module_type`. `VolumetricNodeCore` accepts `archetypeId`, `neuronName`, `primaryColor`, `secondaryColor`, optional `size`, `speedMultiplier`, `selected`, and the morph pair `morphFrom` (`VolumetricMorphSource`) / `morphProgress` used by the expansion animation.
+
+## SubgraphExpansionOverlay
+
+**Named exports** from `SubgraphExpansionOverlay.tsx`: `useSubgraphExpansion`, `SubgraphExpansionOverlay`, `FullGraphZonesLayer`, and the state types `SubgraphExpansionAnimState`, `SiblingGhost`, `CollapsingChildGhost`, `CollapsingEdgeGhost`, `EmergingNodeTether`, `ScreenRect`.
+
+- `useSubgraphExpansion({ containerRef, rootGraph, currentPath, activeNodes, activeEdges, viewFullGraph, openSubgraph, setViewport, getViewport, onViewportSync?, onSpawnBurst? })` returns `{ expansionState, isExpanding, expansionMode, triggerSubgraphExpansion }`. `triggerSubgraphExpansion(node)` returns `false` for non-subgraph nodes; otherwise it snapshots the current view, calls `openSubgraph(node.id)` immediately, and animates for 2000 ms. A `useLayoutEffect` watches `currentPath`: when it becomes a strict prefix of the previous snapshot's path (a breadcrumb jump) and `viewFullGraph` is off, it starts the collapse animation automatically, so callers never invoke collapse directly.
+- `expansionState.animatedNodes` / `animatedEdges` are what the canvas feeds to `<ReactFlow>` while an animation runs; the other fields (`singularityX/Y`, `singularityCoreSize`, `titleAnchorX/Y`, `portalPulse`, ghost arrays, `progress`, `spawnedCount`, `totalCount`) drive the overlay.
+- `SubgraphExpansionOverlay({ expansionState, cyberMode })` draws the non-node parts of the choreography: the detached title plate and portal at the parent position, sibling ghosts, collapsing child ghosts (rendered with `SemanticNodeGlyph`), fading edge ghosts, and emerging-node tethers. `cyberMode` picks neon or plain styling.
+- `FullGraphZonesLayer({ zones, viewport, cyberMode?, onIsolateZone, onFitZone })` renders the `SubgraphZone` frames in flow space (translated and scaled by the viewport) with per-depth colours, the zone name, breadcrumb, `family@version` badge, node count, and the `⌖ Fit` / `⤢ Isolate` buttons. Renders nothing when `zones` is empty.
+
 ## NodePickerModal
 
 **Default export** from `NodePickerModal.tsx`.
 
-Categorized 3-column **Holographic Node Arsenal** modal launched via the **`✦ + Add Node`** button in `Toolbar.tsx` (replacing the inline 120-button toolbar wall). Groups all builtin neurons into 9 semantic subsystems with staggered 3D fan-out card entry animations (`cyber-node-card-enter`), live search filtering, quick-spawn buttons for structural constructs (`+ Custom Python Node`, `+ Scalar Override`, `+ Subgraph Citadel`), multi-drop mode, and a right-hand 3D Blueprint Inspector.
+Categorized 3-column **Holographic Node Arsenal** modal launched via the **`✦ + Add Node`** button in `Toolbar.tsx` (replacing the inline 120-button toolbar wall). Exports `PICKER_CATEGORIES: CategoryMeta[]` (`id`, `title`, `subtitle`, `accent`, `archetypeId`) with nine entries: `attention`, `linear_mlp`, `moe`, `jepa_latent`, `embeddings_kv`, `norms_residuals`, `rlhf_losses`, `activations`, `terminals_custom`. Groups all builtin neurons from `useGraphStore.builtins` into those semantic subsystems with staggered 3D fan-out card entry animations (`cyber-node-card-enter`), live search filtering, quick-spawn buttons for structural constructs (`+ Custom Python Node`, `+ Scalar Override`, `+ Subgraph Citadel`), multi-drop mode, and a right-hand 3D Blueprint Inspector.
 
 ## SettingsModal
 
 **Default export** from `SettingsModal.tsx`.
 
-Global modal dialog for configuring platform feature flags and holographic visual engine settings (`particleGraphEditorEnabled`, `particleVisualMode`, `particleDensity`, `colorPalette`, `holoPerspective3D`, `motionIntensity`, `hudTelemetryOverlay`). Accessible from the `AppShell` header, `Toolbar`, and `CodePanel` active graph settings.
+Global modal dialog for the persisted fields of `useSettingsStore`: the cyber-mode flag (`particleGraphEditorEnabled`), visual mode, palette cards built from `PARTICLE_PALETTES`, particle density, motion intensity, the `holoPerspective3D` and `hudTelemetryOverlay` checkboxes, and the `⊞ View Full Graph (Expand All Subgraphs)` checkbox, plus a reset button that calls `resetSettings()`. Selecting a visual mode while cyber mode is off also enables cyber mode. Opened with `setSettingsOpen(true)` from the `AppShell` header (`⚙ Settings`), the `Toolbar` `⚙` button, the cyber HUD, and `CodePanel`'s graph settings; `AppShell` mounts the modal once for the whole app. Field reference: [store.md](store.md#settings-store-usesettingsstore).
 
 ## NeuronNode
 
@@ -77,21 +113,28 @@ Custom React Flow edge renderer. Shows:
 
 To maximize graph canvas visibility, `EditorPage.tsx` dedicates 100% of the stage below `Toolbar.tsx` to `GraphCanvas` and houses the left, bottom, and right panels inside on-demand modal dialogs (`activePanelDialog` in `useSettingsStore`), launched from floating edge buttons (left, bottom, right) or from the top `Toolbar`:
 
-- **Left Dialog (`◈ Variants` — `LibraryPanel`)**: Displays saved variant families and swappable versions in a responsive multi-column grid, automatically closing when a variant is opened or inserted.
+- **Left Dialog (`◈ Variants` — `LibraryPanel`)**: Displays saved variant families and swappable versions from `rootGraph.variant_library` in a responsive multi-column grid (`openVariant` to navigate into a version, `addVariantNode` to insert one). Accepts an optional `onDone` callback, which `EditorPage` uses to close the dialog after either action. Builtin neurons are no longer listed here; they live in `NodePickerModal`.
 - **Bottom Dialog (`⚡ Training & Trace` — `TrainingPanel`)**: Houses all training configuration, fine-tuning controls, dataset/JSON inputs, Recharts loss curve, and Torch Trace inside a modal dialog while keeping `TrainingPanel` mounted so active training runs and background trace polling continue uninterrupted when the dialog is closed.
-- **Right Dialog (`◧ Inspector` / `💬 Model Chat` — `CodePanel` & `ChatPanel`)**: Houses both the Node & Graph Inspector / Monaco Code Editor (`CodePanel`) and the interactive `ChatPanel` inside a tabbed modal dialog.
+- **Right Dialog (`◧ Inspector` / `💬 Model Chat` — `CodePanel` & `ChatPanel`)**: Houses both the Node & Graph Inspector / Monaco Code Editor (`CodePanel`) and the interactive `ChatPanel` inside a tabbed modal dialog (`rightPanelTab`).
+
+### CodePanel
+
+**Default export.**
+
+The inspector tab of the right dialog. With no node selected it shows the active graph's settings: name, training method (`surrogate` / `evolutionary` / `frozen` / `torch`), runtime (`scalar` / `torch` / `native-cuda`, with native precision options when `native-cuda` is chosen), the per-subgraph training-method table, and a feature-flag block with a cyber-mode toggle and the `⚙ Configure Holographic & Particle Settings...` button. Selecting native CUDA does not imply compatibility; the Training panel owns preflight. With a node selected it shows the node inspector: Monaco editor for custom neuron `source_code` (Python highlighting, live `updateNodeData` writes), `PortConfig`, variant controls, and `DatasetSourcePanel` for `dataset_source` nodes. It works on nested leaves selected in View Full Graph mode because `selectSelectedNode` resolves scoped ids.
 
 ## Toolbar
 
 **Default export.**
 
-Top-of-canvas toolbar providing:
+Top-of-canvas toolbar. In cyber mode it takes the neon cockpit styling; the controls are the same in both modes:
 
-- Template preset selector (GPT, NanoGPT, Llama, MoE, etc.) with apply action.
-- Node insertion buttons (custom, subgraph, variant).
-- Graph-level actions: save, execute, trace, clear.
-- Breadcrumb navigation bar for subgraph depth.
-- Training method selection; runtime selection lives in CodePanel graph settings.
+- `✦ + Add Node` opens `NodePickerModal`; `+ Custom`, `+ Override`, `+ Subgraph` quick-spawn a custom Python node, a scalar override node, and an empty subgraph.
+- Template preset `<select>` plus apply action (`load_gpt_template`). The option list is hardcoded here, so every new backend preset must be added as an `<option>`.
+- Breadcrumb bar for subgraph depth. Clicking a parent crumb calls `setViewFullGraph(false)` then `setPath(crumb.path)`; the active canvas turns that path change into the collapse animation.
+- Panel launchers that mirror the canvas-edge buttons: `◈ Variants` (left dialog), `⚡ Training` (bottom dialog), `◧ Inspector` and `💬 Chat` (right dialog tabs).
+- `⊞ View Full Graph` / `⊞ Full Graph: ON` (`toggleViewFullGraph`), `✦ Cyber 3D` / `✦ Cyber 3D: ON` (`toggleParticleGraphEditor`), and `⚙` (`setSettingsOpen(true)`).
+- Graph-level actions: save, load, execute, trace, clear. Training method selection; runtime selection lives in `CodePanel` graph settings.
 
 ## TrainingPanel
 
@@ -151,3 +194,4 @@ Layout wrapper component that provides:
 - Sidebar navigation links (Editor, Datasets, Runs, Analytics, Admin).
 - React Router `<Outlet />` for rendering the active page.
 - User menu with logout.
+- `⚙ Settings` button (`setSettingsOpen(true)`) and the single app-wide `<SettingsModal />` mount. When `particleGraphEditorEnabled` is on, the shell and header switch to the `cyber-cockpit-shell` / `cyber-header-deck` styling from `index.css`.

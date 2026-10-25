@@ -6,9 +6,29 @@
 
 **Default export.**
 
-The main graph editor view. Composes `GraphCanvas`, `LibraryPanel`, `CodePanel`, `TrainingPanel`, `PortConfig`, `DatasetSourcePanel`, and `Toolbar` into a full editing workspace.
+The main graph editor view. The stage below `Toolbar` is given entirely to `GraphCanvas`; the side panels are no longer docked but open as modal dialogs driven by `activePanelDialog` / `rightPanelTab` in [`useSettingsStore`](store.md#settings-store-usesettingsstore). See [Cyber Mode, Full Graph View, and Panel Dialogs](cyber-mode.md#full-screen-canvas-and-panel-dialogs) for the user-facing walkthrough.
 
-Includes an `AgentBanner` that displays a notification when an MCP agent is actively modifying the session graph (detected via the `getAgentStatus` API call).
+Layout, top to bottom:
+
+1. `AgentBanner` -- polls `api.getAgentStatus(projectId, sessionId)` every 2 s and shows a purple banner while an MCP agent controls the session; when the agent releases the session it calls `reloadActiveSessionGraph()` so the canvas picks up the agent's edits.
+2. A one-line status strip (`Loading session...`, `Saving...`, the last save error, `Unsaved changes`, or `Revision <n>`). In cyber mode it also shows `SYS.MODE // FULL CYBER 3D COCKPIT`.
+3. `Toolbar`.
+4. The canvas stage: `GraphCanvas` plus three floating launcher groups positioned over the canvas edges:
+   - left edge `◈ Variants` with the variant-family count, opens the **left** dialog;
+   - right edge `◧ Inspector` (shows the selected node's label and a `Selected` badge when a node is selected) and `💬 Model Chat`, open the **right** dialog on the `inspector` or `chat` tab;
+   - bottom edge `⚡ Training & Trace` (or `⚡ Training Active` while a run is live) with the active graph's `training_method · runtime` and the latest loss, opens the **bottom** dialog.
+
+Dialogs:
+
+| Dialog | Contents | Mounting |
+|--------|----------|----------|
+| left | `LibraryPanel` (`onDone` closes the dialog after a variant is opened or inserted) | Rendered only while open. |
+| bottom | `TrainingPanel` | Always mounted, hidden with `display: none` when closed, so active training runs, SSE loss streaming, and torch-trace polling keep running. |
+| right | `CodePanel` (`inspector` tab) and `ChatPanel` (`chat` tab) | Always mounted; the inactive tab is hidden so Monaco editor state and the chat transcript persist. |
+
+Every dialog closes on `Escape`, on its `✕ Close (ESC)` button, or on a backdrop click; `EditorPage` registers the `keydown` listener only while a dialog is open.
+
+Session lifecycle is unchanged: on mount it calls `api.getSession` and `hydrateSession`, and while `hydrationState === "ready"` and the store is dirty it debounces `syncActiveSessionGraph({ skipIfClean: true })` by 600 ms. `PortConfig` and `DatasetSourcePanel` are reached through `CodePanel` inside the right dialog.
 
 ### LoginPage
 

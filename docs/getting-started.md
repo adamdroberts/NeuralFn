@@ -121,6 +121,14 @@ Launch both the FastAPI backend (`http://127.0.0.1:8000`) and Vite editor (`http
 ./start-servers.sh
 ```
 
+The launcher (`start-servers.sh`, also `npm start` / `npm run start:servers`) activates `./.venv` when no virtualenv or conda environment is active, resolves `uvicorn` (binary or `python -m uvicorn`), installs editor dependencies with `pnpm` or `npm` when `editor/node_modules` is missing, starts both processes, and stops both on `Ctrl+C` or when either exits. It honours three environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BACKEND_HOST` | `127.0.0.1` | Host passed to `uvicorn server.app:app --reload` |
+| `BACKEND_PORT` | `8000` | Backend port |
+| `EDITOR_PORT` | `5173` | Vite dev-server port |
+
 Or start them in separate terminals:
 
 **Backend** (terminal 1):

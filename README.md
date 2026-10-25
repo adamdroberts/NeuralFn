@@ -7686,6 +7686,14 @@ Launch both the backend (`http://127.0.0.1:8000`) and editor (`http://localhost:
 ./start-servers.sh
 ```
 
+The launcher (`start-servers.sh`, also `npm start` / `npm run start:servers`) activates `./.venv` when no virtualenv or conda environment is active, resolves `uvicorn` (binary or `python -m uvicorn`), installs editor dependencies with `pnpm` or `npm` when `editor/node_modules` is missing, starts both processes, and stops both on `Ctrl+C` or when either exits. It honours three environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BACKEND_HOST` | `127.0.0.1` | Host passed to `uvicorn server.app:app --reload` |
+| `BACKEND_PORT` | `8000` | Backend port |
+| `EDITOR_PORT` | `5173` | Vite dev-server port |
+
 Or run them in separate terminals:
 
 Terminal 1 — backend:
@@ -7750,6 +7758,8 @@ The app shell keeps the active project and session in the header, lets authentic
 ### Volumetric 3D Cyber Mode & Categorized Node Picker
 
 Click **`✦ Cyber 3D`** in the editor toolbar (or open **`⚙ Settings`** in the header) to toggle the feature-flagged **Volumetric 3D WebGL & Particle Cyber Graph Editor**:
+
+The flag and its visual settings persist per browser in `localStorage` (`neuralfn:editor_settings:v1`) and are never sent to the server; the `2D` button in the cyber HUD switches back. Full walkthrough with diagrams: [docs/editor/cyber-mode.md](docs/editor/cyber-mode.md).
 
 - **14 Semantic 3D Node Archetypes (`VolumetricNodeCore`)**: Nodes are semantically styled and shaped according to their neural role with live 60 FPS 3D rotating and twisting geometry cores (counter-rotating gimbal crystals for Attention, twisting 3D double-helices for Mamba/SSM, 4D-to-3D rotating tesseracts for JEPA/Latent stages, orbiting 3D expert satellites for MoE, torsional twisting 3D tensor lattices for Linear/MLP, hyperbolic hourglasses for LoRA, 3-axis gyroscopes for Norms, and 3D twisting activation ribbons) inside a multi-plane CSS 3D (`preserve-3d`) extruded chassis.
 - **WebGL 3D Scene & 60 FPS Particle Swarms (`WebGLCyberScene` & `ParticleGraphCanvas`)**: Combines a shared WebGL GLSL shader & 3D wireframe layer with reactive particle swarms, double-helix synaptic photon streams, and vortex transitions across the full 3D-angled cyber cockpit interface.

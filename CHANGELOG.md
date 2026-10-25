@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+- **Documentation sync for the cyber-mode editor series** (`f07d7c7c` cyber look argon,
+  `e252db14` better animations, `578a80a1` fix: cyber). The three commits shipped the
+  Volumetric 3D Cyber canvas, the persisted settings store, View Full Graph mode, the
+  animated subgraph expand/collapse, the categorized node picker, the full-screen canvas
+  with panel dialogs, and the `start-servers.sh` launcher, but left the reference docs,
+  LLM artifacts, and agent skills behind. This entry brings them in line with the code:
+  - **Launcher name fix.** The script committed in `f07d7c7c` is `start-servers.sh`
+    (hyphen). `README.md`, `docs/getting-started.md`, and the root `package.json`
+    `start` / `start:servers` scripts pointed at a non-existent `./start_servers.sh`;
+    all three now reference `./start-servers.sh`, and the launcher's `BACKEND_HOST`,
+    `BACKEND_PORT`, and `EDITOR_PORT` variables, `.venv` auto-activation, and
+    dependency auto-install are documented.
+  - **New guide `docs/editor/cyber-mode.md`** with Mermaid diagrams for the canvas
+    selection / store wiring, the View Full Graph flattening, the expand/collapse
+    sequence, and the panel-dialog state machine, plus the control map (toolbar, HUD,
+    settings, canvas-edge buttons), archetype classification rules, and verification.
+  - **`docs/editor/store.md`**: full `useSettingsStore` reference (persisted vs.
+    transient fields with defaults, every action, `PARTICLE_PALETTES`, exported types,
+    `localStorage` key and load validation); corrected `currentPath` to
+    `GraphPathSegment[]`; documented scoped full-graph ids in `selectedNodeId`,
+    `selectSelectedNode`, `removeNode`, and `updateNodeData`.
+  - **`docs/editor/graph-utils.md`**: corrected `GraphPathSegment` / `Breadcrumb`
+    shapes (they were described as numeric indices), documented every `FlowNodeData`
+    field including the animation-only ones, and added the **Full Graph Expansion**
+    section (`makeFullGraphNodeId`, `parseFullGraphNodeId`, `resolveEditableGraphPath`,
+    `buildFullExpandedGraph` algorithm and layout constants, `SubgraphZone`,
+    `FullExpandedGraphResult`, `CoreMorphSource`).
+  - **`docs/editor/components.md`**: `GraphCanvas` switch and shared machinery, the
+    14-row node archetype table with matching rules, `SubgraphExpansionOverlay`
+    exports and hook contract, `NodePickerModal` categories, `SettingsModal` fields,
+    restored `CodePanel` / `LibraryPanel` descriptions (dropped in `e252db14`),
+    rewritten `Toolbar` section, `AppShell` settings button; fixed the
+    `nodeArchetypes.tsx` → `nodeArchetypes.ts` filename.
+  - **`docs/editor/pages.md`**: `EditorPage` now documents the status strip, the
+    canvas-edge launchers, the three dialogs and which stay mounted, and `Escape` /
+    backdrop closing.
+  - **`docs/editor/README.md`, `docs/README.md`, `docs/architecture.md`**: index the new
+    page, list both stores, and add an editor data-flow Mermaid diagram.
+  - **New agent skill `.cursor/skills/neuralfn-editor/SKILL.md`** for editor work
+    (store split, canvas switch, scoped ids, hardcoded preset dropdown, variant
+    fallback rule, keep-mounted dialogs, archetype matcher, build verification), indexed
+    in `docs/agent-skills.md`.
+  - **`llms.txt`** points at the new page and skill; **`llms-full.txt`** regenerated
+    (it was last built before these commits). The bundle now embeds the current
+    `README.md`, the most recent `CHANGELOG.md` entries (the file is 2.1 MB, so only the
+    head of the `Unreleased` section is bundled), every `docs/` page, `cli/README.md`,
+    and all five skills.
+  - **Known pre-existing issues not fixed here:** `CHANGELOG.md` contains a duplicated
+    preamble and second `## Unreleased` heading around line 9484, and `README.md` has
+    grown to ~8,000 lines with repeated top-level sections; both predate these commits.
+  - Verified with `npm --prefix editor run build`, a relative-link check over `docs/`,
+    `README.md`, `llms.txt`, and `.cursor/skills/`, and `bash -n start-servers.sh`.
 - Added a **View Full Graph** toggle (`viewFullGraph` in `editor/src/store/settingsStore.ts`,
   `buildFullExpandedGraph` in `editor/src/store/graphUtils.ts`, and `FullGraphZonesLayer`
   in `editor/src/components/SubgraphExpansionOverlay.tsx`) and **Animated Subgraph Click

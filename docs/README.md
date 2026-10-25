@@ -8,7 +8,7 @@ This documentation covers every part of the platform: the core Python SDK, the w
 
 ### Getting started
 
-- [**Getting Started**](getting-started.md) -- Installation, quickstart, and your first graph.
+- [**Getting Started**](getting-started.md) -- Installation, quickstart, `./start-servers.sh`, and your first graph.
 - [**Architecture**](architecture.md) -- System overview, module map, and how the pieces fit together.
 - [**CLI Workflows**](cli.md) -- `nfn` train/infer/eval workflows, datasets, tokenizers, artifacts, fine-tuning flags.
 
@@ -86,10 +86,11 @@ Complete API reference for every public class, function, method, and type in the
 
 - [**Overview**](editor/README.md) -- Editor architecture.
 - [**API client**](editor/api-client.md) -- TypeScript `api` object, DTO interfaces, `ApiError`.
-- [**Store**](editor/store.md) -- Zustand `useGraphStore`, state shape, actions, selectors.
-- [**Graph utilities**](editor/graph-utils.md) -- `FlowNodeData`, graph conversion, variant merge, path helpers.
+- [**Store**](editor/store.md) -- Zustand `useGraphStore` and `useSettingsStore`, state shape, actions, selectors, persistence.
+- [**Graph utilities**](editor/graph-utils.md) -- `FlowNodeData`, graph conversion, variant merge, path helpers, View Full Graph expansion.
 - [**Components**](editor/components.md) -- React components and their props.
-- [**Pages**](editor/pages.md) -- Route pages, `AppState`, session sync.
+- [**Pages**](editor/pages.md) -- Route pages, `EditorPage` dialogs, `AppState`, session sync.
+- [**Cyber mode, Full Graph view, panel dialogs**](editor/cyber-mode.md) -- The feature-flagged Volumetric 3D canvas, persisted settings, View Full Graph mode, subgraph expand/collapse animation, node picker, and on-demand panel dialogs.
 
 ### Other
 

@@ -8,7 +8,7 @@ This is a pre-alpha project. All APIs are subject to rapid breaking changes.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md): Installation, quickstart, environment variables, and your first graph.
+- [Getting Started](docs/getting-started.md): Installation, quickstart, environment variables, `./start-servers.sh` launcher, and your first graph.
 - [Architecture](docs/architecture.md): System overview -- how neuralfn/, server/, and editor/ fit together.
 - [CLI Workflows](docs/cli.md): `nfn train`, `nfn infer`, `nfn eval`, dataset/tokenizer selection, artifact layout, and fine-tuning flags.
 - [Full docs (single file)](llms-full.txt): Complete documentation concatenated into one file for LLM ingestion.
@@ -75,9 +75,10 @@ This is a pre-alpha project. All APIs are subject to rapid breaking changes.
 - [Pydantic Models](docs/server/models.md): All request/response models.
 - [Editor Overview](docs/editor/README.md): React frontend architecture.
 - [API Client](docs/editor/api-client.md): TypeScript api object, DTO interfaces.
-- [Store](docs/editor/store.md): Zustand useGraphStore, state, actions, selectors.
-- [Graph Utilities](docs/editor/graph-utils.md): FlowNodeData, graph conversion, variant merge.
-- [Components](docs/editor/components.md): React components and props.
-- [Pages](docs/editor/pages.md): Route pages, AppState, session sync.
+- [Store](docs/editor/store.md): Zustand useGraphStore and useSettingsStore (persisted feature flags, cyber-mode visuals, View Full Graph, panel dialogs).
+- [Graph Utilities](docs/editor/graph-utils.md): FlowNodeData, GraphPathSegment, graph conversion, variant merge, buildFullExpandedGraph and scoped full-graph node ids.
+- [Components](docs/editor/components.md): React components and props, node archetype table, SubgraphExpansionOverlay, NodePickerModal, SettingsModal.
+- [Pages](docs/editor/pages.md): Route pages, EditorPage dialog layout, AppState, session sync.
+- [Editor Cyber Mode Guide](docs/editor/cyber-mode.md): Volumetric 3D Cyber canvas, settings persistence, View Full Graph mode, subgraph expand/collapse animation, node picker, panel dialogs.
 - [Testing](docs/testing.md): Test suite overview and how to run tests.
-- [Agent Skills](docs/agent-skills.md): AI coding agent skills for Cursor and Codex.
+- [Agent Skills](docs/agent-skills.md): AI coding agent skills for Cursor and Codex (python-sdk, torch, cli, mcp, editor).

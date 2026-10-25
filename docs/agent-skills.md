@@ -10,6 +10,7 @@ NeuralFn ships with agent skills that teach AI coding assistants (Cursor, Codex,
 | **NeuralFn Torch Models** | [`.cursor/skills/neuralfn-torch/SKILL.md`](../.cursor/skills/neuralfn-torch/SKILL.md) | When building, training, or exporting torch-backed neural network models (GPT, Llama, MoE, etc.) using the NeuralFn Python API. |
 | **NeuralFn CLI** | [`.cursor/skills/neuralfn-cli/SKILL.md`](../.cursor/skills/neuralfn-cli/SKILL.md) | When using or changing `nfn` CLI train/infer/eval workflows, dataset shortcuts, tokenizer options, artifacts, or CUDA harness scripts. |
 | **NeuralFn MCP** | [`.cursor/skills/neuralfn-mcp/SKILL.md`](../.cursor/skills/neuralfn-mcp/SKILL.md) | When using MCP tools to manipulate graphs, nodes, edges, datasets, and training runs through the NeuralFn MCP server. |
+| **NeuralFn Editor** | [`.cursor/skills/neuralfn-editor/SKILL.md`](../.cursor/skills/neuralfn-editor/SKILL.md) | When changing or debugging the React editor under `editor/src`: canvases, cyber mode, View Full Graph, expansion animations, settings store, toolbar, node picker, preset dropdown. |
 
 ## What skills teach agents
 
@@ -20,6 +21,8 @@ NeuralFn ships with agent skills that teach AI coding assistants (Cursor, Codex,
 - **neuralfn-cli** covers the local `nfn` command: composed recipes, `--plan`,
   dataset/tokenizer separation, shared cache roots, graph-first artifacts,
   fine-tuning flags, and safe verification commands.
+
+- **neuralfn-editor** covers the web editor: the two Zustand stores and what belongs in each, how `GraphCanvas` picks the standard or cyber canvas, the scoped node-id scheme used by View Full Graph mode, the rules that are easy to break (hardcoded preset dropdown in `Toolbar.tsx`, variant-library fallback must never become a hard error, heavy dialogs stay mounted), a file-to-task quick reference, and the required `npm --prefix editor run build` verification.
 
 - **neuralfn-mcp** covers the MCP tool interface: how to use tools like `get_graph`, `add_node`, `add_edge`, `load_gpt_template`, `train_start`, and `download_dataset` to build and train models through the MCP server. Includes end-to-end workflow examples.
 
@@ -44,4 +47,5 @@ The skills draw from and link into the full documentation:
 - [CLI Workflows](cli.md) -- `nfn` workflow reference that the CLI skill summarizes
 - [Python SDK Reference](python-sdk/README.md) -- complete API details for every class and function
 - [MCP Tools Reference](mcp/README.md) -- complete tool parameter reference that the MCP skill summarizes
+- [Editor Reference](editor/README.md) and the [cyber mode guide](editor/cyber-mode.md) -- the pages the editor skill routes into
 - [Templates and Presets](framework-guide/templates-and-presets.md) -- full preset table referenced by the torch skill

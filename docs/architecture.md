@@ -112,9 +112,28 @@ The editor is **React** with **Vite**, **React Flow** for the graph canvas, and 
 
 - **AppState** (React context) holds **auth**, bootstrap flags, and shell navigation state.
 - **graphStore** (Zustand) holds the active **graph document**: nodes, edges, variant library, selection, and editor-only view state.
+- **settingsStore** (Zustand, `localStorage`-persisted) holds client-only UI state: the Volumetric 3D Cyber mode feature flag and its visual settings, the **View Full Graph** toggle, and which panel dialog is open. It is never sent to the server.
 - **sessionSync** (and related hooks) load and autosave the session graph through the **session API**, handle **revision conflicts**, and surface **MCP agent** control banners when an external client holds the session.
 
-API typing and fetch wrappers: [API client](editor/api-client.md). Store shape: [Store](editor/store.md). Routing and pages: [Pages](editor/pages.md).
+```mermaid
+flowchart LR
+  API[(FastAPI session API)] <--> SY[sessionSync]
+  SY <--> GS[(graphStore)]
+  SS[(settingsStore<br/>localStorage)] --> GC
+  GS --> GC[GraphCanvas]
+  GC -->|cyber off| STD[StandardGraphCanvas]
+  GC -->|cyber on| CYB[ParticleGraphCanvas<br/>WebGL + particles]
+  GS --> FG[buildFullExpandedGraph]
+  FG -->|viewFullGraph| STD
+  FG -->|viewFullGraph| CYB
+  STD & CYB --> EX[useSubgraphExpansion<br/>+ overlay + zones]
+  GS --> DLG[EditorPage dialogs<br/>Variants · Training · Inspector/Chat]
+  SS --> DLG
+```
+
+`GraphCanvas` renders exactly one canvas, chosen by the cyber-mode flag; the View Full Graph flattener and the subgraph expand/collapse animation are shared by both. The page layout gives the whole stage to the canvas and opens the library, training, inspector, and chat panels as modal dialogs.
+
+API typing and fetch wrappers: [API client](editor/api-client.md). Store shape: [Store](editor/store.md). Routing and pages: [Pages](editor/pages.md). Cyber mode, full-graph view, and dialogs: [Cyber mode guide](editor/cyber-mode.md).
 
 ## Related documentation
 
