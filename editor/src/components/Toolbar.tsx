@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { api, type NeuronDefData } from "../api/client";
 import { selectBreadcrumbs, useGraphStore } from "../store/graphStore";
 import { normalizeGraph } from "../store/graphUtils";
-import NeuronIcon from "./NeuronIcon";
+import { useSettingsStore } from "../store/settingsStore";
+import NodePickerModal from "./NodePickerModal";
 
 const DESCRIPTIONS: Record<string, string> = {
   sigmoid: "Sigmoid activation function",
@@ -33,22 +34,67 @@ const DESCRIPTIONS: Record<string, string> = {
   input: "Graph input terminal",
   output: "Graph output terminal",
   token_embedding: "Token embedding stage with tied-weight output",
+  pos_embedding: "Learned absolute positional embedding stage",
+  embedding_add: "Elementwise sum of token and positional embeddings",
+  tensor_add: "Elementwise tensor residual addition stage",
+  tensor_mul: "Elementwise tensor gating / multiplication stage",
+  tensor_scale: "Constant scalar multiplier stage for tensor streams",
+  tensor_relu: "Tensor-level ReLU activation stage",
+  tensor_relu2: "Tensor-level squared ReLU (ReLU²) activation stage",
+  tensor_gelu: "Tensor-level Gaussian Error Linear Unit stage",
+  tensor_silu: "Tensor-level SiLU / Swish activation stage",
+  tensor_sigmoid: "Tensor-level Sigmoid gating activation stage",
   linear: "Trainable linear projection stage",
+  fp8_linear: "FP8 (E4M3) quantized linear projection stage",
+  mx_linear: "Microscaled MXFP4 block-scaled linear projection stage",
+  bit_linear_158: "Ternary b1.58 ({-1, 0, +1}) quantized linear projection",
   rms_norm: "Tensor RMSNorm stage",
+  layer_norm: "Standard LayerNorm normalization stage",
+  qk_norm: "Per-head Query/Key normalization stage for attention stability",
+  dyt: "Dynamic Tanh (DyT) norm-free stabilization stage",
   reshape_heads: "Reshape hidden states into attention heads",
   merge_heads: "Merge attention heads back into model width",
   repeat_kv: "Repeat grouped KV heads to match query head count",
   rotary_embedding: "Apply rotary positional embedding to Q and K tensors",
   qk_gain: "Learned per-head scale for the query stream",
   scaled_dot_product_attention: "Causal scaled dot-product attention primitive",
+  sliding_window_attention: "Local sliding-window causal attention primitive",
+  differential_attention: "Differential attention stage subtracting noise-canceling dual heads",
+  multi_head_latent_attention: "DeepSeek-style Multi-Head Latent Attention (MLA) with compressed KV",
+  native_sparse_attention: "Hardware-aligned Native Sparse Attention (NSA) stage",
+  dflash_attention: "Muse Glimmer DFlash speculative cross/self-attention stage",
+  cross_attention: "Encoder-decoder multi-head cross-attention stage",
+  bidirectional_attention: "Full bidirectional self-attention stage (diffusion / encoder)",
+  mamba_ssm: "Selective State-Space Model (Mamba SSM) sequence mixer",
+  ttt_layer: "Test-Time Training (TTT) inner-loop fast-weight sequence stage",
+  hnet_chunk: "H-Net dynamic hierarchical sequence chunking stage",
+  hnet_dechunk: "H-Net hierarchical sequence dechunking reconstruction stage",
   residual_mix: "Learns a mix of the current stream and the original embedding stream",
   causal_self_attention: "Causal self-attention stage with RoPE and grouped KV heads",
   residual_add: "Residual add with a learned per-channel scale",
+  hyper_connection: "Multi-stream Hyper-Connection (mHC) residual router",
   mlp_relu2: "ReLU-squared MLP stage",
   tied_lm_head: "Language-model head that reuses embedding weights",
   lm_head: "Untied language-model head",
   logit_softcap: "Softcap the logits before loss",
   token_cross_entropy: "Token cross-entropy loss stage",
+  z_loss_cross_entropy: "Cross-entropy loss with router/logit z-loss regularization",
+  moe_gate: "Top-K Mixture-of-Experts router gate with load-balance auxiliary loss",
+  auxfree_moe_gate: "Auxiliary-loss-free MoE router with dynamic expert bias updates",
+  expert_dispatch: "Sparse expert MLP dispatch and weighted combine stage",
+  semantic_moe_gate: "Semantic-space MoE router conditioned on latent chunk representations",
+  jepa_latent_pool: "JEPA context/target latent pooling stage",
+  jepa_predictor: "Latent world-model predictor mapping context latents to target latents",
+  jepa_loss: "Joint-Embedding Predictive Architecture latent representation loss",
+  jepa_ema_stop_grad: "EMA target-encoder stop-gradient projection stage",
+  jepa_mask: "Span/block masking generator for JEPA latent pretraining",
+  kv_pca_compress: "Low-rank PCA key/value cache compression stage",
+  kv_quant_compress: "Sub-byte quantized key/value cache compression stage",
+  dataset_source: "Project dataset token stream source ([batch, seq_len])",
+  semantic_data_source: "Semantic multi-scale token & span dataset source",
+  muse_glimmer_vision_tower: "Muse Glimmer 3D-patch multimodal vision encoder tower",
+  muse_glimmer_media_projector: "Multimodal vision-to-language MLP projector stage",
+  muse_glimmer_media_fusion: "In-place image/video placeholder embedding fusion stage",
   // ── Fine-tuning operators ─────────────────────────────────────────
   lora_linear: "LoRA linear: frozen base weight + trainable low-rank delta",
   nf4_linear: "qLoRA linear: nf4-packed base weight + trainable LoRA delta",
@@ -80,8 +126,29 @@ export default function Toolbar() {
   const rootGraph = useGraphStore((state) => state.rootGraph);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const setPath = useGraphStore((state) => state.setPath);
-  const [showLibrary, setShowLibrary] = useState(true);
-  const [hoveredNeuron, setHoveredNeuron] = useState<{ builtin: NeuronDefData, rect: DOMRect } | null>(null);
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
+  const toggleParticleGraphEditor = useSettingsStore(
+    (state) => state.toggleParticleGraphEditor,
+  );
+  const viewFullGraph = useSettingsStore((state) => state.viewFullGraph);
+  const setViewFullGraph = useSettingsStore((state) => state.setViewFullGraph);
+  const toggleViewFullGraph = useSettingsStore(
+    (state) => state.toggleViewFullGraph,
+  );
+  const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
+  const activePanelDialog = useSettingsStore(
+    (state) => state.activePanelDialog,
+  );
+  const setActivePanelDialog = useSettingsStore(
+    (state) => state.setActivePanelDialog,
+  );
+  const openRightPanelDialog = useSettingsStore(
+    (state) => state.openRightPanelDialog,
+  );
+  const isTraining = useGraphStore((state) => state.isTraining);
+  const [showNodePicker, setShowNodePicker] = useState(false);
 
   useEffect(() => {
     api.getBuiltins().then(setBuiltins).catch(() => {});
@@ -182,38 +249,81 @@ export default function Toolbar() {
   }, []);
 
   return (
-    <div className="border-b border-gray-800 bg-gray-900">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span className="text-sm font-bold text-blue-400 mr-2">NeuralFn</span>
+    <div
+      className={
+        particleGraphEditorEnabled
+          ? "cyber-toolbar-deck"
+          : "border-b border-gray-800 bg-gray-900"
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <span
+          className={`mr-2 text-sm font-bold tracking-wide ${
+            particleGraphEditorEnabled
+              ? "font-mono uppercase text-cyan-300 drop-shadow-[0_0_8px_rgba(0,240,255,0.5)]"
+              : "text-blue-400"
+          }`}
+        >
+          NeuralFn
+        </span>
+
+        {/* Primary Add Node Button -> Launches the Animated Categorized Holographic Node Picker */}
+        <button
+          type="button"
+          onClick={() => setShowNodePicker(true)}
+          className={`flex items-center gap-1.5 rounded px-3 py-1 text-xs font-bold transition-all ${
+            particleGraphEditorEnabled
+              ? "border border-cyan-400/70 bg-cyan-500/20 font-mono uppercase tracking-wider text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)] hover:bg-cyan-400/30 hover:shadow-[0_0_22px_rgba(0,240,255,0.5)]"
+              : "border border-blue-500/50 bg-blue-600 text-white hover:bg-blue-500"
+          }`}
+          title="Open categorized Holographic Node Arsenal"
+        >
+          <span>✦ + Add Node</span>
+          <span className="rounded bg-black/40 px-1.5 py-0.2 font-mono text-[9px] text-cyan-300">
+            {builtins.length}
+          </span>
+        </button>
 
         <button
-          onClick={() => setShowLibrary(!showLibrary)}
-          className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
-        >
-          {showLibrary ? "Hide Library" : "Show Library"}
-        </button>
-        <button
           onClick={onAddCustom}
-          className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+          className={
+            particleGraphEditorEnabled
+              ? "rounded border border-sky-500/35 bg-slate-900/90 px-2.5 py-1 font-mono text-xs text-sky-200 hover:border-sky-400/70 hover:bg-sky-950/60"
+              : "bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+          }
         >
           + Custom Node
         </button>
         <button
           onClick={onAddOverride}
-          className="bg-purple-900 hover:bg-purple-800 text-purple-100 text-xs px-2 py-1 rounded"
+          className={
+            particleGraphEditorEnabled
+              ? "rounded border border-purple-500/40 bg-purple-950/50 px-2.5 py-1 font-mono text-xs text-purple-200 hover:border-purple-400/70 hover:bg-purple-900/60"
+              : "bg-purple-900 hover:bg-purple-800 text-purple-100 text-xs px-2 py-1 rounded"
+          }
         >
           + Override
         </button>
         <button
           onClick={onAddSubgraph}
-          className="bg-amber-900 hover:bg-amber-800 text-amber-100 text-xs px-2 py-1 rounded"
+          className={
+            particleGraphEditorEnabled
+              ? "rounded border border-amber-500/45 bg-amber-950/50 px-2.5 py-1 font-mono text-xs text-amber-200 hover:border-amber-400/80 hover:bg-amber-900/60"
+              : "bg-amber-900 hover:bg-amber-800 text-amber-100 text-xs px-2 py-1 rounded"
+          }
         >
           + Subgraph
         </button>
-        <div className="flex bg-emerald-900 rounded items-center">
+        <div
+          className={
+            particleGraphEditorEnabled
+              ? "flex items-center rounded border border-emerald-500/45 bg-emerald-950/60 shadow-[0_0_14px_rgba(16,185,129,0.18)]"
+              : "flex bg-emerald-900 rounded items-center"
+          }
+        >
           <button
             onClick={onAddGPT}
-            className="hover:bg-emerald-800 text-emerald-100 text-xs px-2 py-1 rounded-l"
+            className="hover:bg-emerald-800/80 text-emerald-100 text-xs px-2.5 py-1 rounded-l font-mono"
           >
             + GPT Template
           </button>
@@ -294,86 +404,196 @@ export default function Toolbar() {
           </select>
         </div>
 
-        <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto">
-          {breadcrumbs.map((crumb, idx) => (
-            <React.Fragment key={`${crumb.id}-${idx}`}>
-              {idx > 0 && <span>/</span>}
-              <button
-                onClick={() => setPath(crumb.path)}
-                className={`whitespace-nowrap rounded px-1 py-0.5 ${
-                  idx === breadcrumbs.length - 1
-                    ? "bg-gray-800 text-gray-200"
-                    : "hover:bg-gray-800 hover:text-gray-200"
-                }`}
-              >
-                {crumb.label}
-              </button>
-            </React.Fragment>
-          ))}
+        <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto font-mono">
+          {breadcrumbs.map((crumb, idx) => {
+            const isParent = idx < breadcrumbs.length - 1;
+            return (
+              <React.Fragment key={`${crumb.id}-${idx}`}>
+                {idx > 0 && <span className="text-cyan-500/60">/</span>}
+                <button
+                  onClick={() => {
+                    if (viewFullGraph) setViewFullGraph(false);
+                    setPath(crumb.path);
+                  }}
+                  title={
+                    isParent
+                      ? `Collapse subgraph back to ${crumb.label} ⤡`
+                      : `Current graph: ${crumb.label}`
+                  }
+                  className={`flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 transition-colors ${
+                    !isParent
+                      ? particleGraphEditorEnabled
+                        ? "border border-cyan-500/40 bg-cyan-950/60 text-cyan-200"
+                        : "bg-gray-800 text-gray-200"
+                      : particleGraphEditorEnabled
+                      ? "border border-amber-500/30 bg-amber-950/30 text-amber-200/90 hover:border-amber-400/70 hover:bg-amber-900/50 hover:text-amber-100"
+                      : "hover:bg-gray-800 hover:text-gray-200"
+                  }`}
+                >
+                  {isParent && <span className="text-[9px] opacity-80">⤡</span>}
+                  <span>{crumb.label}</span>
+                </button>
+              </React.Fragment>
+            );
+          })}
         </div>
 
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+          {/* Dialog Launchers for Left (Variants), Bottom (Training), and Right (Inspector / Chat) Panels */}
+          <button
+            type="button"
+            onClick={() =>
+              setActivePanelDialog(activePanelDialog === "left" ? null : "left")
+            }
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "left"
+                      ? "border-amber-400/90 bg-amber-500/25 text-amber-100 shadow-[0_0_14px_rgba(251,191,36,0.3)]"
+                      : "border-amber-500/35 bg-slate-950/90 text-amber-200/90 hover:border-amber-400/70 hover:bg-amber-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-amber-200 hover:bg-gray-700"
+            }
+            title="Open Variant Matrix / Library Dialog (Left Panel)"
+          >
+            <span>◈ Variants</span>
+            <span className="rounded bg-black/40 px-1 py-0.2 font-mono text-[9px] text-amber-300">
+              {Object.keys(rootGraph.variant_library ?? {}).length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setActivePanelDialog(
+                activePanelDialog === "bottom" ? null : "bottom",
+              )
+            }
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "bottom" || isTraining
+                      ? "border-cyan-400/90 bg-cyan-500/25 text-cyan-100 shadow-[0_0_14px_rgba(0,240,255,0.35)]"
+                      : "border-cyan-500/35 bg-slate-950/90 text-cyan-200/90 hover:border-cyan-400/70 hover:bg-cyan-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-cyan-200 hover:bg-gray-700"
+            }
+            title="Open Training & Telemetry Dialog (Bottom Panel)"
+          >
+            <span className={isTraining ? "animate-pulse text-emerald-300" : ""}>
+              ⚡ Training
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openRightPanelDialog("inspector")}
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-all ${
+                    activePanelDialog === "right"
+                      ? "border-sky-400/90 bg-sky-500/25 text-sky-100 shadow-[0_0_14px_rgba(56,189,248,0.3)]"
+                      : "border-sky-500/35 bg-slate-950/90 text-sky-200/90 hover:border-sky-400/70 hover:bg-sky-950/50"
+                  }`
+                : "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-sky-200 hover:bg-gray-700"
+            }
+            title="Open Node Inspector, Graph Config & Code Dialog (Right Panel)"
+          >
+            <span>◧ Inspector</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openRightPanelDialog("chat")}
+            className={
+              particleGraphEditorEnabled
+                ? "flex items-center gap-1 rounded border border-indigo-400/50 bg-indigo-950/70 px-2 py-1 font-mono text-xs text-indigo-200 hover:border-indigo-400/90 hover:bg-indigo-900/70"
+                : "rounded border border-indigo-700/60 bg-indigo-900/70 px-2 py-1 text-xs text-indigo-100 hover:bg-indigo-800"
+            }
+            title="Open Model Chat Dialog (Right Panel)"
+          >
+            <span>💬 Chat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleViewFullGraph}
+            className={
+              particleGraphEditorEnabled
+                ? `flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-xs font-bold transition-all ${
+                    viewFullGraph
+                      ? "border-emerald-400/90 bg-emerald-500/25 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.35)]"
+                      : "border-cyan-500/35 bg-slate-950/90 text-cyan-200/90 hover:border-cyan-400/70 hover:bg-cyan-950/60"
+                  }`
+                : `flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-medium transition-all ${
+                    viewFullGraph
+                      ? "border-emerald-500/70 bg-emerald-900/70 text-emerald-100"
+                      : "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700"
+                  }`
+            }
+            title="Expand all nested subgraphs into a single unified full-architecture graph view"
+          >
+            <span>⊞</span>
+            <span>{viewFullGraph ? "Full Graph: ON" : "View Full Graph"}</span>
+          </button>
+
+          <div className="flex items-center rounded border border-cyan-500/35 bg-slate-950/90">
+            <button
+              type="button"
+              onClick={toggleParticleGraphEditor}
+              className={`flex items-center gap-1.5 rounded-l px-2.5 py-1 text-xs font-medium transition-all ${
+                particleGraphEditorEnabled
+                  ? "bg-cyan-500/25 text-cyan-200 shadow-[0_0_14px_rgba(0,240,255,0.3)]"
+                  : "text-cyan-300/80 hover:bg-cyan-950/60 hover:text-cyan-200"
+              }`}
+              title="Toggle Volumetric 3D Cyber Mode"
+            >
+              <span>✦</span>
+              <span>{particleGraphEditorEnabled ? "Cyber 3D: ON" : "Cyber 3D"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="border-l border-cyan-500/30 px-2 py-1 text-xs text-cyan-300/80 hover:bg-cyan-950/60 hover:text-cyan-100 rounded-r"
+              title="Open Holographic Particle Engine & Feature Flag Settings"
+            >
+              ⚙
+            </button>
+          </div>
           <button
             onClick={onSave}
-            className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+            className={
+              particleGraphEditorEnabled
+                ? "rounded border border-cyan-500/30 bg-slate-900/90 px-2.5 py-1 font-mono text-xs text-cyan-100 hover:border-cyan-400/60 hover:bg-cyan-950/60"
+                : "bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+            }
           >
             Save
           </button>
           <button
             onClick={onLoad}
-            className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+            className={
+              particleGraphEditorEnabled
+                ? "rounded border border-cyan-500/30 bg-slate-900/90 px-2.5 py-1 font-mono text-xs text-cyan-100 hover:border-cyan-400/60 hover:bg-cyan-950/60"
+                : "bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
+            }
           >
             Load
           </button>
         </div>
       </div>
 
-      {showLibrary && (
-        <div className="flex gap-1 px-3 pb-2 flex-wrap relative">
-          {builtins.map((b) => {
-            const desc = DESCRIPTIONS[b.name] ? `${DESCRIPTIONS[b.name]}\n` : "";
-            
-            return (
-              <button
-                key={b.id}
-                onClick={() => {
-                  onAddBuiltin(b);
-                  setHoveredNeuron(null);
-                }}
-                onMouseEnter={(e) => {
-                  setHoveredNeuron({ builtin: b, rect: e.currentTarget.getBoundingClientRect() });
-                }}
-                onMouseLeave={() => setHoveredNeuron(null)}
-                className="bg-gray-800 hover:bg-blue-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded flex items-center justify-center whitespace-nowrap transition-colors"
-                title={`${desc}(${b.input_ports.length} in / ${b.output_ports.length} out)`}
-              >
-                <span>{b.name}</span>
-                <NeuronIcon name={b.name} />
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Floating Tooltip */}
-      {hoveredNeuron && (
-        <div 
-          className="fixed flex flex-col items-center bg-gray-950 border border-gray-700 px-4 py-3 rounded-lg shadow-2xl z-[9999] pointer-events-none"
-          style={{
-            top: hoveredNeuron.rect.bottom + 8,
-            left: Math.max(10, Math.min(window.innerWidth - 180, hoveredNeuron.rect.left + hoveredNeuron.rect.width / 2 - 85)),
-            width: 170
-          }}
-        >
-          <div className="text-xs font-bold text-blue-300 mb-2">{hoveredNeuron.builtin.name}</div>
-          <div className="bg-gray-900 rounded p-1">
-            <NeuronIcon name={hoveredNeuron.builtin.name} expanded={true} />
-          </div>
-          <div className="text-[9px] text-gray-500 mt-2 text-center whitespace-normal leading-snug">
-            {DESCRIPTIONS[hoveredNeuron.builtin.name] || 'Custom function'}
-          </div>
-        </div>
-      )}
+      {/* Categorized Animated 3D Holographic Node Picker Modal */}
+      <NodePickerModal
+        open={showNodePicker}
+        onClose={() => setShowNodePicker(false)}
+        builtins={builtins}
+        descriptions={DESCRIPTIONS}
+        onSelectBuiltin={onAddBuiltin}
+        onAddCustom={onAddCustom}
+        onAddOverride={onAddOverride}
+        onAddSubgraph={onAddSubgraph}
+      />
     </div>
   );
 }

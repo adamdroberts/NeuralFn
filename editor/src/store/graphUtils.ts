@@ -20,11 +20,49 @@ const VARIANT_FAMILY_ALIASES: Record<string, string[]> = {
   mixllama: ["attn_block"],
 };
 
+export interface CoreMorphSource {
+  archetypeId: string;
+  neuronName: string;
+  primary: string;
+  secondary: string;
+}
+
 export interface FlowNodeData extends Record<string, unknown> {
   label: string;
   neuronDef: NeuronDefData;
   isInput: boolean;
   isOutput: boolean;
+  subgraphPath?: GraphPathSegment[];
+  instancePath?: GraphPathSegment[];
+  localNodeId?: string;
+  breadcrumbLabel?: string;
+  spawnScale?: number;
+  titleDetached?: number;
+  coreOnlyMorph?: number;
+  coreMorphProgress?: number;
+  coreMorphFrom?: CoreMorphSource;
+  shellExpandProgress?: number;
+}
+
+export interface SubgraphZone {
+  id: string;
+  label: string;
+  breadcrumb: string;
+  path: GraphPathSegment[];
+  instancePath: GraphPathSegment[];
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth: number;
+  variantLabel: string | null;
+  nodeCount: number;
+}
+
+export interface FullExpandedGraphResult {
+  nodes: Node<FlowNodeData>[];
+  edges: RFEdge[];
+  zones: SubgraphZone[];
 }
 
 export type GraphPathSegment =
@@ -814,4 +852,554 @@ export function refreshBuiltinNodesInGraph(
 
   const result = refreshGraph(graph);
   return { graph: result, changed: anyChanged };
+}
+
+export function makeFullGraphNodeId(
+  instancePath: GraphPathSegment[],
+  nodeId: string,
+): string {
+  if (instancePath.length === 0) {
+    return nodeId;
+  }
+  const encodedPath = instancePath
+    .map((seg) =>
+      seg.kind === "node"
+        ? encodeURIComponent(seg.nodeId)
+        : `v@${encodeURIComponent(seg.family)}:${encodeURIComponent(seg.version)}`,
+    )
+    .join("/");
+  return `fullg::${encodedPath}::${nodeId}`;
+}
+
+export function parseFullGraphNodeId(
+  fullId: string,
+): { instancePath: GraphPathSegment[]; nodeId: string } | null {
+  if (!fullId.startsWith("fullg::")) {
+    return null;
+  }
+  const parts = fullId.split("::");
+  if (parts.length < 3) {
+    return null;
+  }
+  const encodedPath = parts[1];
+  const nodeId = parts.slice(2).join("::");
+  const instancePath: GraphPathSegment[] = encodedPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      if (part.startsWith("v@")) {
+        const [family, version] = part.slice(2).split(":");
+        return {
+          kind: "variant",
+          family: decodeURIComponent(family ?? ""),
+          version: decodeURIComponent(version ?? "default"),
+        };
+      }
+      return {
+        kind: "node",
+        nodeId: decodeURIComponent(part),
+      };
+    });
+  return { instancePath, nodeId };
+}
+
+export function resolveEditableGraphPath(
+  rootGraph: GraphData,
+  instancePath: GraphPathSegment[],
+): GraphPathSegment[] {
+  const navPath: GraphPathSegment[] = [];
+  let current: GraphData | undefined = rootGraph;
+  for (const seg of instancePath) {
+    if (!current) break;
+    if (seg.kind === "variant") {
+      navPath.push(seg);
+      current = rootGraph.variant_library[seg.family]?.[seg.version];
+      continue;
+    }
+    const node: NodeData | undefined = current.nodes[seg.nodeId];
+    if (!node) break;
+    if (node.neuron_def.variant_ref) {
+      navPath.push({
+        kind: "variant",
+        family: node.neuron_def.variant_ref.family,
+        version: node.neuron_def.variant_ref.version,
+      });
+    } else {
+      navPath.push({ kind: "node", nodeId: seg.nodeId });
+    }
+    current = node.neuron_def.subgraph ?? undefined;
+  }
+  return navPath;
+}
+
+interface PortEndpoint {
+  fullNodeId: string;
+  portIdx: number;
+}
+
+interface RecursiveExpandResult {
+  nodes: Node<FlowNodeData>[];
+  edges: RFEdge[];
+  zones: SubgraphZone[];
+  width: number;
+  height: number;
+  externalInputTargets: PortEndpoint[][];
+  externalOutputSources: PortEndpoint[][];
+}
+
+export function buildFullExpandedGraph(
+  rootGraph: GraphData,
+  startPath: GraphPathSegment[] = [],
+): FullExpandedGraphResult {
+  const LEAF_WIDTH = 226;
+  const LEAF_HEIGHT = 118;
+  const COL_GAP_X = 76;
+  const ROW_GAP_Y = 38;
+  const ZONE_PAD_X = 32;
+  const ZONE_PAD_TOP = 48;
+  const ZONE_PAD_BOTTOM = 28;
+
+  const baseGraph = getGraphAtPath(rootGraph, startPath);
+
+  const expandRecursive = (
+    graph: GraphData,
+    instancePath: GraphPathSegment[],
+    navPath: GraphPathSegment[],
+    breadcrumbs: string[],
+    isRoot: boolean,
+  ): RecursiveExpandResult => {
+    const outgoingByNode = new Map<string, EdgeData[]>();
+    const incomingByNode = new Map<string, EdgeData[]>();
+    for (const edge of Object.values(graph.edges)) {
+      const outList = outgoingByNode.get(edge.src_node) ?? [];
+      outList.push(edge);
+      outgoingByNode.set(edge.src_node, outList);
+
+      const inList = incomingByNode.get(edge.dst_node) ?? [];
+      inList.push(edge);
+      incomingByNode.set(edge.dst_node, inList);
+    }
+
+    const passthroughInputIds = new Set<string>();
+    const passthroughOutputIds = new Set<string>();
+
+    if (!isRoot) {
+      for (const inId of graph.input_node_ids) {
+        const n = graph.nodes[inId];
+        if (
+          n &&
+          n.neuron_def.kind === "function" &&
+          n.neuron_def.name === "input" &&
+          (outgoingByNode.get(inId)?.length ?? 0) > 0
+        ) {
+          passthroughInputIds.add(inId);
+        }
+      }
+      for (const outId of graph.output_node_ids) {
+        const n = graph.nodes[outId];
+        if (
+          n &&
+          n.neuron_def.kind === "function" &&
+          n.neuron_def.name === "output" &&
+          (incomingByNode.get(outId)?.length ?? 0) > 0
+        ) {
+          passthroughOutputIds.add(outId);
+        }
+      }
+      // If any edge connects a passthrough input directly to a passthrough output,
+      // keep both visible so no direct wire is lost.
+      for (const edge of Object.values(graph.edges)) {
+        if (
+          passthroughInputIds.has(edge.src_node) &&
+          passthroughOutputIds.has(edge.dst_node)
+        ) {
+          passthroughInputIds.delete(edge.src_node);
+          passthroughOutputIds.delete(edge.dst_node);
+        }
+      }
+    }
+
+    // Map external input/output port indices matching deriveExternalPorts
+    const extInPortMap = new Map<string, number>();
+    let extInCount = 0;
+    for (const inId of graph.input_node_ids) {
+      const n = graph.nodes[inId];
+      if (!n) continue;
+      const portCount = Math.max(1, n.neuron_def.output_ports.length);
+      for (let p = 0; p < portCount; p++) {
+        extInPortMap.set(`${inId}:${p}`, extInCount++);
+      }
+    }
+
+    const extOutPortMap = new Map<string, number>();
+    let extOutCount = 0;
+    for (const outId of graph.output_node_ids) {
+      const n = graph.nodes[outId];
+      if (!n) continue;
+      const portCount = Math.max(1, n.neuron_def.output_ports.length);
+      for (let p = 0; p < portCount; p++) {
+        extOutPortMap.set(`${outId}:${p}`, extOutCount++);
+      }
+    }
+
+    type LayoutItem =
+      | {
+          kind: "leaf";
+          nodeId: string;
+          node: NodeData;
+          fullId: string;
+          origX: number;
+          origY: number;
+          width: number;
+          height: number;
+          inputTargets: PortEndpoint[][];
+          outputSources: PortEndpoint[][];
+        }
+      | {
+          kind: "subgraph";
+          nodeId: string;
+          node: NodeData;
+          origX: number;
+          origY: number;
+          width: number;
+          height: number;
+          childInstancePath: GraphPathSegment[];
+          childNavPath: GraphPathSegment[];
+          childBreadcrumbs: string[];
+          childResult: RecursiveExpandResult;
+          inputTargets: PortEndpoint[][];
+          outputSources: PortEndpoint[][];
+        };
+
+    const items: LayoutItem[] = [];
+    const itemById = new Map<string, LayoutItem>();
+
+    for (const [nodeId, node] of Object.entries(graph.nodes)) {
+      if (passthroughInputIds.has(nodeId) || passthroughOutputIds.has(nodeId)) {
+        continue;
+      }
+
+      const ndef = normalizeNeuronDef(node.neuron_def);
+      const isExpandableSubgraph =
+        ndef.kind === "subgraph" &&
+        ndef.subgraph &&
+        Object.keys(ndef.subgraph.nodes).length > 0 &&
+        instancePath.length < 6;
+
+      if (isExpandableSubgraph && ndef.subgraph) {
+        const childInstancePath: GraphPathSegment[] = [
+          ...instancePath,
+          { kind: "node", nodeId },
+        ];
+        const childNavPath: GraphPathSegment[] = [
+          ...navPath,
+          ndef.variant_ref
+            ? {
+                kind: "variant",
+                family: ndef.variant_ref.family,
+                version: ndef.variant_ref.version,
+              }
+            : { kind: "node", nodeId },
+        ];
+        const childBreadcrumbs = [...breadcrumbs, ndef.name || nodeId];
+        const childResult = expandRecursive(
+          ndef.subgraph,
+          childInstancePath,
+          childNavPath,
+          childBreadcrumbs,
+          false,
+        );
+
+        if (childResult.nodes.length > 0) {
+          const item: LayoutItem = {
+            kind: "subgraph",
+            nodeId,
+            node: { ...node, neuron_def: ndef },
+            origX: node.position[0] ?? 0,
+            origY: node.position[1] ?? 0,
+            width: childResult.width + ZONE_PAD_X * 2,
+            height: childResult.height + ZONE_PAD_TOP + ZONE_PAD_BOTTOM,
+            childInstancePath,
+            childNavPath,
+            childBreadcrumbs,
+            childResult,
+            inputTargets: childResult.externalInputTargets,
+            outputSources: childResult.externalOutputSources,
+          };
+          items.push(item);
+          itemById.set(nodeId, item);
+          continue;
+        }
+      }
+
+      const fullId = makeFullGraphNodeId(instancePath, nodeId);
+      const inPortCount = Math.max(1, ndef.input_ports.length);
+      const outPortCount = Math.max(1, ndef.output_ports.length);
+      const inputTargets: PortEndpoint[][] = Array.from(
+        { length: inPortCount },
+        (_, p) => [{ fullNodeId: fullId, portIdx: p }],
+      );
+      const outputSources: PortEndpoint[][] = Array.from(
+        { length: outPortCount },
+        (_, p) => [{ fullNodeId: fullId, portIdx: p }],
+      );
+
+      const item: LayoutItem = {
+        kind: "leaf",
+        nodeId,
+        node: { ...node, neuron_def: ndef },
+        fullId,
+        origX: node.position[0] ?? 0,
+        origY: node.position[1] ?? 0,
+        width: LEAF_WIDTH,
+        height: LEAF_HEIGHT,
+        inputTargets,
+        outputSources,
+      };
+      items.push(item);
+      itemById.set(nodeId, item);
+    }
+
+    // Sort items by original X, then Y, and group into non-overlapping columns
+    items.sort((a, b) =>
+      Math.abs(a.origX - b.origX) > 10 ? a.origX - b.origX : a.origY - b.origY,
+    );
+
+    const columns: Array<{
+      anchorX: number;
+      items: LayoutItem[];
+      colW: number;
+      colH: number;
+    }> = [];
+
+    for (const item of items) {
+      const lastCol = columns[columns.length - 1];
+      if (lastCol && Math.abs(item.origX - lastCol.anchorX) <= 75) {
+        lastCol.items.push(item);
+      } else {
+        columns.push({
+          anchorX: item.origX,
+          items: [item],
+          colW: 0,
+          colH: 0,
+        });
+      }
+    }
+
+    for (const col of columns) {
+      col.items.sort((a, b) => a.origY - b.origY);
+      col.colW = Math.max(LEAF_WIDTH, ...col.items.map((it) => it.width));
+      col.colH =
+        col.items.reduce((acc, it) => acc + it.height, 0) +
+        Math.max(0, col.items.length - 1) * ROW_GAP_Y;
+    }
+
+    const totalHeight = Math.max(LEAF_HEIGHT, ...columns.map((c) => c.colH));
+    let cursorX = 0;
+
+    const nodesOut: Node<FlowNodeData>[] = [];
+    const edgesOut: RFEdge[] = [];
+    const zonesOut: SubgraphZone[] = [];
+
+    for (const col of columns) {
+      let cursorY = (totalHeight - col.colH) * 0.5;
+      for (const item of col.items) {
+        const itemX = cursorX + (col.colW - item.width) * 0.5;
+        const itemY = cursorY;
+        cursorY += item.height + ROW_GAP_Y;
+
+        if (item.kind === "leaf") {
+          nodesOut.push({
+            id: item.fullId,
+            type: "neuron",
+            position: { x: itemX, y: itemY },
+            measured: item.node.measured,
+            data: {
+              label: item.node.neuron_def.name,
+              neuronDef: item.node.neuron_def,
+              isInput: isRoot && graph.input_node_ids.includes(item.nodeId),
+              isOutput: isRoot && graph.output_node_ids.includes(item.nodeId),
+              subgraphPath: navPath,
+              instancePath,
+              localNodeId: item.nodeId,
+              breadcrumbLabel:
+                breadcrumbs.length > 0 ? breadcrumbs.join(" ▸ ") : undefined,
+            },
+          });
+        } else {
+          const offsetX = itemX + ZONE_PAD_X;
+          const offsetY = itemY + ZONE_PAD_TOP;
+          for (const childNode of item.childResult.nodes) {
+            nodesOut.push({
+              ...childNode,
+              position: {
+                x: childNode.position.x + offsetX,
+                y: childNode.position.y + offsetY,
+              },
+            });
+          }
+          for (const childZone of item.childResult.zones) {
+            zonesOut.push({
+              ...childZone,
+              x: childZone.x + offsetX,
+              y: childZone.y + offsetY,
+            });
+          }
+          edgesOut.push(...item.childResult.edges);
+
+          const vRef = item.node.neuron_def.variant_ref;
+          zonesOut.push({
+            id: makeFullGraphNodeId(instancePath, `zone:${item.nodeId}`),
+            label: item.node.neuron_def.name || item.nodeId,
+            breadcrumb: item.childBreadcrumbs.join(" ▸ "),
+            path: item.childNavPath,
+            instancePath: item.childInstancePath,
+            x: itemX,
+            y: itemY,
+            width: item.width,
+            height: item.height,
+            depth: instancePath.length,
+            variantLabel: vRef ? `${vRef.family}@${vRef.version}` : null,
+            nodeCount: item.childResult.nodes.length,
+          });
+        }
+      }
+      cursorX += col.colW + COL_GAP_X;
+    }
+
+    const totalWidth = Math.max(LEAF_WIDTH, cursorX - COL_GAP_X);
+
+    // Build external port mappings for this graph
+    const externalInputTargets: PortEndpoint[][] = Array.from(
+      { length: Math.max(1, extInCount) },
+      () => [],
+    );
+    const externalOutputSources: PortEndpoint[][] = Array.from(
+      { length: Math.max(1, extOutCount) },
+      () => [],
+    );
+
+    // Non-passthrough input/output nodes map directly
+    for (const inId of graph.input_node_ids) {
+      if (passthroughInputIds.has(inId)) continue;
+      const item = itemById.get(inId);
+      const n = graph.nodes[inId];
+      if (!item || !n) continue;
+      const portCount = Math.max(1, n.neuron_def.output_ports.length);
+      for (let p = 0; p < portCount; p++) {
+        const extIdx = extInPortMap.get(`${inId}:${p}`);
+        if (extIdx !== undefined) {
+          externalInputTargets[extIdx].push(
+            ...(item.inputTargets[p] ?? item.inputTargets[0] ?? []),
+          );
+        }
+      }
+    }
+
+    for (const outId of graph.output_node_ids) {
+      if (passthroughOutputIds.has(outId)) continue;
+      const item = itemById.get(outId);
+      const n = graph.nodes[outId];
+      if (!item || !n) continue;
+      const portCount = Math.max(1, n.neuron_def.output_ports.length);
+      for (let p = 0; p < portCount; p++) {
+        const extIdx = extOutPortMap.get(`${outId}:${p}`);
+        if (extIdx !== undefined) {
+          externalOutputSources[extIdx].push(
+            ...(item.outputSources[p] ?? item.outputSources[0] ?? []),
+          );
+        }
+      }
+    }
+
+    // Wire edges & populate passthrough external ports
+    const seenEdgeIds = new Set<string>();
+    for (const edge of Object.values(graph.edges)) {
+      const srcIsPassthrough = passthroughInputIds.has(edge.src_node);
+      const dstIsPassthrough = passthroughOutputIds.has(edge.dst_node);
+
+      if (srcIsPassthrough && !dstIsPassthrough) {
+        const extIdx =
+          extInPortMap.get(`${edge.src_node}:${edge.src_port}`) ??
+          extInPortMap.get(`${edge.src_node}:0`) ??
+          0;
+        const dstItem = itemById.get(edge.dst_node);
+        if (dstItem) {
+          const targets =
+            dstItem.inputTargets[edge.dst_port] ??
+            dstItem.inputTargets[0] ??
+            [];
+          if (!externalInputTargets[extIdx]) {
+            externalInputTargets[extIdx] = [];
+          }
+          externalInputTargets[extIdx].push(...targets);
+        }
+        continue;
+      }
+
+      if (!srcIsPassthrough && dstIsPassthrough) {
+        const extIdx =
+          extOutPortMap.get(`${edge.dst_node}:${edge.dst_port}`) ??
+          extOutPortMap.get(`${edge.dst_node}:0`) ??
+          0;
+        const srcItem = itemById.get(edge.src_node);
+        if (srcItem) {
+          const sources =
+            srcItem.outputSources[edge.src_port] ??
+            srcItem.outputSources[0] ??
+            [];
+          if (!externalOutputSources[extIdx]) {
+            externalOutputSources[extIdx] = [];
+          }
+          externalOutputSources[extIdx].push(...sources);
+        }
+        continue;
+      }
+
+      const srcItem = itemById.get(edge.src_node);
+      const dstItem = itemById.get(edge.dst_node);
+      if (!srcItem || !dstItem) continue;
+
+      const sources =
+        srcItem.outputSources[edge.src_port] ?? srcItem.outputSources[0] ?? [];
+      const targets =
+        dstItem.inputTargets[edge.dst_port] ?? dstItem.inputTargets[0] ?? [];
+
+      for (const s of sources) {
+        for (const t of targets) {
+          const edgeId = `fe::${s.fullNodeId}:${s.portIdx}->${t.fullNodeId}:${t.portIdx}`;
+          if (seenEdgeIds.has(edgeId)) continue;
+          seenEdgeIds.add(edgeId);
+          edgesOut.push({
+            id: edgeId,
+            source: s.fullNodeId,
+            target: t.fullNodeId,
+            sourceHandle: `out-${s.portIdx}`,
+            targetHandle: `in-${t.portIdx}`,
+            type: "default",
+            data: { weight: edge.weight, bias: edge.bias },
+          });
+        }
+      }
+    }
+
+    return {
+      nodes: nodesOut,
+      edges: edgesOut,
+      zones: zonesOut,
+      width: totalWidth,
+      height: totalHeight,
+      externalInputTargets,
+      externalOutputSources,
+    };
+  };
+
+  const expanded = expandRecursive(baseGraph, startPath, startPath, [], true);
+  // Sort zones so outer (shallower depth) zones render behind inner (deeper) zones
+  expanded.zones.sort((a, b) => a.depth - b.depth);
+  return {
+    nodes: expanded.nodes,
+    edges: expanded.edges,
+    zones: expanded.zones,
+  };
 }

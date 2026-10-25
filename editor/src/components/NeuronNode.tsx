@@ -8,7 +8,16 @@ import {
 } from "../store/graphStore";
 
 function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeData }) {
-  const { label, neuronDef, isInput, isOutput } = data;
+  const {
+    label,
+    neuronDef,
+    isInput,
+    isOutput,
+    breadcrumbLabel,
+    spawnScale = 1,
+    instancePath,
+    localNodeId,
+  } = data;
   const inputs = neuronDef.input_ports;
   const outputs = neuronDef.output_ports;
   const isSubgraph = neuronDef.kind === "subgraph";
@@ -20,7 +29,11 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const torchTraceSource = useGraphStore((state) => state.torchTraceSource);
   const currentPath = useGraphStore(selectCurrentPath);
   const [isHovered, setIsHovered] = useState(false);
-  const traceStats = resolveTorchTraceStats(torchTrace, currentPath, id);
+  const traceStats = resolveTorchTraceStats(
+    torchTrace,
+    instancePath ?? currentPath,
+    localNodeId ?? id,
+  );
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
   const isOverride = neuronDef.source_code?.includes("def override(x):") ?? false;
@@ -43,6 +56,11 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      style={
+        spawnScale !== 1
+          ? { transform: `scale(${spawnScale})`, transformOrigin: "center center" }
+          : undefined
+      }
       className={`rounded-lg border px-3 py-2 min-w-[140px] shadow-lg transition-colors ${
         selected
           ? isSubgraph
@@ -139,8 +157,14 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
       )}
 
       {isSubgraph && (
-        <div className="mb-2 text-[10px] text-amber-200/80">
-          {variantRef ? "Double-click to open shared variant" : "Double-click to open subgraph"}
+        <div className="mb-2 text-[10px] text-amber-200/80 font-medium">
+          {variantRef ? "Click to expand shared variant ⤢" : "Click to expand subgraph ⤢"}
+        </div>
+      )}
+
+      {!isSubgraph && breadcrumbLabel && (
+        <div className="mb-1.5 truncate rounded border border-cyan-800/40 bg-gray-950/70 px-1.5 py-0.5 font-mono text-[8px] text-cyan-300/80">
+          ◈ {breadcrumbLabel}
         </div>
       )}
 

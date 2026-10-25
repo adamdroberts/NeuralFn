@@ -72,7 +72,7 @@ export default function DatasetSourcePanel({
   };
 
   return (
-    <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+    <div className="w-full flex-1 min-h-0 bg-gray-900/60 flex flex-col overflow-hidden">
       <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
         <span className="text-sm font-bold text-violet-300">{node.data.label}</span>
         <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>

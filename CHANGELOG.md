@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+- Added a **View Full Graph** toggle (`viewFullGraph` in `editor/src/store/settingsStore.ts`,
+  `buildFullExpandedGraph` in `editor/src/store/graphUtils.ts`, and `FullGraphZonesLayer`
+  in `editor/src/components/SubgraphExpansionOverlay.tsx`) and **Animated Subgraph Click
+  Expansion** (`useSubgraphExpansion` and `SubgraphExpansionOverlay` in
+  `editor/src/components/SubgraphExpansionOverlay.tsx`) across both the Volumetric 3D
+  Cyber Graph Editor (`ParticleGraphCanvas.tsx`) and Standard 2D Graph Editor
+  (`GraphCanvas.tsx`):
+  - **View Full Graph Toggle (`⊞ View Full Graph` / `⊞ FULL GRAPH: ON/OFF`)**:
+    Recursively expands all nested subgraphs across the graph into a single unified
+    full-architecture view, bridging external input/output ports directly across pass-through
+    terminals so all internal components and residual streams connect end-to-end. Renders
+    interactive nested subgraph zone containers (`FullGraphZonesLayer`) with `⌖ Fit` and
+    `⤢ Isolate` controls, and supports selecting/editing any nested leaf node via scoped
+    full-graph IDs (`makeFullGraphNodeId` / `parseFullGraphNodeId`) in `graphStore.ts`.
+  - **Radial Burst Emission, Simultaneous 3D Vector Wireframe Morphing & Outer-Edge Box/Label Growth**:
+    When not in Full Graph mode (`!viewFullGraph`), clicking on any subgraph node detaches the
+    node's title/name plate upward (`titleDetached` in `ParticleNeuronNode.tsx` and
+    `SubgraphExpansionOverlay.tsx`) and executes a `2000ms` (`2s`) 3-stage choreography:
+    1. **Stage 1 — Center-Seeking Directional Burst (`p: 0.06 -> 0.34`)**: Moves the selected
+       parent node from its starting position (`originStartFlowX`, `originStartFlowY`) toward the
+       canvas center (`centerX`, `centerY`) while pulling cloned central animated 3D cores
+       (`SemanticNodeGlyph` / `VolumetricNodeCore`) out along that direction (`dirToCenterX`,
+       `dirToCenterY`) into a directional halo ring (`coreMorphProgress = 0`, `shellExpandProgress = 0`).
+    2. **Stage 2 — Simultaneous Transition & True 3D Vector Wireframe Metamorphosis (`p: 0.34 -> 0.82`)**:
+       All emitted cores transition into their target locations at once while `VolumetricNodeCore.tsx`
+       interpolates the live 3D rotating wireframe segments (`WireframeSegment3D[]`, `v1`/`v2` in 3D `(x, y, z)`
+       space with axial twist) from the parent's 3D wireframe (`coreMorphFrom`) into each child node's
+       new 3D vector wireframe (`coreMorphProgress: 0 -> 1`).
+    3. **Stage 3 — Outer-Edge Box & Label Growth (`p: 0.82 -> 1.00`)**: Once in place with their new
+       3D vector wireframes formed, `shellExpandProgress` sweeps `0 -> 1` so each node's outer box,
+       border, ports, and labels grow outward from the outer edges of its central animated 3D core.
+       Clicking a parent/ancestor breadcrumb in `Toolbar.tsx` or `ParticleGraphCanvas.tsx` plays the
+       reverse (`mode: "collapse"`): `GraphCanvas.tsx` cleanly delegates to `ParticleGraphCanvas`
+       or `StandardGraphCanvas` so only the active canvas's `useSubgraphExpansion` hook drives
+       `<ReactFlow>`'s viewport, and `startSubgraphCollapse` tracks the live DOM bounding rect of
+       the parent node's `<canvas>` core (`container.querySelector('.react-flow__node[data-id="..."] canvas')`)
+       so all collapsing child nodes converge 100% inside the parent node's exact screen coordinates
+       and core dimensions (`singularityCoreSize`). During morphing, all glowing circular halos,
+       radial ambient fills (`VolumetricNodeCore.tsx`), shimmer rings (`ParticleNeuronNode.tsx`),
+       shockwave bursts, and additive canvas blending are disabled (`globalCompositeOperation = "source-over"`)
+       so the child nodes keep their own colors, smoothly morph their 3D vector wireframes into the
+       parent shape directly inside the parent node, and alpha-fade out (`opacity: 1 -> 0`) without
+       glow artifacts before the parent node's outer box and labels grow outward.
+  - **Full-Screen Graph Canvas with On-Demand Left, Bottom & Right Panel Dialogs**:
+    Updated `EditorPage.tsx`, `Toolbar.tsx`, `LibraryPanel.tsx`, `CodePanel.tsx`,
+    `DatasetSourcePanel.tsx`, `ChatPanel.tsx`, `TrainingPanel.tsx`, and
+    `settingsStore.ts` (`activePanelDialog`, `rightPanelTab`) so the graph canvas fills
+    the entire workspace without permanent left, right, or bottom panels crowding the
+    view. Added floating Left (`◈ Variants`), Bottom (`⚡ Training & Trace`), and Right
+    (`◧ Inspector` & `💬 Model Chat`) launcher buttons around the canvas perimeter (plus
+    matching buttons in `Toolbar.tsx`) that open each panel in a modal dialog while
+    keeping `TrainingPanel` and `ChatPanel` mounted so active training runs, `torchTrace`
+    updates, and chat transcripts persist when closed.
+  - Verified with `npm --prefix editor run build` (`tsc -b && vite build`).
+- Added a persisted Settings & Feature Flags system (`editor/src/store/settingsStore.ts`
+  and `editor/src/components/SettingsModal.tsx`) with a feature flag toggle for the
+  **Volumetric 3D WebGL & Particle Cyber Graph Editor** (`ParticleGraphCanvas.tsx`,
+  `WebGLCyberScene.tsx`, `VolumetricNodeCore.tsx`, `ParticleNeuronNode.tsx`,
+  `ParticleEdge.tsx`, `nodeArchetypes.ts`, and `NodePickerModal.tsx`):
+  - **14 Semantic 3D Node Archetypes & 60 FPS Twisting/Rotating Volumetric Cores**:
+    Instead of uniform flat nodes, `resolveNodeArchetype` maps each node label and
+    `NeuronDefData` to one of 14 distinct polygon silhouettes and 60 FPS 3D
+    perspective-projected mesh cores (`VolumetricNodeCore.tsx`) with depth-sorted
+    normal-lit faces, counter-rotating gimbal rings, torsional twisting 3D tensor
+    cubes (`tensor_matrix`), twisting 3D double-helices (`sequence_wave`),
+    4D-to-3D stereographic rotating tesseracts (`latent_tesseract`), orbiting 3D
+    expert satellites (`moe_router`), counter-twisting hyperbolic hourglasses
+    (`lora_adapter`), 3-axis gyroscopic armillary spheres (`norm_stabilizer`),
+    stacked counter-rotating memory platters (`memory_vault`), dual counter-rotating
+    Merkaba tetrahedra (`objective_beacon`), and 3D twisting activation ribbons
+    (`signal_modulator`), housed in a 5-plane CSS 3D `preserve-3d` chassis with
+    interactive cursor-tilt parallax.
+  - **Shared WebGL 3D Shader & Wireframe Scene (`WebGLCyberScene.tsx`)**: Renders a
+    GPU-accelerated GLSL 3D perspective cyber grid and rotating/twisting 3D
+    wireframe cages around every node synchronized with the React Flow viewport,
+    paired with 60 FPS semantic particle swarms and double-helix synaptic photon
+    streams.
+  - **Full Cyber 3D Cockpit UI**: Extends 3D perspective depth, neon rim lighting,
+    and recessed cyber glass across `AppShell`, `EditorPage`, `Toolbar`,
+    `LibraryPanel`, `CodePanel`, `TrainingPanel`, and `ChatPanel` when enabled.
+  - **Categorized Holographic Node Picker (`NodePickerModal.tsx`)**: Replaces the
+    inline 120-button toolbar wall with a clean **`✦ + Add Node`** button that
+    opens a 9-category modal where grouped neural modules animate out with a 3D
+    fan-out transition (`cyberCardFanOut`) alongside a live 3D Blueprint Inspector.
+  - **Unified Server Launcher**: Added `./start_servers.sh` (`npm run start:servers`)
+    to launch both the FastAPI backend and Vite editor concurrently. Verified via
+    `npm --prefix editor run build` (`tsc -b && vite build`).
 - Restored a colorful Rich TUI for interactive resident inference. TTY
   `nfn infer` now opens a multi-turn transcript UI with model/runtime/precision/
   cache/DFlash state, Markdown assistant panels, per-turn prefill/reuse/decode

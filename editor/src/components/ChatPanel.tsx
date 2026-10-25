@@ -25,7 +25,6 @@ export default function ChatPanel() {
   const projectId = useGraphStore((state) => state.projectId);
   const sessionId = useGraphStore((state) => state.sessionId);
 
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,7 +42,7 @@ export default function ChatPanel() {
     if (scrollerRef.current) {
       scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
     }
-  }, [messages, open]);
+  }, [messages]);
 
   const send = useCallback(async () => {
     if (!projectId || !sessionId) return;
@@ -111,24 +110,14 @@ export default function ChatPanel() {
   const hasBase = useMemo(() => baseCheckpoint.trim().length > 0, [baseCheckpoint]);
 
   return (
-    <>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="absolute right-3 top-2 z-20 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1 shadow-md"
-        title="Open chat panel"
-      >
-        {open ? "✕ Close Chat" : "💬 Chat with model"}
-      </button>
-
-      {open && (
-        <aside className="absolute right-0 top-0 bottom-0 z-10 w-[420px] max-w-[90vw] flex flex-col border-l border-gray-800 bg-gray-950/95 shadow-2xl">
-          <div className="border-b border-gray-800 px-3 py-2">
-            <div className="text-sm font-bold text-indigo-300">Model Chat</div>
-            <div className="text-[11px] text-gray-500">
-              Run the current session's graph as an autoregressive model.
-              Optionally load a pretrained base and a LoRA adapter on top.
-            </div>
-          </div>
+    <div className="w-full flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="border-b border-gray-800 px-4 py-2.5">
+        <div className="text-sm font-bold text-indigo-300">Model Chat</div>
+        <div className="text-[11px] text-gray-500">
+          Run the current session's graph as an autoregressive model.
+          Optionally load a pretrained base and a LoRA adapter on top.
+        </div>
+      </div>
 
           {/* Checkpoint loader */}
           <div className="border-b border-gray-800 bg-gray-900/60 p-3 space-y-2 text-[11px]">
@@ -299,8 +288,6 @@ export default function ChatPanel() {
               </button>
             </div>
           </form>
-        </aside>
-      )}
-    </>
+        </div>
   );
 }

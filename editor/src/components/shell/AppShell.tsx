@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, type SessionSummary } from "../../api/client";
 import { useAppState } from "../../routes/AppState";
+import { useSettingsStore } from "../../store/settingsStore";
+import SettingsModal from "../SettingsModal";
 
 function surfaceForPath(pathname: string) {
   if (pathname.includes("/studio")) return "studio";
@@ -18,6 +20,10 @@ function scopedPath(projectId: string, sessionId: string, surface: string) {
 
 export default function AppShell() {
   const { bootstrap, logout, refreshBootstrap, setActiveSession } = useAppState();
+  const particleGraphEditorEnabled = useSettingsStore(
+    (state) => state.particleGraphEditorEnabled,
+  );
+  const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ projectId: string; sessionId: string }>();
@@ -110,12 +116,30 @@ export default function AppShell() {
   };
 
   return (
-    <div className="h-screen bg-gray-950 text-gray-100 flex flex-col">
-      <header className="border-b border-gray-800 bg-gray-900/95">
+    <div
+      className={`h-screen text-gray-100 flex flex-col ${
+        particleGraphEditorEnabled ? "cyber-cockpit-shell" : "bg-gray-950"
+      }`}
+    >
+      <header
+        className={
+          particleGraphEditorEnabled
+            ? "cyber-header-deck relative z-30"
+            : "border-b border-gray-800 bg-gray-900/95"
+        }
+      >
         <div className="flex items-center gap-3 px-4 py-3">
           <div>
-            <div className="text-lg font-bold text-blue-400">NeuralFn Platform</div>
-            <div className="text-[11px] text-gray-500">
+            <div
+              className={`text-lg font-bold tracking-wide ${
+                particleGraphEditorEnabled
+                  ? "font-mono uppercase text-cyan-300 drop-shadow-[0_0_10px_rgba(0,240,255,0.45)]"
+                  : "text-blue-400"
+              }`}
+            >
+              NeuralFn Platform
+            </div>
+            <div className="text-[11px] text-gray-400 font-mono">
               {bootstrap?.user ? `${bootstrap.user.display_name} • ${bootstrap.user.email}` : "Signed out"}
             </div>
           </div>
@@ -124,7 +148,11 @@ export default function AppShell() {
             <select
               value={activeProjectId ?? ""}
               onChange={(event) => void handleProjectChange(event.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm"
+              className={
+                particleGraphEditorEnabled
+                  ? "cyber-input rounded px-2.5 py-1 text-sm font-mono"
+                  : "bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm"
+              }
             >
               {projects.length === 0 ? (
                 <option value="">No projects</option>
@@ -141,7 +169,11 @@ export default function AppShell() {
               value={activeSessionId ?? ""}
               disabled={!activeProjectId || loadingSessions || sessions.length === 0}
               onChange={(event) => void handleSessionChange(event.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm"
+              className={
+                particleGraphEditorEnabled
+                  ? "cyber-input rounded px-2.5 py-1 text-sm font-mono"
+                  : "bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm"
+              }
             >
               {sessions.length === 0 ? (
                 <option value="">{loadingSessions ? "Loading sessions..." : "No sessions"}</option>
@@ -159,7 +191,11 @@ export default function AppShell() {
                 setProjectError(null);
                 setShowCreateProject(true);
               }}
-              className="rounded border border-gray-700 px-3 py-1 text-sm text-gray-200 hover:bg-gray-800"
+              className={
+                particleGraphEditorEnabled
+                  ? "rounded border border-cyan-500/40 bg-slate-900/90 px-3 py-1 font-mono text-xs text-cyan-200 hover:border-cyan-400 hover:bg-cyan-950/60"
+                  : "rounded border border-gray-700 px-3 py-1 text-sm text-gray-200 hover:bg-gray-800"
+              }
             >
               New Project
             </button>
@@ -171,7 +207,13 @@ export default function AppShell() {
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "editor")}
                   className={({ isActive }) =>
-                    `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
+                    particleGraphEditorEnabled
+                      ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                          isActive
+                            ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)]"
+                            : "border-transparent text-gray-300 hover:border-cyan-500/30 hover:bg-slate-900/80"
+                        }`
+                      : `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
                   }
                 >
                   Editor
@@ -179,7 +221,13 @@ export default function AppShell() {
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "studio")}
                   className={({ isActive }) =>
-                    `rounded px-3 py-1 ${isActive ? "bg-indigo-600 text-white" : "text-indigo-200 hover:bg-indigo-900/40"}`
+                    particleGraphEditorEnabled
+                      ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                          isActive
+                            ? "border-indigo-400/80 bg-indigo-500/25 text-indigo-100 shadow-[0_0_16px_rgba(99,102,241,0.35)]"
+                            : "border-transparent text-indigo-200 hover:border-indigo-500/30 hover:bg-indigo-950/40"
+                        }`
+                      : `rounded px-3 py-1 ${isActive ? "bg-indigo-600 text-white" : "text-indigo-200 hover:bg-indigo-900/40"}`
                   }
                 >
                   🧪 Studio
@@ -187,7 +235,13 @@ export default function AppShell() {
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "datasets")}
                   className={({ isActive }) =>
-                    `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
+                    particleGraphEditorEnabled
+                      ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                          isActive
+                            ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)]"
+                            : "border-transparent text-gray-300 hover:border-cyan-500/30 hover:bg-slate-900/80"
+                        }`
+                      : `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
                   }
                 >
                   Datasets
@@ -195,7 +249,13 @@ export default function AppShell() {
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "runs")}
                   className={({ isActive }) =>
-                    `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
+                    particleGraphEditorEnabled
+                      ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                          isActive
+                            ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)]"
+                            : "border-transparent text-gray-300 hover:border-cyan-500/30 hover:bg-slate-900/80"
+                        }`
+                      : `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
                   }
                 >
                   Runs
@@ -203,7 +263,13 @@ export default function AppShell() {
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "analytics")}
                   className={({ isActive }) =>
-                    `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
+                    particleGraphEditorEnabled
+                      ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                          isActive
+                            ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)]"
+                            : "border-transparent text-gray-300 hover:border-cyan-500/30 hover:bg-slate-900/80"
+                        }`
+                      : `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
                   }
                 >
                   Analytics
@@ -214,7 +280,13 @@ export default function AppShell() {
               <NavLink
                 to="/app/admin"
                 className={({ isActive }) =>
-                  `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
+                  particleGraphEditorEnabled
+                    ? `rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all ${
+                        isActive
+                          ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-100 shadow-[0_0_16px_rgba(0,240,255,0.3)]"
+                          : "border-transparent text-gray-300 hover:border-cyan-500/30 hover:bg-slate-900/80"
+                      }`
+                    : `rounded px-3 py-1 ${isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-800"}`
                 }
               >
                 Admin
@@ -223,10 +295,29 @@ export default function AppShell() {
           </nav>
 
           <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
-            {currentProject && <span>{currentProject.role}</span>}
+            {currentProject && <span className="font-mono uppercase">{currentProject.role}</span>}
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className={`flex items-center gap-1.5 rounded border px-3 py-1 transition-all ${
+                particleGraphEditorEnabled
+                  ? "border-cyan-500/60 bg-cyan-950/60 font-mono text-cyan-200 shadow-[0_0_12px_rgba(0,240,255,0.25)] hover:bg-cyan-900/70"
+                  : "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700"
+              }`}
+              title="Open Platform Settings & Feature Flags"
+            >
+              <span>⚙ Settings</span>
+              {particleGraphEditorEnabled && (
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
+              )}
+            </button>
             <button
               onClick={() => void logout().then(() => navigate("/login"))}
-              className="rounded bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
+              className={
+                particleGraphEditorEnabled
+                  ? "rounded border border-slate-700 bg-slate-900/90 px-3 py-1 font-mono text-gray-200 hover:border-rose-500/50 hover:text-rose-200"
+                  : "rounded bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700"
+              }
             >
               Log out
             </button>
@@ -237,6 +328,8 @@ export default function AppShell() {
       <main className="flex flex-1 min-h-0 flex-col">
         <Outlet />
       </main>
+
+      <SettingsModal />
 
       {showCreateProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
