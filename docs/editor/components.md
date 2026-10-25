@@ -129,12 +129,12 @@ The inspector tab of the right dialog. With no node selected it shows the active
 
 Top-of-canvas toolbar. In cyber mode it takes the neon cockpit styling; the controls are the same in both modes:
 
-- `✦ + Add Node` opens `NodePickerModal`; `+ Custom`, `+ Override`, `+ Subgraph` quick-spawn a custom Python node, a scalar override node, and an empty subgraph.
+- `✦ + Add Node` opens `NodePickerModal`; `+ Custom Node`, `+ Override`, `+ Subgraph` quick-spawn a custom Python node, a scalar override node, and an empty subgraph.
 - Template preset `<select>` plus apply action (`load_gpt_template`). The option list is hardcoded here, so every new backend preset must be added as an `<option>`.
 - Breadcrumb bar for subgraph depth. Clicking a parent crumb calls `setViewFullGraph(false)` then `setPath(crumb.path)`; the active canvas turns that path change into the collapse animation.
 - Panel launchers that mirror the canvas-edge buttons: `◈ Variants` (left dialog), `⚡ Training` (bottom dialog), `◧ Inspector` and `💬 Chat` (right dialog tabs).
 - `⊞ View Full Graph` / `⊞ Full Graph: ON` (`toggleViewFullGraph`), `✦ Cyber 3D` / `✦ Cyber 3D: ON` (`toggleParticleGraphEditor`), and `⚙` (`setSettingsOpen(true)`).
-- Graph-level actions: save, load, execute, trace, clear. Training method selection; runtime selection lives in `CodePanel` graph settings.
+- Save and Load actions (`onSave` / `onLoad`) for the session graph. Execution, tracing, and training controls live in `TrainingPanel`; runtime selection lives in `CodePanel` graph settings.
 
 ## TrainingPanel
 

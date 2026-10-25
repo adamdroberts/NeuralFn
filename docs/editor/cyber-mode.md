@@ -53,7 +53,7 @@ flowchart TD
 | `⚙` | `Toolbar`; `⚙ Settings` in the `AppShell` header; `⚙ Configure Holographic & Particle Settings...` in `CodePanel` graph settings; `⚙` in the cyber HUD | `setSettingsOpen(true)` opens `SettingsModal` |
 | `⊞ View Full Graph` / `⊞ Full Graph: ON` | `Toolbar`; `FULL GRAPH: ON/OFF` in the cyber HUD; `⊞ View Full Graph (Expand All Subgraphs)` checkbox in `SettingsModal` | `toggleViewFullGraph()` / `setViewFullGraph()` |
 | `✦ + Add Node` | `Toolbar` | opens `NodePickerModal` (component-local state) |
-| `+ Custom`, `+ Override`, `+ Subgraph` | `Toolbar` and the picker's quick-spawn row | `addCustomNode`, scalar override node, `addSubgraphNode` |
+| `+ Custom Node`, `+ Override`, `+ Subgraph` | `Toolbar` and the picker's quick-spawn row | `addCustomNode`, scalar override node, `addSubgraphNode` |
 | `◈ Variants` | `Toolbar` and the left canvas edge | `setActivePanelDialog("left")` |
 | `⚡ Training` / `⚡ Training & Trace` | `Toolbar` and the bottom canvas edge | `setActivePanelDialog("bottom")` |
 | `◧ Inspector` | `Toolbar` and the right canvas edge | `openRightPanelDialog("inspector")` |
@@ -143,7 +143,7 @@ Expansion timeline (`p` is normalized time):
 
 | Stage | `p` | What happens |
 |-------|-----|--------------|
-| 1 -- center-seeking burst | 0.06 → 0.34 | The clicked node's title plate detaches upward (`titleDetached`), the node drifts toward the canvas centre, and one clone of its 3D core per child node is emitted outward along that direction into a halo ring (`coreMorphProgress = 0`, `shellExpandProgress = 0`, `coreOnlyMorph = 1`). Emission is staggered by up to 0.06 across children. |
+| 1 -- center-seeking burst | 0.06 → 0.34 | The clicked node's title plate detaches upward (`titleDetached`), the node drifts toward the canvas centre, and one clone of its 3D core per child node is emitted outward along that direction into a halo ring (`coreMorphProgress = 0`, `shellExpandProgress = 0`, `coreOnlyMorph = 1`). Children are emitted one after another inside the `p` 0.06 → 0.30 window, evenly spaced around a ring whose radius grows with the child count (125–200 px). |
 | 2 -- simultaneous transit and wireframe morph | 0.34 → 0.82 | Every emitted core glides to its final child position while `VolumetricNodeCore` interpolates its 3D wireframe segments from the parent's archetype (`coreMorphFrom`) to the child's own (`coreMorphProgress` 0 → 1). |
 | 3 -- shell growth | 0.82 → 1.00 | Each child's outer box, border, ports, and labels grow outward from its core (`shellExpandProgress` 0 → 1) and the overlay fades. |
 
