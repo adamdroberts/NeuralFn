@@ -3,8 +3,8 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "start": "./start_servers.sh",
-    "start:servers": "./start_servers.sh",
+    "start": "./start-servers.sh",
+    "start:servers": "./start-servers.sh",
     "editor:install": "cd editor && npm install",
     "editor:build": "cd editor && npm run build",
     "desktop:install": "cd desktop && npm install",

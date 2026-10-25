@@ -21,8 +21,8 @@
 | Field | Type | Description |
 |-------|------|-------------|
 | `rootGraph` | `GraphData` | The top-level graph for the session |
-| `currentPath` | `number[]` | Path into nested subgraphs (empty = root) |
-| `selectedNodeId` | `string \| null` | Currently selected node |
+| `currentPath` | `GraphPathSegment[]` | Navigation path into nested subgraphs (empty = root). Each segment is `{kind: "node", nodeId}` or `{kind: "variant", family, version}`; see [Graph Utilities](graph-utils.md#graphpathsegment). |
+| `selectedNodeId` | `string \| null` | Currently selected node. In View Full Graph mode this may be a scoped full-graph id (`fullg::<path>::<nodeId>`) pointing at a nested leaf; `normalizeState` keeps such ids only while the target node still exists. |
 | `preferredInsertPosition` | `{x, y} \| null` | Hint for where to place new nodes |
 | `insertSequence` | `number` | Auto-incrementing counter for insert positioning |
 
@@ -76,8 +76,8 @@
 | `mergeVariantLibrary(library)` | Merges external variant definitions into the root graph's variant library. |
 | `saveNodeAsVariant(nodeId, family, version)` | Saves a node's subgraph into the variant library. |
 | `swapNodeVariant(nodeId, version)` | Swaps a variant node to a different version within its family. |
-| `removeNode(nodeId)` | Removes a node and all connected edges from the active graph. |
-| `updateNodeData(nodeId, updates)` | Applies partial updates to a node's neuron definition. |
+| `removeNode(nodeId)` | Removes a node and all connected edges. Accepts a plain id (active graph) or a scoped full-graph id, which is resolved with `parseFullGraphNodeId` + `resolveEditableGraphPath` so a nested leaf selected in View Full Graph mode is deleted inside its own subgraph or variant-library entry. |
+| `updateNodeData(nodeId, updates)` | Applies partial updates (`label` and/or `neuronDef`) to a node's neuron definition. Accepts plain or scoped full-graph ids, resolved the same way as `removeNode`. |
 | `selectNode(nodeId)` | Sets the selected node. |
 | `setBuiltins(defs)` | Stores the loaded builtin neuron definitions. |
 
@@ -114,7 +114,7 @@ Exported selector functions for use with `useGraphStore(selector)`:
 | `selectBreadcrumbs(state)` | `Breadcrumb[]` for the subgraph navigation trail. |
 | `selectFlowNodes(state)` | React Flow `Node[]` for the active graph. |
 | `selectFlowEdges(state)` | React Flow `Edge[]` for the active graph. |
-| `selectSelectedNode(state)` | The full `NodeData` of the selected node, or `null`. |
+| `selectSelectedNode(state)` | The React Flow `Node<NeuronNodeData>` for the selected node, or `null`. If `selectedNodeId` is a scoped full-graph id, the node is synthesized from the nested graph with `subgraphPath`, `instancePath`, `localNodeId`, and `breadcrumbLabel` filled in so `CodePanel` can edit it without navigating. |
 | `torchTracePathPrefix(state)` | The trace path prefix matching the current subgraph depth. |
 | `resolveTorchTraceStats(state)` | Filtered `TorchTraceStat[]` for the active subgraph level. |
 
@@ -135,16 +135,64 @@ Type alias for `FlowNodeData`, used as the data payload on React Flow nodes.
 
 ## Settings Store (`useSettingsStore`)
 
-`editor/src/store/settingsStore.ts` exports `useSettingsStore`, a Zustand store with `localStorage` persistence (`neuralfn:editor_settings:v1`) for client-side feature flags and holographic particle graph editor settings.
+`editor/src/store/settingsStore.ts` exports `useSettingsStore`, a second Zustand store that holds client-side feature flags, the Volumetric 3D Cyber mode visual settings, the **View Full Graph** toggle, and the editor's panel-dialog UI state. It is independent of `useGraphStore`, is never sent to the server, and is read by `GraphCanvas`, `ParticleGraphCanvas`, `Toolbar`, `EditorPage`, `AppShell`, `CodePanel`, `LibraryPanel`, and `SettingsModal`. The feature walkthrough lives in [Cyber Mode, Full Graph View, and Panel Dialogs](cyber-mode.md).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `particleGraphEditorEnabled` | `boolean` | Feature flag toggle enabling the Volumetric 3D Cyber / 60 FPS particle-based graph editor (`ParticleGraphCanvas`). |
-| `particleVisualMode` | `"hybrid_hud" \| "particle_nebula"` | Switches between chamfered cyber HUD cards with orbital swarms and pure 3D spherical particle nebulae. |
-| `particleDensity` | `"balanced" \| "high" \| "ultra"` | Controls particle count budgets across ambient, node-orbital, and edge-photon layers. |
-| `colorPalette` | `"cyber_plasma" \| "solaris_gold" \| "quantum_violet" \| "crimson_protocol"` | Active holographic color theme. |
-| `holoPerspective3D` | `boolean` | Enables 3D holographic table tilt projection on the canvas. |
-| `motionIntensity` | `"smooth" \| "cinematic"` | Controls spring damping and vortex transition impulses. |
-| `hudTelemetryOverlay` | `boolean` | Toggles the background cybernetic telemetry schematic and circular tactical radar HUD. |
-| `isSettingsOpen` | `boolean` | Controls visibility of `SettingsModal`. |
-| `pulseSequence` | `number` | Monotonic counter incremented by `triggerPulse()` to fire an electromagnetic shockwave across the active graph. |
+### Persistence
+
+The `PersistedEditorSettings` subset is written to `window.localStorage` under the key `neuralfn:editor_settings:v1` after every change and read back once when the store module is first evaluated. Loading is defensive: each field is validated against its allowed values and falls back to its default when the stored value is missing or invalid, and a corrupt payload or a storage error (private mode, quota) yields the defaults. Transient fields are never persisted and reset on every page load.
+
+### Persisted fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `particleGraphEditorEnabled` | `boolean` | `false` | Feature flag for the Volumetric 3D Cyber graph editor. When `true`, `GraphCanvas` renders `ParticleGraphCanvas` instead of the standard React Flow canvas and the shell, toolbar, and panels switch to the cyber cockpit styling. |
+| `particleVisualMode` | `"hybrid_hud" \| "particle_nebula"` | `"hybrid_hud"` | `hybrid_hud` renders multi-plane CSS 3D node chassis (`ParticleNeuronNode`) with orbital particle halos; `particle_nebula` renders compact floating 3D sculptures with laser callout banners. |
+| `particleDensity` | `"balanced" \| "high" \| "ultra"` | `"high"` | Particle count budget across the ambient field, node-orbital swarms, and edge photon streams. |
+| `colorPalette` | `"cyber_plasma" \| "solaris_gold" \| "quantum_violet" \| "crimson_protocol"` | `"cyber_plasma"` | Active holographic palette; resolved through `PARTICLE_PALETTES`. |
+| `holoPerspective3D` | `boolean` | `false` | Tilts the whole canvas into a 3D holographic-table projection. |
+| `motionIntensity` | `"smooth" \| "cinematic"` | `"cinematic"` | Spring damping and vortex-transition impulse strength for particle retargeting. |
+| `hudTelemetryOverlay` | `boolean` | `true` | Shows the background telemetry schematic and the bottom-right tactical radar in cyber mode. |
+| `viewFullGraph` | `boolean` | `false` | View Full Graph mode: both canvases render `buildFullExpandedGraph(rootGraph)` instead of the active subgraph. Applies to the standard and cyber canvases alike. |
+
+### Transient fields
+
+| Field | Type | Initial | Description |
+|-------|------|---------|-------------|
+| `isSettingsOpen` | `boolean` | `false` | Whether `SettingsModal` is shown. |
+| `activePanelDialog` | `"left" \| "bottom" \| "right" \| null` | `null` | Which `EditorPage` panel dialog is open: left = Variant Library, bottom = Training & Trace, right = Inspector / Chat. `null` closes all. |
+| `rightPanelTab` | `"inspector" \| "chat"` | `"inspector"` | Active tab inside the right dialog (`CodePanel` or `ChatPanel`). |
+| `pulseSequence` | `number` | `0` | Monotonic counter; each increment makes `ParticleGraphCanvas` fire a shockwave and particle surge across the graph. |
+
+### Actions
+
+| Action | Effect |
+|--------|--------|
+| `setParticleGraphEditorEnabled(enabled)` | Sets the cyber-mode flag and persists. |
+| `toggleParticleGraphEditor()` | Flips the cyber-mode flag and persists. Bound to the toolbar `✦ Cyber 3D` button. |
+| `setParticleVisualMode(mode)` | Sets `particleVisualMode` and persists. |
+| `setParticleDensity(density)` | Sets `particleDensity` and persists. |
+| `setColorPalette(palette)` | Sets `colorPalette` and persists. The cyber HUD color-matrix button cycles through the four palettes with this action. |
+| `setHoloPerspective3D(enabled)` | Sets `holoPerspective3D` and persists. |
+| `setMotionIntensity(intensity)` | Sets `motionIntensity` and persists. |
+| `setHudTelemetryOverlay(enabled)` | Sets `hudTelemetryOverlay` and persists. |
+| `setViewFullGraph(enabled)` / `toggleViewFullGraph()` | Set or flip View Full Graph mode and persist. Bound to the toolbar `⊞ View Full Graph` button, the cyber HUD `FULL GRAPH` button, the `SettingsModal` checkbox, and the `⤢ Isolate` zone action (which turns it off before navigating). |
+| `setSettingsOpen(open)` | Shows or hides `SettingsModal`. |
+| `setActivePanelDialog(dialog)` | Opens one panel dialog (`"left"`, `"bottom"`, `"right"`) or closes all (`null`). `EditorPage` also calls this with `null` on `Escape` and on backdrop click. |
+| `openRightPanelDialog(tab = "inspector")` | Opens the right dialog and selects the `inspector` or `chat` tab in one update. |
+| `triggerPulse()` | Increments `pulseSequence`. Bound to the cyber HUD `⚡ PULSE` button. |
+| `resetSettings()` | Restores every persisted field to its default and persists; transient fields are untouched. Bound to the reset button in `SettingsModal`. |
+
+### Palettes
+
+`PARTICLE_PALETTES` is a `Record<ParticleColorPalette, PaletteColors>` exported from the same module. Each `PaletteColors` entry carries `id`, `name`, `subtitle`, hex and `[r, g, b]` pairs for `primary`, `secondary`, `accent`, `subgraph`, and `module`, plus `terminalIn`, `terminalOut`, `bgCore`, and `gridColor` strings. The canvases, `WebGLCyberScene`, and `SettingsModal` all read colors from this table rather than hardcoding them.
+
+| Palette id | Display name | Primary | Secondary | Accent |
+|------------|--------------|---------|-----------|--------|
+| `cyber_plasma` | Cyber Plasma Core | `#00f0ff` | `#38bdf8` | `#f59e0b` |
+| `solaris_gold` | Solaris Nanotech | `#fbbf24` | `#f97316` | `#00f0ff` |
+| `quantum_violet` | Quantum Nebula | `#a855f7` | `#06b6d4` | `#f472b6` |
+| `crimson_protocol` | Crimson Tactical HUD | `#fb7185` | `#f97316` | `#facc15` |
+
+### Exported types
+
+`ParticleVisualMode`, `ParticleDensity`, `ParticleColorPalette`, `MotionIntensity`, `PaletteColors`, `PersistedEditorSettings`, `EditorPanelDialog`, `RightPanelTab`, and `SettingsState` (the full store shape including actions).

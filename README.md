@@ -7683,7 +7683,7 @@ export NEURALFN_CREATE_SCHEMA_ON_STARTUP=0
 Launch both the backend (`http://127.0.0.1:8000`) and editor (`http://localhost:5173`) together from the repository root:
 
 ```bash
-./start_servers.sh
+./start-servers.sh
 ```
 
 Or run them in separate terminals:
